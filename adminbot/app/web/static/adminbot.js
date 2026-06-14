@@ -242,8 +242,34 @@
 
     const botId = tailSelect.getAttribute("data-bot-id") || "";
     const initialStream = tailSelect.getAttribute("data-stream") || "stdout";
+    const streamLinks = document.querySelectorAll("[data-log-stream-link]");
+    const storageKey = botId ? `adminbot.logs.${botId}.tail` : "";
     let stream = initialStream;
     let timer = null;
+
+    function updateTailState() {
+        const tail = tailSelect.value;
+        if (storageKey) {
+            localStorage.setItem(storageKey, tail);
+        }
+        const currentUrl = new URL(window.location.href);
+        currentUrl.searchParams.set("tail", tail);
+        currentUrl.searchParams.set("stream", stream);
+        window.history.replaceState(null, "", currentUrl.toString());
+        for (const link of streamLinks) {
+            const linkUrl = new URL(link.href, window.location.origin);
+            linkUrl.searchParams.set("tail", tail);
+            link.href = linkUrl.toString();
+        }
+    }
+
+    if (storageKey) {
+        const savedTail = localStorage.getItem(storageKey);
+        if (savedTail && [...tailSelect.options].some((option) => option.value === savedTail)) {
+            tailSelect.value = savedTail;
+        }
+    }
+    updateTailState();
 
     const renderLines = (lines) => {
         const term = filterInput.value.trim().toLowerCase();
@@ -276,9 +302,13 @@
         }
     };
 
-    tailSelect.addEventListener("change", loadLines);
+    tailSelect.addEventListener("change", () => {
+        updateTailState();
+        loadLines();
+    });
     filterInput.addEventListener("input", loadLines);
     autoRefreshInput.addEventListener("change", schedule);
 
+    loadLines();
     schedule();
 })();
