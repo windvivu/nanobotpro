@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block title %}Create Bot{% endblock %}
+{% block page_title %}Create Bot{% endblock %}
+{% block page_subtitle %}Register a workspace, allocate a dashboard port, and prepare a managed bot instance.{% endblock %}
+
+{% block content %}
+<section class="panel form-panel">
+    <form id="create-bot-form" class="stack-form" method="post" action="/bots">
+        <label>
+            <span>Workspace</span>
+            <input id="workspace-input" name="workspace" required type="text" value="{{ workspace }}" placeholder="E:\WORKSPACES\bot-one" />
+            <div class="field-tools">
+                <button class="button button-small" type="button" data-workspace-prefix="~/">Use `~/`</button>
+                <button class="button button-small" type="button" data-workspace-prefix="$HOME/">Use `$HOME/`</button>
+                <button class="button button-small" type="button" data-workspace-prefix="./">Use `./`</button>
+            </div>
+            <p class="field-help">
+                Workspace accepts absolute paths, relative paths, <code>~/my-bot</code>, or <code>$HOME/my-bot</code>.
+            </p>
+        </label>
+        <label>
+            <span>Bot Name</span>
+            <input name="name" type="text" value="{{ name }}" placeholder="Optional display name" />
+        </label>
+        <label>
+            <span>Web Port</span>
+            <input name="web_port" required min="1" max="65535" type="number" value="{{ web_port }}" />
+        </label>
+        <div id="create-bot-error" class="form-error" hidden></div>
+        <div class="form-actions">
+            <button class="button button-primary" type="submit" data-submit-btn>
+                <span data-label>Create Bot</span>
+            </button>
+            <a class="button button-link" href="/">Cancel</a>
+        </div>
+    </form>
+</section>
+{% endblock %}

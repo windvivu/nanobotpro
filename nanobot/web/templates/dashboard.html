@@ -1,0 +1,437 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard — Nanobot OS{% endblock %}
+
+{% block content %}
+<!-- Sidebar -->
+<aside class="w-full lg:w-72 flex flex-col gap-6">
+    <div class="matrix-card p-6 flex flex-col items-center text-center gap-4">
+        <div
+            class="w-20 h-20 flex items-center justify-center text-primary glow-text border-2 border-primary/30 rounded-full relative">
+            <div class="absolute inset-0 border border-primary animate-pulse rounded-full opacity-20"></div>
+            <svg class="w-12 h-12" fill="none" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+                <rect height="20" stroke="currentColor" stroke-width="2" width="20" x="10" y="10"></rect>
+                <rect class="animate-pulse" fill="currentColor" height="6" width="6" x="17" y="17"></rect>
+                <path d="M10 15H4M10 25H4M30 15H36M30 25H36M15 10V4M25 10V4M15 30V36M25 30V36" stroke="currentColor"
+                    stroke-linecap="round" stroke-width="1.5"></path>
+                <circle cx="4" cy="15" fill="currentColor" r="1"></circle>
+                <circle cx="4" cy="25" fill="currentColor" r="1"></circle>
+                <circle cx="36" cy="15" fill="currentColor" r="1"></circle>
+                <circle cx="36" cy="25" fill="currentColor" r="1"></circle>
+                <circle cx="15" cy="4" fill="currentColor" r="1"></circle>
+                <circle cx="25" cy="4" fill="currentColor" r="1"></circle>
+                <circle cx="15" cy="36" fill="currentColor" r="1"></circle>
+                <circle cx="25" cy="36" fill="currentColor" r="1"></circle>
+            </svg>
+        </div>
+        <div>
+            <h2 class="text-lg font-bold glow-text tracking-widest uppercase">Nanobot_Admin</h2>
+            <p class="text-[10px] text-primary/50 font-mono">UID: 00-FF-41-X9</p>
+        </div>
+    </div>
+
+    {% set active_page = "dashboard" %}
+    {% include "_sidebar_nav.html" %}
+
+    <!-- System Load mini widget -->
+    <div class="mt-auto matrix-card p-4 text-[10px] leading-relaxed text-primary/40 uppercase tracking-tighter">
+        <div class="flex justify-between mb-1">
+            <span>Sessions_Count</span>
+            <span class="text-primary/70">{{ sessions_count }}</span>
+        </div>
+        <div class="w-full bg-primary/10 h-1 mb-3">
+            <div class="bg-primary h-full shadow-[0_0_5px_#00FF41]" style="width: 20%"></div>
+        </div>
+        <div class="flex justify-between mb-1">
+            <span>Provider</span>
+            <span class="text-primary/70">{{ provider }}</span>
+        </div>
+    </div>
+</aside>
+
+<!-- Main Content -->
+<div class="flex-1 flex flex-col gap-8">
+    <!-- Top row: Neural Core (wide) + Active Nodes -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <!-- Neural Core -->
+        <div class="matrix-card p-6 md:col-span-2 relative overflow-hidden group">
+            <div class="absolute top-0 right-0 p-2 opacity-10">
+                <span class="material-symbols-outlined text-6xl">psychology</span>
+            </div>
+            <div class="flex items-center gap-2 mb-4">
+                <span class="w-2 h-2 bg-primary rounded-full animate-pulse shadow-[0_0_5px_#00FF41]"></span>
+                <h3 class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/60">Main Neural Core</h3>
+            </div>
+            <div class="flex flex-col">
+                <span class="text-3xl font-bold glow-text tracking-wider uppercase">{{ model }}</span>
+                <span class="text-xs text-primary/40 mt-1">STATUS: OPTIMIZED_EXECUTION</span>
+            </div>
+            <div class="mt-6 flex gap-4">
+                <div class="px-3 py-1 border border-primary/30 text-[10px] uppercase font-bold">Provider: {{ provider }}
+                </div>
+                {% if model_preset %}
+                <div class="px-3 py-1 border border-primary/30 text-[10px] uppercase font-bold">Preset: {{ model_preset }}
+                </div>
+                {% endif %}
+                <div class="px-3 py-1 border border-primary/30 text-[10px] uppercase font-bold">Temp: {{ temperature }}
+                </div>
+            </div>
+        </div>
+
+        <!-- Active Nodes (Sessions) -->
+        <div class="matrix-card p-6 flex flex-col justify-center items-center text-center">
+            <h3 class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/60 mb-2">Active Sessions</h3>
+            <div class="text-6xl font-bold glow-text">{{ sessions_count }}</div>
+            <span class="text-[10px] text-primary/40 mt-2 uppercase" id="uptime-label">Uptime: --</span>
+        </div>
+    </div>
+
+    <!-- Bottom row: Parameters + Channels + Uptime -->
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-8">
+        <!-- System Parameters -->
+        <div class="matrix-card p-6">
+            <div class="flex items-center justify-between mb-8 border-b border-primary/20 pb-4">
+                <div class="flex items-center gap-3">
+                    <span class="material-symbols-outlined glow-text">tune</span>
+                    <h3 class="text-xs font-bold uppercase tracking-widest glow-text">System Parameters</h3>
+                </div>
+                <span class="text-[10px] text-primary/30 font-mono">ID: PARM_REF_99</span>
+            </div>
+            <div class="space-y-4">
+                <div
+                    class="flex justify-between items-center group cursor-pointer hover:bg-primary/5 p-2 -mx-2 transition-colors">
+                    <span class="text-sm uppercase tracking-wider text-primary/60">Temperature</span>
+                    <div class="flex items-center gap-4">
+                        <span class="text-lg font-bold glow-text">{{ temperature }}</span>
+                        <span class="material-symbols-outlined text-xs text-primary/40">chevron_right</span>
+                    </div>
+                </div>
+                <div
+                    class="flex justify-between items-center group cursor-pointer hover:bg-primary/5 p-2 -mx-2 transition-colors">
+                    <span class="text-sm uppercase tracking-wider text-primary/60">Max_Tokens</span>
+                    <div class="flex items-center gap-4">
+                        <span class="text-lg font-bold glow-text">{{ max_tokens }}</span>
+                        <span class="material-symbols-outlined text-xs text-primary/40">chevron_right</span>
+                    </div>
+                </div>
+                <div
+                    class="flex justify-between items-center group cursor-pointer hover:bg-primary/5 p-2 -mx-2 transition-colors">
+                    <span class="text-sm uppercase tracking-wider text-primary/60">Max_Iterations</span>
+                    <div class="flex items-center gap-4">
+                        <span class="text-lg font-bold glow-text">{{ max_iterations }}</span>
+                        <span class="material-symbols-outlined text-xs text-primary/40">chevron_right</span>
+                    </div>
+                </div>
+                <div
+                    class="flex justify-between items-center group cursor-pointer hover:bg-primary/5 p-2 -mx-2 transition-colors">
+                    <span class="text-sm uppercase tracking-wider text-primary/60">Context_Window_Tokens</span>
+                    <div class="flex items-center gap-4">
+                        <span class="text-lg font-bold glow-text">{{ context_window_tokens }}</span>
+                        <span class="material-symbols-outlined text-xs text-primary/40">chevron_right</span>
+                    </div>
+                </div>
+                <div
+                    class="flex justify-between items-center group cursor-pointer hover:bg-primary/5 p-2 -mx-2 transition-colors">
+                    <span class="text-sm uppercase tracking-wider text-primary/60">Reasoning_Depth</span>
+                    <div class="flex items-center gap-4">
+                        <span class="text-lg font-bold glow-text">{{ reasoning_effort }}</span>
+                        <span class="material-symbols-outlined text-xs text-primary/40">chevron_right</span>
+                    </div>
+                </div>
+            </div>
+            <!-- Active Profile -->
+            <a href="/profiles" class="block mt-6 pt-5 border-t border-primary/15 group">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center gap-2">
+                        <span class="material-symbols-outlined text-base text-primary glow-text">play_circle</span>
+                        <span class="text-sm font-bold uppercase tracking-wider glow-text">{{ profile_name }}</span>
+                    </div>
+                    <span class="px-1.5 py-0.5 border border-primary/40 text-[8px] font-bold uppercase tracking-wider text-primary/70 bg-primary/5">Active</span>
+                </div>
+                {% if profile_preview %}
+                <div class="text-[11px] text-primary/40 font-mono leading-relaxed whitespace-pre-line line-clamp-3 bg-black/30 p-3 border border-primary/10">{{ profile_preview }}</div>
+                {% endif %}
+                <div class="mt-3 flex items-center gap-4 text-[9px] text-primary/30">
+                    {% if profile_created %}
+                    <span class="uppercase">Created: {{ profile_created }}</span>
+                    {% endif %}
+                    {% if profile_has_memory %}
+                    <span class="flex items-center gap-1">
+                        <span class="material-symbols-outlined text-[10px] text-primary/50">database</span>
+                        Memory
+                    </span>
+                    {% endif %}
+                </div>
+            </a>
+        </div>
+
+        <div class="flex flex-col gap-8">
+            <!-- Active Channels -->
+            <div class="matrix-card p-6 flex-1">
+                <div class="flex items-center gap-3 mb-6">
+                    <span class="material-symbols-outlined glow-text">hub</span>
+                    <h3 class="text-xs font-bold uppercase tracking-widest glow-text">Active Channels</h3>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    {% for ch in active_channels %}
+                    <div
+                        class="bg-primary/10 border border-primary p-4 flex flex-col gap-2 relative group overflow-hidden">
+                        <div
+                            class="absolute top-0 right-0 w-16 h-16 bg-primary/5 rotate-45 translate-x-8 -translate-y-8">
+                        </div>
+                        <span class="text-[10px] font-bold opacity-60">{{ ch.upper() }}_BOT</span>
+                        <span class="text-sm font-bold glow-text">CONNECTED</span>
+                        <span class="text-[8px] opacity-40">STATUS: ACTIVE</span>
+                    </div>
+                    {% else %}
+                    <div
+                        class="bg-transparent border border-primary/20 p-4 flex flex-col gap-2 opacity-40 border-dashed col-span-2">
+                        <span class="text-[10px] font-bold">NO_CHANNELS</span>
+                        <span class="text-sm font-bold uppercase tracking-tighter">Standby</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Tool Status -->
+            <div class="matrix-card p-6 flex-1">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center gap-3">
+                        <span class="material-symbols-outlined glow-text">build</span>
+                        <h3 class="text-xs font-bold uppercase tracking-widest glow-text">Tool Status</h3>
+                    </div>
+                    <span class="px-2 py-0.5 border text-[9px] font-bold uppercase tracking-wider
+                        {% if tool_preset == 'chatbot' %}border-yellow-500/50 text-yellow-400 bg-yellow-500/10{% elif tool_preset == 'custom' %}border-blue-400/50 text-blue-400 bg-blue-400/10{% else %}border-primary/50 text-primary bg-primary/10{% endif %}">
+                        {{ tool_preset }}
+                    </span>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    {% for name, enabled in tool_status.items() %}
+                    <div class="flex items-center gap-2 px-2 py-1.5 {{ 'bg-primary/5 border border-primary/20' if enabled else 'border border-primary/5 opacity-40' }}">
+                        <span class="w-1.5 h-1.5 rounded-full {{ 'bg-primary shadow-[0_0_4px_#00FF41]' if enabled else 'bg-primary/20' }}"></span>
+                        <span class="text-[10px] font-bold uppercase tracking-wider">{{ name }}</span>
+                        <span class="ml-auto text-[8px] font-mono {{ 'text-primary/60' if enabled else 'text-primary/20' }}">{{ 'ON' if enabled else 'OFF' }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% if sandbox_mode != 'unrestricted' and tool_status.get('Exec', False) %}
+                <div class="mt-2 text-[9px] text-primary/30 flex items-center gap-1">
+                    <span class="material-symbols-outlined text-[10px]">shield</span>
+                    Exec: sandbox mode ({{ sandbox_mode }})
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- System Uptime -->
+            <div class="matrix-card p-6 flex-1 flex flex-col justify-center">
+                <div class="flex items-center gap-3 mb-4">
+                    <span class="material-symbols-outlined glow-text">schedule</span>
+                    <h3 class="text-xs font-bold uppercase tracking-widest glow-text">System Uptime</h3>
+                </div>
+                <div class="flex items-baseline gap-2">
+                    <span class="text-4xl font-bold glow-text" id="uptime">--:--:--</span>
+                    <span class="text-[10px] text-primary/50 uppercase">since initialization</span>
+                </div>
+                <div class="mt-4 flex gap-1 h-1">
+                    <div class="flex-1 bg-primary shadow-[0_0_5px_#00FF41]"></div>
+                    <div class="flex-1 bg-primary shadow-[0_0_5px_#00FF41]"></div>
+                    <div class="flex-1 bg-primary/20"></div>
+                    <div class="flex-1 bg-primary/20"></div>
+                    <div class="flex-1 bg-primary/20"></div>
+                    <div class="flex-1 bg-primary/20"></div>
+                    <div class="flex-1 bg-primary/20"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Token Usage -->
+    <div class="matrix-card p-6">
+        <button type="button"
+            class="w-full flex items-center justify-between border-b border-primary/20 pb-4 group"
+            id="token-usage-toggle"
+            aria-expanded="false"
+            aria-controls="token-usage-body">
+            <span class="flex items-center gap-3">
+                <span class="material-symbols-outlined glow-text">query_stats</span>
+                <span class="text-xs font-bold uppercase tracking-widest glow-text">Token Usage</span>
+            </span>
+            <span class="flex items-center gap-3">
+                <span class="text-[10px] text-primary/30 font-mono" id="token-usage-updated">Turn telemetry</span>
+                <span class="material-symbols-outlined text-primary/50 group-hover:text-primary transition-colors" id="token-usage-toggle-icon">expand_more</span>
+            </span>
+        </button>
+        <div id="token-usage-body" class="hidden pt-6">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                <div class="border border-primary/15 bg-primary/5 p-3">
+                    <div class="text-[9px] text-primary/40 uppercase tracking-wider">Reported Turns</div>
+                    <div class="text-2xl font-bold glow-text" id="usage-reported-turns">0</div>
+                </div>
+                <div class="border border-primary/15 bg-primary/5 p-3">
+                    <div class="text-[9px] text-primary/40 uppercase tracking-wider">Total Tokens</div>
+                    <div class="text-2xl font-bold glow-text" id="usage-total-tokens">0</div>
+                </div>
+                <div class="border border-primary/15 bg-primary/5 p-3">
+                    <div class="text-[9px] text-primary/40 uppercase tracking-wider">Prompt</div>
+                    <div class="text-2xl font-bold glow-text" id="usage-prompt-tokens">0</div>
+                </div>
+                <div class="border border-primary/15 bg-primary/5 p-3">
+                    <div class="text-[9px] text-primary/40 uppercase tracking-wider">Completion</div>
+                    <div class="text-2xl font-bold glow-text" id="usage-completion-tokens">0</div>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <div class="text-[10px] text-primary/40 uppercase tracking-wider mb-2">By Provider</div>
+                    <div class="space-y-2" id="usage-by-provider"></div>
+                </div>
+                <div>
+                    <div class="text-[10px] text-primary/40 uppercase tracking-wider mb-2">Recent Turns</div>
+                    <div class="space-y-2 max-h-40 overflow-y-auto pr-1" id="usage-recent-turns"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Terminal Log Footer -->
+    <div class="matrix-card p-4 font-mono text-[11px] leading-tight space-y-1">
+        <div class="flex gap-2">
+            <span class="text-primary/40">[SYS]</span>
+            <span class="text-primary">Initializing core sequence... <span class="text-white">SUCCESS</span></span>
+        </div>
+        <div class="flex gap-2">
+            <span class="text-primary/40">[SYS]</span>
+            <span class="text-primary">Loading matrix parameters: model={{ model }}, temp={{ temperature }}</span>
+        </div>
+        <div class="flex gap-2">
+            <span class="text-primary/40">[SYS]</span>
+            <span class="text-primary">Syncing with distributed nodes... <span class="blinking">_</span></span>
+        </div>
+        <div class="flex gap-2 pt-2 border-t border-primary/10 mt-2">
+            <span class="text-primary/60">$</span>
+            <span class="text-primary cursor-default outline-none">root@nanobot_os:~# <span
+                    class="bg-primary text-black ml-1 px-1"> </span></span>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const startTime = {{ request.app.state.start_time }};
+    const initialTokenUsage = {{ token_usage | tojson }};
+    const uptimeEl = document.getElementById('uptime');
+    const uptimeLabelEl = document.getElementById('uptime-label');
+    const tokenUsageToggle = document.getElementById('token-usage-toggle');
+    const tokenUsageBody = document.getElementById('token-usage-body');
+    const tokenUsageToggleIcon = document.getElementById('token-usage-toggle-icon');
+
+    function updateUptime() {
+        const now = Date.now() / 1000;
+        const diff = Math.floor(now - startTime);
+        const days = Math.floor(diff / 86400);
+        const hours = Math.floor((diff % 86400) / 3600);
+        const mins = Math.floor((diff % 3600) / 60);
+        const secs = diff % 60;
+        const pad = n => String(n).padStart(2, '0');
+        uptimeEl.textContent = `${pad(days)}:${pad(hours)}:${pad(mins)}:${pad(secs)}`;
+        if (uptimeLabelEl) uptimeLabelEl.textContent = `Days:Hrs:Min:Sec`;
+    }
+    updateUptime();
+    setInterval(updateUptime, 1000);
+
+    function setTokenUsageExpanded(expanded) {
+        if (!tokenUsageToggle || !tokenUsageBody) return;
+        tokenUsageToggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        tokenUsageBody.classList.toggle('hidden', !expanded);
+        if (tokenUsageToggleIcon) {
+            tokenUsageToggleIcon.textContent = expanded ? 'expand_less' : 'expand_more';
+        }
+    }
+
+    if (tokenUsageToggle) {
+        tokenUsageToggle.addEventListener('click', () => {
+            const expanded = tokenUsageToggle.getAttribute('aria-expanded') === 'true';
+            setTokenUsageExpanded(!expanded);
+        });
+    }
+
+    function formatUsageNumber(value) {
+        return Number(value || 0).toLocaleString();
+    }
+
+    function escapeUsageHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, ch => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;',
+        }[ch]));
+    }
+
+    function renderUsageList(containerId, rows, emptyText, formatter) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        if (!rows || rows.length === 0) {
+            container.innerHTML = `<div class="border border-primary/10 border-dashed p-3 text-[10px] text-primary/30 uppercase">${emptyText}</div>`;
+            return;
+        }
+        container.innerHTML = rows.map(formatter).join('');
+    }
+
+    function renderTokenUsage(stats) {
+        const totals = stats?.totals || {};
+        document.getElementById('usage-reported-turns').textContent = formatUsageNumber(totals.reported_turn_count);
+        document.getElementById('usage-total-tokens').textContent = formatUsageNumber(totals.total_tokens);
+        document.getElementById('usage-prompt-tokens').textContent = formatUsageNumber(totals.prompt_tokens);
+        document.getElementById('usage-completion-tokens').textContent = formatUsageNumber(totals.completion_tokens);
+
+        const byProvider = [...(stats?.by_provider || [])]
+            .sort((a, b) => (b.total_tokens || 0) - (a.total_tokens || 0))
+            .slice(0, 5);
+        renderUsageList('usage-by-provider', byProvider, 'No provider usage yet', row => `
+            <div class="flex items-center justify-between border border-primary/10 bg-black/20 px-3 py-2">
+                <div class="min-w-0">
+                    <div class="text-[11px] font-bold uppercase tracking-wider glow-text truncate">${escapeUsageHtml(row.key)}</div>
+                    <div class="text-[9px] text-primary/35 uppercase">${formatUsageNumber(row.turn_count)} turns</div>
+                </div>
+                <div class="text-sm font-bold text-primary/80">${formatUsageNumber(row.total_tokens)}</div>
+            </div>
+        `);
+
+        const recent = [...(stats?.recent || [])].reverse().slice(0, 6);
+        renderUsageList('usage-recent-turns', recent, 'No turns recorded yet', row => `
+            <div class="border border-primary/10 bg-black/20 px-3 py-2">
+                <div class="flex items-center justify-between gap-3">
+                    <div class="text-[10px] font-bold uppercase tracking-wider glow-text truncate">${escapeUsageHtml(row.model)}</div>
+                    <div class="text-xs font-bold text-primary/80">${formatUsageNumber(row.total_tokens)}</div>
+                </div>
+                <div class="mt-1 flex flex-wrap gap-2 text-[9px] text-primary/35 uppercase">
+                    <span>${escapeUsageHtml(row.provider)}</span>
+                    <span>${escapeUsageHtml(row.session_ref)}</span>
+                    ${row.fallback_name ? `<span>fallback: ${escapeUsageHtml(row.fallback_name)}</span>` : ''}
+                </div>
+            </div>
+        `);
+
+        const updated = document.getElementById('token-usage-updated');
+        if (updated) updated.textContent = `Updated ${new Date().toLocaleTimeString()}`;
+    }
+
+    async function refreshTokenUsage() {
+        try {
+            const response = await fetch('/api/token-usage', { credentials: 'same-origin' });
+            if (!response.ok) return;
+            const payload = await response.json();
+            renderTokenUsage(payload.stats || {});
+        } catch (_err) {
+            // Dashboard telemetry is best-effort; leave the last rendered snapshot in place.
+        }
+    }
+
+    renderTokenUsage(initialTokenUsage);
+    refreshTokenUsage();
+    setInterval(refreshTokenUsage, 10000);
+</script>
+{% endblock %}

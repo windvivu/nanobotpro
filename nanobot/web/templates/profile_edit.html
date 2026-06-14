@@ -1,0 +1,433 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ profile.name }} — Nanobot OS{% endblock %}
+{% block content %}
+<!-- Sidebar -->
+<aside class="w-full lg:w-72 flex flex-col gap-6">
+    <div class="matrix-card p-6 flex flex-col items-center text-center gap-4">
+        <div
+            class="w-20 h-20 flex items-center justify-center text-primary glow-text border-2 border-primary/30 rounded-full relative">
+            <div class="absolute inset-0 border border-primary animate-pulse rounded-full opacity-20"></div>
+            <span class="material-symbols-outlined text-4xl">edit</span>
+        </div>
+        <div>
+            <h2 class="text-lg font-bold glow-text tracking-widest uppercase">{{ profile.name }}</h2>
+            <p class="text-[10px] text-primary/50 font-mono">Profile Editor</p>
+            {% if profile_id == active_id %}
+            <span class="inline-flex items-center gap-1 mt-1 text-[9px] text-primary/70 uppercase tracking-wider">
+                <span class="w-1.5 h-1.5 bg-primary rounded-full animate-pulse shadow-[0_0_5px_#00FF41]"></span>Active
+            </span>
+            {% else %}
+            <span
+                class="inline-flex items-center gap-1 mt-1 text-[9px] text-primary/30 uppercase tracking-wider">Inactive</span>
+            {% endif %}
+        </div>
+    </div>
+
+    {% set active_page = "profiles" %}
+
+
+    {% include "_sidebar_nav.html" %}
+
+    <!-- File info -->
+    <div class="matrix-card p-4 text-[10px] leading-relaxed text-primary/40 uppercase tracking-tighter space-y-1">
+        <div class="flex justify-between">
+            <span>SOUL.md</span>
+            <span class="text-primary/70">{{ soul.size ~ ' B' if soul.exists else 'N/A' }}</span>
+        </div>
+        <div class="flex justify-between">
+            <span>USER.md</span>
+            <span class="text-primary/70">{{ user.size ~ ' B' if user.exists else 'N/A' }}</span>
+        </div>
+        <div class="flex justify-between">
+            <span>Memory.md</span>
+            <span class="text-primary/70">{{ memory.size ~ ' B' if memory.exists else 'N/A' }}</span>
+        </div>
+        <div class="flex justify-between">
+            <span>History.md</span>
+            <span class="text-primary/70">{{ history.size ~ ' B' if history.exists else 'N/A' }}</span>
+        </div>
+    </div>
+</aside>
+
+<!-- Main Content -->
+<div class="flex-1 flex flex-col gap-4">
+
+    {% if saved %}
+    <div id="flashMsg"
+        class="fixed top-6 right-6 z-50 matrix-card border-primary bg-black/95 px-6 py-4 flex items-center gap-4 shadow-[0_0_20px_rgba(0,255,65,0.3)]"
+        style="animation: toastIn 0.3s ease-out;">
+        <span class="material-symbols-outlined text-primary glow-text">check_circle</span>
+        <span class="text-sm font-bold glow-text uppercase tracking-widest">File Saved</span>
+        <button onclick="document.getElementById('flashMsg').style.display='none'"
+            class="ml-4 text-primary/40 hover:text-primary transition-colors">
+            <span class="material-symbols-outlined text-sm">close</span>
+        </button>
+    </div>
+    {% endif %}
+
+    <!-- Header -->
+    <div class="matrix-card p-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <a href="/profiles" class="text-primary/40 hover:text-primary transition-colors">
+                <span class="material-symbols-outlined text-sm">arrow_back</span>
+            </a>
+            <span class="material-symbols-outlined text-xl glow-text">edit</span>
+            <div>
+                <h2 class="text-sm font-bold glow-text tracking-widest uppercase">Edit: {{ profile.name }}</h2>
+                <p class="text-[9px] text-primary/40 uppercase tracking-wider">Profile ID: {{ profile_id }}</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-3">
+            {% if profile_id != active_id %}
+            <span
+                class="px-3 py-1 border border-primary/20 text-[9px] text-primary/40 uppercase tracking-widest">Inactive</span>
+            {% else %}
+            <span
+                class="px-3 py-1 border border-primary/40 bg-primary/10 text-[9px] text-primary glow-text uppercase tracking-widest flex items-center gap-1">
+                <span class="w-1.5 h-1.5 bg-primary rounded-full animate-pulse"></span>Active
+            </span>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Tab Headers -->
+    <div class="matrix-card p-0 flex">
+        <button id="tab-soul" onclick="switchTab('soul')"
+            class="flex-1 px-6 py-4 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest border-b-2 transition-all">
+            <span class="material-symbols-outlined text-sm">auto_awesome</span>SOUL
+        </button>
+        <button id="tab-user" onclick="switchTab('user')"
+            class="flex-1 px-6 py-4 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest border-b-2 transition-all">
+            <span class="material-symbols-outlined text-sm">person</span>USER
+        </button>
+        <button id="tab-memory" onclick="switchTab('memory')"
+            class="flex-1 px-6 py-4 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest border-b-2 transition-all">
+            <span class="material-symbols-outlined text-sm">psychology_alt</span>MEMORY
+        </button>
+        <button id="tab-history" onclick="switchTab('history')"
+            class="flex-1 px-6 py-4 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest border-b-2 transition-all">
+            <span class="material-symbols-outlined text-sm">history</span>HISTORY
+        </button>
+    </div>
+
+    <!-- Tab: SOUL.md -->
+    <div id="content-soul" class="flex flex-col gap-4 flex-1">
+        {% if default_soul %}
+        <div class="flex justify-end">
+            <button type="button" onclick="toggleTemplatePanel('soul')"
+                class="px-4 py-2 border border-primary/30 bg-black/40 text-primary/60 font-bold uppercase tracking-widest text-[10px] hover:border-primary hover:text-primary hover:bg-primary/10 transition-all duration-300 flex items-center gap-2">
+                <span class="material-symbols-outlined text-[14px]">content_copy</span>
+                <span id="tplBtnText-soul">Show Template</span>
+            </button>
+        </div>
+        {% endif %}
+        <form method="POST" action="/profiles/{{ profile_id }}/edit" class="flex flex-col gap-4 flex-1">
+            <input type="hidden" name="tab" value="soul">
+            <div class="flex gap-4 flex-1 items-stretch">
+                <div class="flex-1 min-w-0 flex flex-col">
+                    <div class="matrix-card p-4 flex-1 flex flex-col">
+                        <textarea name="content" id="soul-editor"
+                            class="flex-1 w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.15)] outline-none p-4 text-primary/90 font-mono text-xs leading-relaxed resize-none min-h-[400px] transition-all duration-300"
+                            style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;"
+                            spellcheck="false">{{ soul.content }}</textarea>
+                    </div>
+                </div>
+                {% if default_soul %}
+                <div id="tplPanel-soul" class="w-[400px] flex-shrink-0 flex flex-col" style="display: none;">
+                    <div
+                        class="matrix-card p-4 flex-1 flex flex-col border-primary/20 bg-black/30 overflow-hidden h-[500px]">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-[10px] text-primary/40 uppercase tracking-widest font-bold">Default
+                                Template</span>
+                            <button type="button" onclick="copyTemplate('soul')"
+                                class="text-[9px] text-primary/40 hover:text-primary transition-colors uppercase tracking-wider flex items-center gap-1">
+                                <span class="material-symbols-outlined text-[12px]">content_copy</span>Copy
+                            </button>
+                        </div>
+                        <pre id="tplContent-soul"
+                            class="flex-1 overflow-auto text-[10px] text-white/80 font-mono leading-relaxed whitespace-pre-wrap break-words"
+                            style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;">{{ default_soul }}</pre>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            <div class="flex justify-end">
+                <button type="submit"
+                    class="px-8 py-3 border border-primary bg-primary/10 glow-text font-bold uppercase tracking-[0.3em] text-sm hover:bg-primary hover:text-black transition-all duration-300 flex items-center gap-3">
+                    <span class="material-symbols-outlined text-sm">save</span>Save SOUL.md
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Tab: USER.md -->
+    <div id="content-user" class="flex flex-col gap-4 flex-1" style="display:none;">
+        {% if default_user %}
+        <div class="flex justify-end">
+            <button type="button" onclick="toggleTemplatePanel('user')"
+                class="px-4 py-2 border border-primary/30 bg-black/40 text-primary/60 font-bold uppercase tracking-widest text-[10px] hover:border-primary hover:text-primary hover:bg-primary/10 transition-all duration-300 flex items-center gap-2">
+                <span class="material-symbols-outlined text-[14px]">content_copy</span>
+                <span id="tplBtnText-user">Show Template</span>
+            </button>
+        </div>
+        {% endif %}
+        <form method="POST" action="/profiles/{{ profile_id }}/edit" class="flex flex-col gap-4 flex-1">
+            <input type="hidden" name="tab" value="user">
+            <div class="flex gap-4 flex-1 items-stretch">
+                <div class="flex-1 min-w-0 flex flex-col">
+                    <div class="matrix-card p-4 flex-1 flex flex-col">
+                        <textarea name="content" id="user-editor"
+                            class="flex-1 w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.15)] outline-none p-4 text-primary/90 font-mono text-xs leading-relaxed resize-none min-h-[400px] transition-all duration-300"
+                            style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;"
+                            spellcheck="false">{{ user.content }}</textarea>
+                    </div>
+                </div>
+                {% if default_user %}
+                <div id="tplPanel-user" class="w-[400px] flex-shrink-0 flex flex-col" style="display: none;">
+                    <div
+                        class="matrix-card p-4 flex-1 flex flex-col border-primary/20 bg-black/30 overflow-hidden h-[500px]">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-[10px] text-primary/40 uppercase tracking-widest font-bold">Default
+                                Template</span>
+                            <button type="button" onclick="copyTemplate('user')"
+                                class="text-[9px] text-primary/40 hover:text-primary transition-colors uppercase tracking-wider flex items-center gap-1">
+                                <span class="material-symbols-outlined text-[12px]">content_copy</span>Copy
+                            </button>
+                        </div>
+                        <pre id="tplContent-user"
+                            class="flex-1 overflow-auto text-[10px] text-white/80 font-mono leading-relaxed whitespace-pre-wrap break-words"
+                            style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;">{{ default_user }}</pre>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            <div class="flex justify-end">
+                <button type="submit"
+                    class="px-8 py-3 border border-primary bg-primary/10 glow-text font-bold uppercase tracking-[0.3em] text-sm hover:bg-primary hover:text-black transition-all duration-300 flex items-center gap-3">
+                    <span class="material-symbols-outlined text-sm">save</span>Save USER.md
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Tab: MEMORY.md -->
+    <div id="content-memory" class="flex flex-col gap-4 flex-1" style="display:none;">
+        <div class="flex justify-end gap-3">
+            <button type="button" onclick="document.getElementById('resetMemoryModal').style.display='flex'"
+                class="px-4 py-2 border border-red-500/30 bg-black/40 text-red-400/60 font-bold uppercase tracking-widest text-[10px] hover:border-red-500 hover:text-red-400 hover:bg-red-500/10 transition-all duration-300 flex items-center gap-2"
+                title="Reset MEMORY.md to template + clear HISTORY.md">
+                <span class="material-symbols-outlined text-[14px]">delete_sweep</span>
+                Reset Memory
+            </button>
+            {% if default_memory %}
+            <button type="button" onclick="toggleTemplatePanel('memory')"
+                class="px-4 py-2 border border-primary/30 bg-black/40 text-primary/60 font-bold uppercase tracking-widest text-[10px] hover:border-primary hover:text-primary hover:bg-primary/10 transition-all duration-300 flex items-center gap-2">
+                <span class="material-symbols-outlined text-[14px]">content_copy</span>
+                <span id="tplBtnText-memory">Show Template</span>
+            </button>
+            {% endif %}
+        </div>
+        <form method="POST" action="/profiles/{{ profile_id }}/edit" class="flex flex-col gap-4 flex-1">
+            <input type="hidden" name="tab" value="memory">
+            <div class="flex gap-4 flex-1 items-stretch">
+                <div class="flex-1 min-w-0 flex flex-col">
+                    <div class="matrix-card p-4 flex-1 flex flex-col">
+                        <textarea name="content" id="memory-editor"
+                            class="flex-1 w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.15)] outline-none p-4 text-primary/90 font-mono text-xs leading-relaxed resize-none min-h-[400px] transition-all duration-300"
+                            style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;"
+                            spellcheck="false">{{ memory.content }}</textarea>
+                    </div>
+                </div>
+                {% if default_memory %}
+                <div id="tplPanel-memory" class="w-[400px] flex-shrink-0 flex flex-col" style="display: none;">
+                    <div
+                        class="matrix-card p-4 flex-1 flex flex-col border-primary/20 bg-black/30 overflow-hidden h-[500px]">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-[10px] text-primary/40 uppercase tracking-widest font-bold">Default
+                                Template</span>
+                            <button type="button" onclick="copyTemplate('memory')"
+                                class="text-[9px] text-primary/40 hover:text-primary transition-colors uppercase tracking-wider flex items-center gap-1">
+                                <span class="material-symbols-outlined text-[12px]">content_copy</span>Copy
+                            </button>
+                        </div>
+                        <pre id="tplContent-memory"
+                            class="flex-1 overflow-auto text-[10px] text-white/80 font-mono leading-relaxed whitespace-pre-wrap break-words"
+                            style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;">{{ default_memory }}</pre>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            <div class="flex justify-end">
+                <button type="submit"
+                    class="px-8 py-3 border border-primary bg-primary/10 glow-text font-bold uppercase tracking-[0.3em] text-sm hover:bg-primary hover:text-black transition-all duration-300 flex items-center gap-3">
+                    <span class="material-symbols-outlined text-sm">save</span>Save MEMORY.md
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Tab: HISTORY.md (no template) -->
+    <div id="content-history" class="flex flex-col gap-4 flex-1" style="display:none;">
+        <div class="flex justify-end">
+            <button type="button" onclick="document.getElementById('resetMemoryModal').style.display='flex'"
+                class="px-4 py-2 border border-red-500/30 bg-black/40 text-red-400/60 font-bold uppercase tracking-widest text-[10px] hover:border-red-500 hover:text-red-400 hover:bg-red-500/10 transition-all duration-300 flex items-center gap-2"
+                title="Reset MEMORY.md to template + clear HISTORY.md">
+                <span class="material-symbols-outlined text-[14px]">delete_sweep</span>
+                Reset Memory
+            </button>
+        </div>
+        <form method="POST" action="/profiles/{{ profile_id }}/edit" class="flex flex-col gap-4 flex-1">
+            <input type="hidden" name="tab" value="history">
+            <div class="matrix-card p-4 flex-1 flex flex-col">
+                <textarea name="content" id="history-editor"
+                    class="flex-1 w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.15)] outline-none p-4 text-primary/90 font-mono text-xs leading-relaxed resize-none min-h-[400px] transition-all duration-300"
+                    style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;"
+                    spellcheck="false">{{ history.content }}</textarea>
+            </div>
+            <div class="flex justify-end">
+                <button type="submit"
+                    class="px-8 py-3 border border-primary bg-primary/10 glow-text font-bold uppercase tracking-[0.3em] text-sm hover:bg-primary hover:text-black transition-all duration-300 flex items-center gap-3">
+                    <span class="material-symbols-outlined text-sm">save</span>Save HISTORY.md
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Terminal Footer -->
+    <div class="matrix-card p-4 font-mono text-[10px] space-y-1 mt-auto">
+        <div class="flex gap-2">
+            <span class="text-primary/40">[PRF]</span>
+            <span class="text-primary">Editing: {{ profile.name }} ({{ profile_id }})</span>
+        </div>
+        <div class="flex gap-2 pt-2 border-t border-primary/10 mt-2">
+            <span class="text-primary/60">$</span>
+            <span class="text-primary cursor-default outline-none">root@nanobot_os:/profiles/edit# <span
+                    class="bg-primary text-black ml-1 px-1"> </span></span>
+        </div>
+    </div>
+</div>
+
+<!-- Reset Memory Confirm Modal -->
+<div id="resetMemoryModal" class="fixed inset-0 z-50 bg-black/80 items-center justify-center" style="display: none;">
+    <div
+        class="matrix-card p-6 w-full max-w-md flex flex-col gap-5 border-red-500/40 shadow-[0_0_30px_rgba(255,0,0,0.15)]">
+        <div class="flex items-center gap-3">
+            <span class="material-symbols-outlined text-red-500">warning</span>
+            <h3 class="text-sm font-bold uppercase tracking-widest text-red-400">Reset Memory</h3>
+        </div>
+        <p class="text-xs text-primary/70 leading-relaxed">
+            This will <strong class="text-red-400">reset MEMORY.md</strong> to default template and
+            <strong class="text-red-400">clear HISTORY.md</strong> for
+            <strong class="text-primary glow-text">{{ profile.name }}</strong>.
+        </p>
+        <p class="text-[10px] text-primary/40 leading-relaxed">
+            The bot will forget all learned facts and conversation history for this profile.
+            SOUL.md and USER.md will not be affected.
+        </p>
+        <form method="POST" action="/profiles/{{ profile_id }}/reset-memory" class="flex gap-3">
+            <button type="submit"
+                class="flex-1 px-6 py-3 border border-red-500/50 bg-red-500/10 text-red-400 font-bold uppercase tracking-widest text-sm hover:bg-red-500/20 transition-all duration-300 flex items-center justify-center gap-2">
+                <span class="material-symbols-outlined text-sm">delete_sweep</span>
+                Reset Now
+            </button>
+            <button type="button" onclick="document.getElementById('resetMemoryModal').style.display='none'"
+                class="px-6 py-3 border border-primary/20 text-primary/40 font-bold uppercase tracking-widest text-sm hover:text-primary transition-colors">
+                Cancel
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+    /* Disable CRT effects for readability */
+    .crt-overlay,
+    .crt-scanline {
+        display: none !important;
+    }
+
+    @keyframes toastIn {
+        from {
+            opacity: 0;
+            transform: translateX(20px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
+    }
+</style>
+<script>
+    const TABS = ['soul', 'user', 'memory', 'history'];
+
+    function switchTab(tab) {
+        TABS.forEach(t => {
+            const content = document.getElementById('content-' + t);
+            const btn = document.getElementById('tab-' + t);
+            if (t === tab) {
+                content.style.display = 'flex';
+                btn.className = btn.className.replace(/border-b-transparent/g, '').replace(/text-primary\/40/g, '');
+                btn.classList.add('border-b-primary', 'text-primary', 'bg-primary/10');
+                btn.classList.remove('border-b-transparent', 'text-primary/40');
+            } else {
+                content.style.display = 'none';
+                btn.classList.remove('border-b-primary', 'text-primary', 'bg-primary/10');
+                btn.classList.add('border-b-transparent', 'text-primary/40');
+            }
+        });
+    }
+
+    function toggleTemplatePanel(tab) {
+        const panel = document.getElementById('tplPanel-' + tab);
+        const btnText = document.getElementById('tplBtnText-' + tab);
+        if (!panel) return;
+        const visible = panel.style.display !== 'none';
+        panel.style.display = visible ? 'none' : 'flex';
+        if (btnText) btnText.textContent = visible ? 'Show Template' : 'Hide Template';
+    }
+
+    function copyTemplate(tab) {
+        const pre = document.getElementById('tplContent-' + tab);
+        if (!pre) return;
+        navigator.clipboard.writeText(pre.textContent).then(() => {
+            const btn = pre.closest('.matrix-card').querySelector('button');
+            if (btn) {
+                const orig = btn.innerHTML;
+                btn.innerHTML = '<span class="material-symbols-outlined text-[12px]">check</span>Copied!';
+                setTimeout(() => btn.innerHTML = orig, 1500);
+            }
+        });
+    }
+
+    // Before form submit, add tpl param if template panel is open
+    document.querySelectorAll('form').forEach(form => {
+        form.addEventListener('submit', function () {
+            const tabInput = form.querySelector('input[name="tab"]');
+            if (!tabInput) return;
+            const tab = tabInput.value;
+            const panel = document.getElementById('tplPanel-' + tab);
+            if (panel && panel.style.display !== 'none') {
+                // Modify action URL to include tpl=1
+                const url = new URL(form.action, window.location.origin);
+                url.searchParams.set('tpl', '1');
+                form.action = url.toString();
+            }
+        });
+    });
+
+    // Init
+    switchTab('{{ active_tab }}');
+
+    // Restore template panel if tpl=1
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('tpl') === '1') {
+        toggleTemplatePanel('{{ active_tab }}');
+    }
+
+    // Auto-hide toast
+    const flash = document.getElementById('flashMsg');
+    if (flash) setTimeout(() => { flash.style.opacity = '0'; flash.style.transition = 'opacity 0.5s'; setTimeout(() => flash.style.display = 'none', 500); }, 3000);
+</script>
+{% endblock %}

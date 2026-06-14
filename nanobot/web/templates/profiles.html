@@ -1,0 +1,514 @@
+{% extends "base.html" %}
+{% block title %}Profiles — Nanobot OS{% endblock %}
+{% block content %}
+<!-- Sidebar -->
+<aside class="w-full lg:w-72 flex flex-col gap-6">
+    <div class="matrix-card p-6 flex flex-col items-center text-center gap-4">
+        <div
+            class="w-20 h-20 flex items-center justify-center text-primary glow-text border-2 border-primary/30 rounded-full relative">
+            <div class="absolute inset-0 border border-primary animate-pulse rounded-full opacity-20"></div>
+            <span class="material-symbols-outlined text-4xl">swap_horiz</span>
+        </div>
+        <div>
+            <h2 class="text-lg font-bold glow-text tracking-widest uppercase">Profiles</h2>
+            <p class="text-[10px] text-primary/50 font-mono truncate max-w-[200px]">{{ active_id or 'No Profile' }}</p>
+        </div>
+    </div>
+
+    {% set active_page = "profiles" %}
+
+
+    {% include "_sidebar_nav.html" %}
+</aside>
+
+<!-- Main Content -->
+<div class="flex-1 flex flex-col gap-6 min-w-0">
+    <!-- Toast notification -->
+    {% if saved %}
+    <div id="flashMsg"
+        class="fixed top-6 right-6 z-50 matrix-card border-primary bg-black/95 px-6 py-4 flex items-center gap-4 shadow-[0_0_20px_rgba(0,255,65,0.3)]"
+        style="animation: toastIn 0.3s ease-out;">
+        <span class="material-symbols-outlined text-primary glow-text">check_circle</span>
+        <div>
+            <span class="text-sm font-bold glow-text uppercase tracking-widest">
+                {% if action == 'created' %}Profile Created
+                {% elif action == 'switched' %}Profile Switched — Restart Gateway
+                {% elif action == 'deleted' %}Profile Deleted
+                {% elif action == 'renamed' %}Profile Renamed
+                {% else %}Done{% endif %}
+            </span>
+        </div>
+        <button onclick="document.getElementById('flashMsg').style.display='none'"
+            class="ml-4 text-primary/40 hover:text-primary transition-colors">
+            <span class="material-symbols-outlined text-sm">close</span>
+        </button>
+    </div>
+    {% endif %}
+
+    <!-- Header -->
+    <div class="matrix-card p-6 flex items-center justify-between">
+        <div class="flex items-center gap-4">
+            <span class="material-symbols-outlined text-2xl glow-text">swap_horiz</span>
+            <div>
+                <h2 class="text-lg font-bold glow-text tracking-widest uppercase">Personality Profiles</h2>
+                <p class="text-[10px] text-primary/40 uppercase tracking-widest mt-1">
+                    Create and switch between different bot personalities
+                </p>
+            </div>
+        </div>
+        <button onclick="document.getElementById('createModal').style.display='flex'"
+            class="px-6 py-3 border border-primary bg-primary/10 text-primary font-bold uppercase tracking-[0.3em] text-sm hover:bg-primary hover:text-black transition-all duration-300 glow-text flex items-center gap-3 group">
+            <span class="material-symbols-outlined text-sm group-hover:text-black transition-colors">add</span>
+            New Profile <span class="blinking">_</span>
+        </button>
+    </div>
+
+    <!-- Active Profile Indicator -->
+    {% if active_id %}
+    <div class="matrix-card p-4 border-primary/40 bg-primary/5 flex items-center gap-4">
+        <span class="material-symbols-outlined text-primary glow-text">play_circle</span>
+        <span class="text-[10px] text-primary/60 uppercase tracking-widest font-bold">Active:</span>
+        {% for p in profiles %}
+        {% if p.id == active_id %}
+        <span class="text-sm font-bold glow-text uppercase tracking-wider">{{ p.name }}</span>
+        {% endif %}
+        {% endfor %}
+        <span class="text-[10px] text-primary/30 ml-auto">ID: {{ active_id }}</span>
+    </div>
+    {% endif %}
+
+    <!-- Profiles Grid -->
+    {% if profiles %}
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        {% for p in profiles %}
+        <div
+            class="matrix-card p-0 flex flex-col {{ 'profile-active-card border-primary/60' if p.id == active_id else 'border-primary/15' }}">
+            <!-- Profile Header -->
+            <div class="p-4 border-b border-primary/10 flex items-center gap-3">
+                <span
+                    class="material-symbols-outlined {{ 'text-primary glow-text' if p.id == active_id else 'text-primary/40' }}">
+                    {{ 'play_circle' if p.id == active_id else 'person' }}
+                </span>
+                <div class="flex-1 min-w-0">
+                    <h3
+                        class="text-sm font-bold uppercase tracking-wider {{ 'glow-text' if p.id == active_id else 'text-primary/80' }} truncate">
+                        {{ p.name }}
+                    </h3>
+                    {% if p.description %}
+                    <p class="text-[10px] text-primary/40 mt-0.5 truncate">{{ p.description }}</p>
+                    {% endif %}
+                </div>
+                {% if p.id == active_id %}
+                <span
+                    class="text-[9px] font-bold uppercase tracking-widest text-primary bg-primary/20 px-2 py-1 border border-primary/30">Active</span>
+                {% endif %}
+            </div>
+
+            <!-- SOUL.md Preview -->
+            <div class="p-4 flex-1">
+                {% if p.soul_preview %}
+                <pre
+                    class="text-[10px] text-primary/50 font-mono leading-relaxed whitespace-pre-wrap break-words line-clamp-4">{{ p.soul_preview }}</pre>
+                {% else %}
+                <p class="text-[10px] text-primary/30 italic">No SOUL.md content</p>
+                {% endif %}
+            </div>
+
+            <!-- Meta + Actions -->
+            <div class="p-4 border-t border-primary/10 flex flex-col gap-3">
+                <div class="flex items-center gap-4 text-[9px] text-primary/30 uppercase tracking-wider">
+                    <span>Created: {{ p.created }}</span>
+                    {% if p.has_memory %}
+                    <span class="flex items-center gap-1"><span
+                            class="material-symbols-outlined text-[10px]">psychology_alt</span>Memory</span>
+                    {% endif %}
+                    {% if p.has_history %}
+                    <span class="flex items-center gap-1"><span
+                            class="material-symbols-outlined text-[10px]">history</span>History</span>
+                    {% endif %}
+                </div>
+                <div class="flex items-center gap-2">
+                    {% if p.id != active_id %}
+                    <button onclick="confirmSwitch('{{ p.id }}', '{{ p.name }}')"
+                        class="flex-1 px-3 py-2 border border-primary/30 bg-primary/5 text-primary/80 font-bold uppercase tracking-widest text-[10px] hover:bg-primary hover:text-black transition-all duration-300 flex items-center justify-center gap-2">
+                        <span class="material-symbols-outlined text-[12px]">swap_horiz</span>Switch
+                    </button>
+                    <a href="/profiles/{{ p.id }}/edit"
+                        class="px-3 py-2 border border-primary/30 text-primary/60 font-bold uppercase tracking-widest text-[10px] hover:bg-primary/10 hover:text-primary transition-all duration-300 flex items-center gap-1">
+                        <span class="material-symbols-outlined text-[12px]">edit</span>
+                    </a>
+                    <button onclick="confirmDelete('{{ p.id }}', '{{ p.name }}')"
+                        class="px-3 py-2 border border-red-500/30 text-red-500/60 font-bold uppercase tracking-widest text-[10px] hover:bg-red-500/10 hover:text-red-400 transition-all duration-300 flex items-center gap-1">
+                        <span class="material-symbols-outlined text-[12px]">delete</span>
+                    </button>
+                    {% else %}
+                    <span
+                        class="flex-1 px-3 py-2 border border-primary/20 bg-primary/10 text-primary/40 font-bold uppercase tracking-widest text-[10px] flex items-center justify-center gap-2 cursor-default">
+                        <span class="material-symbols-outlined text-[12px]">lock</span>Active — Switch to edit
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <!-- Empty State -->
+    <div class="matrix-card p-16 flex flex-col items-center justify-center gap-6 text-center">
+        <span class="material-symbols-outlined text-6xl text-primary/15">swap_horiz</span>
+        <div>
+            <h3 class="text-sm font-bold uppercase tracking-widest text-primary/40">No Profiles Yet</h3>
+            <p class="text-[10px] text-primary/25 mt-2 uppercase tracking-wider">Create your first profile to start
+                managing multiple personalities</p>
+        </div>
+        <button onclick="document.getElementById('createModal').style.display='flex'"
+            class="px-6 py-3 border border-primary bg-primary/10 text-primary font-bold uppercase tracking-[0.3em] text-sm hover:bg-primary hover:text-black transition-all duration-300 flex items-center gap-3">
+            <span class="material-symbols-outlined text-sm">add</span>Create First Profile
+        </button>
+    </div>
+    {% endif %}
+
+    <!-- Terminal Footer -->
+    <div class="matrix-card p-4 font-mono text-[10px] space-y-1 mt-auto">
+        <div class="flex gap-2">
+            <span class="text-primary/40">[PRF]</span>
+            <span class="text-primary">Total profiles: {{ profiles|length }}</span>
+        </div>
+        <div class="flex gap-2 pt-2 border-t border-primary/10 mt-2">
+            <span class="text-primary/60">$</span>
+            <span class="text-primary cursor-default outline-none">root@nanobot_os:/profiles# <span
+                    class="bg-primary text-black ml-1 px-1"> </span></span>
+        </div>
+    </div>
+</div>
+
+<!-- Create Profile Modal -->
+<div id="createModal" class="fixed inset-0 z-50 bg-black/80 items-center justify-center" style="display: none;">
+    <div
+        class="matrix-card p-6 w-full max-w-md flex flex-col gap-6 border-primary/40 shadow-[0_0_30px_rgba(0,255,65,0.2)]">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <span class="material-symbols-outlined text-primary glow-text">add_circle</span>
+                <h3 class="text-sm font-bold uppercase tracking-widest glow-text">New Profile</h3>
+            </div>
+            <button onclick="document.getElementById('createModal').style.display='none'"
+                class="text-primary/30 hover:text-primary transition-colors">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+        </div>
+
+        <form method="POST" action="/profiles/create" class="flex flex-col gap-4">
+            <div class="flex flex-col gap-2">
+                <label class="text-[10px] text-primary/60 uppercase tracking-widest font-bold">Profile Name *</label>
+                <input type="text" name="name" required placeholder="e.g. Friendly Cat 🐈"
+                    class="w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.15)] outline-none px-4 py-3 text-primary/90 font-mono text-xs transition-all duration-300">
+            </div>
+            <div class="flex flex-col gap-2">
+                <label class="text-[10px] text-primary/60 uppercase tracking-widest font-bold">Description</label>
+                <input type="text" name="description" placeholder="Short description..."
+                    class="w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.15)] outline-none px-4 py-3 text-primary/90 font-mono text-xs transition-all duration-300">
+            </div>
+            <div class="flex flex-col gap-2">
+                <label class="text-[10px] text-primary/60 uppercase tracking-widest font-bold">Initialize From</label>
+                <div class="flex gap-3">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" name="source" value="current" checked class="accent-[#00FF41]">
+                        <span class="text-xs text-primary/80">Current workspace</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" name="source" value="template" class="accent-[#00FF41]">
+                        <span class="text-xs text-primary/80">Default template</span>
+                    </label>
+                </div>
+            </div>
+            <div class="flex gap-3 mt-2">
+                <button type="submit"
+                    class="flex-1 px-6 py-3 border border-primary bg-primary/10 text-primary font-bold uppercase tracking-[0.3em] text-sm hover:bg-primary hover:text-black transition-all duration-300 flex items-center justify-center gap-3">
+                    <span class="material-symbols-outlined text-sm">save</span>
+                    Create
+                </button>
+                <button type="button" onclick="document.getElementById('createModal').style.display='none'"
+                    class="px-6 py-3 border border-primary/20 text-primary/40 font-bold uppercase tracking-widest text-sm hover:text-primary transition-colors">
+                    Cancel
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Switch Confirm Modal -->
+<div id="switchModal" class="fixed inset-0 z-50 bg-black/80 items-center justify-center" style="display: none;">
+    <div
+        class="matrix-card p-6 w-full max-w-md flex flex-col gap-5 border-yellow-500/40 shadow-[0_0_30px_rgba(255,200,0,0.15)]">
+        <div class="flex items-center gap-3">
+            <span class="material-symbols-outlined text-yellow-500">warning</span>
+            <h3 class="text-sm font-bold uppercase tracking-widest text-yellow-400">Confirm Switch</h3>
+        </div>
+        <p class="text-xs text-primary/70 leading-relaxed">
+            This will save your current workspace files and load <strong id="switchName"
+                class="text-primary glow-text"></strong>'s files.
+        </p>
+        <p class="text-[10px] text-primary/40 leading-relaxed">
+            Files affected: SOUL.md, USER.md, MEMORY.md, HISTORY.md<br>
+            You will need to restart the gateway for changes to take effect.
+        </p>
+        <form method="POST" action="/profiles/switch" class="flex gap-3">
+            <input type="hidden" name="profile_id" id="switchId">
+            <button type="submit"
+                class="flex-1 px-6 py-3 border border-yellow-500/50 bg-yellow-500/10 text-yellow-400 font-bold uppercase tracking-widest text-sm hover:bg-yellow-500/20 transition-all duration-300 flex items-center justify-center gap-2">
+                <span class="material-symbols-outlined text-sm">swap_horiz</span>
+                Switch Now
+            </button>
+            <button type="button" onclick="document.getElementById('switchModal').style.display='none'"
+                class="px-6 py-3 border border-primary/20 text-primary/40 font-bold uppercase tracking-widest text-sm hover:text-primary transition-colors">
+                Cancel
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- Delete Confirm Modal -->
+<div id="deleteModal" class="fixed inset-0 z-50 bg-black/80 items-center justify-center" style="display: none;">
+    <div
+        class="matrix-card p-6 w-full max-w-md flex flex-col gap-5 border-red-500/40 shadow-[0_0_30px_rgba(255,0,0,0.15)]">
+        <div class="flex items-center gap-3">
+            <span class="material-symbols-outlined text-red-500">delete_forever</span>
+            <h3 class="text-sm font-bold uppercase tracking-widest text-red-400">Confirm Delete</h3>
+        </div>
+        <p class="text-xs text-primary/70 leading-relaxed">
+            Permanently delete profile <strong id="deleteName" class="text-red-400"></strong>?
+            All saved SOUL.md, USER.md, MEMORY.md, and HISTORY.md will be lost.
+        </p>
+        <form method="POST" action="/profiles/delete" class="flex gap-3">
+            <input type="hidden" name="profile_id" id="deleteId">
+            <button type="submit"
+                class="flex-1 px-6 py-3 border border-red-500/50 bg-red-500/10 text-red-400 font-bold uppercase tracking-widest text-sm hover:bg-red-500/20 transition-all duration-300 flex items-center justify-center gap-2">
+                <span class="material-symbols-outlined text-sm">delete</span>
+                Delete
+            </button>
+            <button type="button" onclick="document.getElementById('deleteModal').style.display='none'"
+                class="px-6 py-3 border border-primary/20 text-primary/40 font-bold uppercase tracking-widest text-sm hover:text-primary transition-colors">
+                Cancel
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+    .crt-overlay,
+    .crt-scanline {
+        display: none !important;
+    }
+
+    @keyframes toastIn {
+        from {
+            opacity: 0;
+            transform: translateX(100px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
+    }
+
+    @keyframes toastOut {
+        from {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        to {
+            opacity: 0;
+            transform: translateX(100px);
+        }
+    }
+
+    .line-clamp-4 {
+        display: -webkit-box;
+        line-clamp: 4;
+        -webkit-line-clamp: 4;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    /* ── Active Profile Card Matrix Animation ── */
+    @keyframes active-card-glow {
+
+        0%,
+        100% {
+            box-shadow: 0 0 12px rgba(0, 255, 65, 0.5), 0 0 30px rgba(0, 255, 65, 0.15), inset 0 0 12px rgba(0, 255, 65, 0.08);
+        }
+
+        50% {
+            box-shadow: 0 0 25px rgba(0, 255, 65, 0.8), 0 0 60px rgba(0, 255, 65, 0.25), inset 0 0 20px rgba(0, 255, 65, 0.15);
+        }
+    }
+
+    @keyframes matrix-border-scan {
+        0% {
+            transform: translateY(-100%);
+            opacity: 0;
+        }
+
+        5% {
+            opacity: 1;
+        }
+
+        95% {
+            opacity: 1;
+        }
+
+        100% {
+            transform: translateY(100%);
+            opacity: 0;
+        }
+    }
+
+    @keyframes matrix-border-scan-h {
+        0% {
+            transform: translateX(-100%);
+            opacity: 0;
+        }
+
+        5% {
+            opacity: 1;
+        }
+
+        95% {
+            opacity: 1;
+        }
+
+        100% {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+    }
+
+    .profile-active-card {
+        position: relative;
+        animation: active-card-glow 2s ease-in-out infinite;
+        border-color: #00FF41 !important;
+    }
+
+    /* Top border scan (left→right) */
+    .profile-active-card::before {
+        content: '';
+        position: absolute;
+        top: -1px;
+        left: 0;
+        width: 40%;
+        height: 2px;
+        background: linear-gradient(90deg, transparent, #00FF41, transparent);
+        animation: matrix-border-scan-h 2.5s ease-in-out infinite;
+        pointer-events: none;
+        z-index: 10;
+    }
+
+    /* Right border scan (top→down) */
+    .profile-active-card::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        right: -1px;
+        width: 2px;
+        height: 40%;
+        background: linear-gradient(180deg, transparent, #00FF41, transparent);
+        animation: matrix-border-scan 2.5s ease-in-out infinite 0.6s;
+        pointer-events: none;
+        z-index: 10;
+    }
+
+    /* Bottom border scan (right→left) using JS-injected pseudo via wrapper */
+    .profile-active-card .active-border-bottom {
+        position: absolute;
+        bottom: -1px;
+        right: 0;
+        width: 40%;
+        height: 2px;
+        background: linear-gradient(270deg, transparent, #00FF41, transparent);
+        animation: matrix-border-scan-h 2.5s ease-in-out infinite 1.2s;
+        pointer-events: none;
+        z-index: 10;
+    }
+
+    .profile-active-card .active-border-left {
+        position: absolute;
+        bottom: 0;
+        left: -1px;
+        width: 2px;
+        height: 40%;
+        background: linear-gradient(0deg, transparent, #00FF41, transparent);
+        animation: matrix-border-scan 2.5s ease-in-out infinite 1.8s;
+        pointer-events: none;
+        z-index: 10;
+    }
+
+    /* Corner sparks */
+    .profile-active-card .active-corners {
+        position: absolute;
+        inset: -1px;
+        pointer-events: none;
+        z-index: 11;
+    }
+
+    .profile-active-card .active-corners::before,
+    .profile-active-card .active-corners::after {
+        content: '';
+        position: absolute;
+        width: 8px;
+        height: 8px;
+        border-color: #00FF41;
+        border-style: solid;
+    }
+
+    .profile-active-card .active-corners::before {
+        top: 0;
+        left: 0;
+        border-width: 2px 0 0 2px;
+        box-shadow: -2px -2px 6px rgba(0, 255, 65, 0.6);
+    }
+
+    .profile-active-card .active-corners::after {
+        bottom: 0;
+        right: 0;
+        border-width: 0 2px 2px 0;
+        box-shadow: 2px 2px 6px rgba(0, 255, 65, 0.6);
+    }
+</style>
+<script>
+    // Toast auto-hide
+    const flash = document.getElementById('flashMsg');
+    if (flash) setTimeout(() => { flash.style.animation = 'toastOut 0.4s ease-in forwards'; setTimeout(() => flash.style.display = 'none', 400); }, 3000);
+
+    function confirmSwitch(id, name) {
+        document.getElementById('switchId').value = id;
+        document.getElementById('switchName').textContent = name;
+        document.getElementById('switchModal').style.display = 'flex';
+    }
+
+    function confirmDelete(id, name) {
+        document.getElementById('deleteId').value = id;
+        document.getElementById('deleteName').textContent = name;
+        document.getElementById('deleteModal').style.display = 'flex';
+    }
+
+    // Inject matrix border decorators into active profile card
+    document.querySelectorAll('.profile-active-card').forEach(card => {
+        // Bottom scan element
+        const bot = document.createElement('div');
+        bot.className = 'active-border-bottom';
+        card.appendChild(bot);
+        // Left scan element
+        const left = document.createElement('div');
+        left.className = 'active-border-left';
+        card.appendChild(left);
+        // Corner sparks
+        const corners = document.createElement('div');
+        corners.className = 'active-corners';
+        card.appendChild(corners);
+    });
+</script>
+{% endblock %}

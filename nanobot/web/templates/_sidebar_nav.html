@@ -1,0 +1,39 @@
+{% set items = [
+    ("dashboard",    "/",              "terminal",                "Dashboard",       "_RUN"),
+    ("config",       "/config",        "settings",                "Configuration",   ""),
+    ("personality",  "/personality",   "psychology",              "Personality",     "_PSY"),
+    ("profiles",     "/profiles",      "swap_horiz",              "Profiles",        ""),
+    ("agentic",      "/agentic",       "precision_manufacturing", "Agentic Actions", ""),
+    ("skills",       "/skills",        "extension",               "Skills & MCP",    "_SKL"),
+    ("cron",         "/cron",          "schedule",                "Cron Jobs",       "_CRN"),
+    ("sessions",     "/sessions",      "database",                "Sessions",        ""),
+    ("chat",         "/chat",          "chat",                    "Web Chat",        ""),
+] %}
+{% if zalo_enabled() %}
+{% set items = items + [("zalo", "/zalo/setup", "qr_code_2", "Zalo Setup", "")] %}
+{% endif %}
+<nav class="flex flex-col gap-2">
+    {% for key, href, icon, label, tag in items %}
+    {% if key == active_page %}
+    <a class="matrix-card px-5 py-4 flex items-center gap-4 bg-primary/20 border-l-4 border-l-primary nav-active group"
+        href="{{ href }}">
+        <span class="material-symbols-outlined text-primary glow-text">{{ icon }}</span>
+        <span class="text-sm font-bold uppercase tracking-widest glow-text">{{ label }}</span>
+        {% if tag %}<span class="ml-auto text-[10px] opacity-60 nav-tag">{{ tag }}</span>{% endif %}
+    </a>
+    {% else %}
+    <a class="matrix-card px-5 py-4 flex items-center gap-4 hover:bg-primary/5 border-l-4 border-l-transparent transition-all group"
+        href="{{ href }}">
+        <span class="material-symbols-outlined text-primary/60">{{ icon }}</span>
+        <span class="text-sm font-bold uppercase tracking-widest text-primary/60">{{ label }}</span>
+    </a>
+    {% endif %}
+    {% endfor %}
+    {% if request.cookies.get(session_cookie_name) %}
+    <a class="matrix-card px-5 py-4 flex items-center gap-4 hover:bg-primary/5 border-l-4 border-l-transparent transition-all group"
+        href="#" onclick="event.preventDefault(); document.getElementById('logoutModal').style.display='flex'">
+        <span class="material-symbols-outlined text-primary/60">logout</span>
+        <span class="text-sm font-bold uppercase tracking-widest text-primary/60">Logout</span>
+    </a>
+    {% endif %}
+</nav>

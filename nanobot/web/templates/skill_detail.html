@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+
+{% block title %}{{ name }} — Skills — Nanobot OS{% endblock %}
+
+{% block content %}
+<!-- Sidebar -->
+<aside class="w-full lg:w-72 flex flex-col gap-6">
+    <div class="matrix-card p-6 flex flex-col items-center text-center gap-4">
+        <div
+            class="w-20 h-20 flex items-center justify-center text-primary glow-text border-2 border-primary/30 rounded-full relative">
+            <div class="absolute inset-0 border border-primary animate-pulse rounded-full opacity-20"></div>
+            <span class="material-symbols-outlined text-4xl">extension</span>
+        </div>
+        <div>
+            <h2 class="text-lg font-bold glow-text tracking-widest uppercase">{{ name }}</h2>
+            <p class="text-[10px] text-primary/50 font-mono">{{ source | upper }} SKILL</p>
+        </div>
+    </div>
+
+    {% set active_page = "skills" %}
+
+    {% include "_sidebar_nav.html" %}
+
+</aside>
+
+<!-- Main Content -->
+<div class="flex-1 flex flex-col gap-4">
+
+    <!-- Header -->
+    <div class="matrix-card p-4 flex items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+            <span class="material-symbols-outlined glow-text text-sm">description</span>
+            <h3 class="text-xs font-bold uppercase tracking-widest glow-text">SKILL.md</h3>
+        </div>
+        <div class="flex items-center gap-2 flex-wrap justify-end">
+            <a href="/skills"
+                class="px-3 py-2 text-[11px] font-extrabold uppercase tracking-wider border border-primary/30 text-primary/60 hover:text-primary hover:border-primary/60 rounded transition-all flex items-center gap-2">
+                <span class="material-symbols-outlined text-[14px]">arrow_back</span>Skills
+            </a>
+            {% if is_overridden %}
+            <button onclick="restoreSkill('{{ name }}')"
+                class="px-3 py-2 text-[11px] font-extrabold uppercase tracking-wider border border-yellow-400/50 text-yellow-400 hover:bg-yellow-400/10 rounded transition-all flex items-center gap-2">
+                <span class="material-symbols-outlined text-[14px]">restore</span>Restore Builtin
+            </button>
+            <span class="text-[9px] font-mono px-2 py-0.5 border border-yellow-400/30 text-yellow-400/70">OVERRIDDEN</span>
+            {% elif has_builtin and not has_workspace %}
+            <button onclick="overrideSkill('{{ name }}')"
+                class="px-3 py-2 text-[11px] font-extrabold uppercase tracking-wider border border-primary/50 text-primary hover:bg-primary/10 rounded transition-all flex items-center gap-2">
+                <span class="material-symbols-outlined text-[14px]">edit_note</span>Override
+            </button>
+            {% endif %}
+            {% if has_workspace %}
+            <button onclick="saveSkill('{{ name }}')"
+                class="px-3 py-2 text-[11px] font-extrabold uppercase tracking-wider border border-primary/60 text-primary bg-primary/10 hover:bg-primary/20 rounded transition-all flex items-center gap-2">
+                <span class="material-symbols-outlined text-[14px]">save</span>Save
+            </button>
+            {% endif %}
+            <span class="text-[9px] font-mono px-2 py-0.5 border border-primary/30 text-primary/50">{{ source | upper }}</span>
+        </div>
+    </div>
+
+    <!-- Content -->
+    <div class="matrix-card p-4">
+        {% if has_workspace %}
+        <textarea id="skill-content" spellcheck="false"
+            class="w-full text-xs text-primary/90 bg-transparent font-mono leading-relaxed resize-none outline-none overflow-y-auto"
+            style="height: calc(100vh - 280px); scrollbar-width: thin; scrollbar-color: #00FF41 transparent;">{{ content }}</textarea>
+        {% else %}
+        <pre class="text-xs text-primary/80 font-mono leading-relaxed whitespace-pre-wrap break-words overflow-y-auto"
+            style="max-height: calc(100vh - 280px); scrollbar-width: thin; scrollbar-color: #00FF41 transparent;">{{ content }}</pre>
+        {% endif %}
+    </div>
+
+    <!-- Terminal Footer -->
+    <div class="matrix-card p-4 font-mono text-[11px] leading-tight space-y-1 mt-auto">
+        <div class="flex gap-2">
+            <span class="text-primary/40">[SKL]</span>
+            <span class="text-primary">Loaded: {{ name }}/SKILL.md</span>
+        </div>
+        {% if is_overridden %}
+        <div class="flex gap-2">
+            <span class="text-primary/40">[SKL]</span>
+            <span class="text-yellow-400/60">Override active — workspace version takes priority</span>
+        </div>
+        {% endif %}
+        <div class="flex gap-2 pt-2 border-t border-primary/10 mt-2">
+            <span class="text-primary/60">$</span>
+            <span class="text-primary cursor-default">root@nanobot_os:/skills/{{ name }}# <span
+                    class="bg-primary text-black ml-1 px-1"> </span></span>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+    .crt-overlay,
+    .crt-scanline {
+        display: none !important;
+    }
+
+    #skill-modal {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        background: rgba(0, 0, 0, 0.75);
+        backdrop-filter: blur(4px);
+        align-items: center;
+        justify-content: center;
+    }
+    #skill-modal.open {
+        display: flex;
+    }
+    #skill-modal .modal-box {
+        border: 1px solid var(--color-primary, #00FF41);
+        box-shadow: 0 0 24px rgba(0,255,65,0.2);
+        background: #0a0a0a;
+        min-width: 320px;
+        max-width: 440px;
+        animation: modal-in 0.15s ease;
+    }
+    @keyframes modal-in {
+        from { opacity: 0; transform: scale(0.95) translateY(-8px); }
+        to   { opacity: 1; transform: scale(1) translateY(0); }
+    }
+</style>
+
+<!-- Custom Confirm Modal -->
+<div id="skill-modal">
+    <div class="modal-box rounded p-6 flex flex-col gap-4">
+        <div class="flex items-center gap-3">
+            <span id="modal-icon" class="material-symbols-outlined text-2xl text-primary glow-text">help</span>
+            <h3 id="modal-title" class="text-sm font-bold uppercase tracking-widest text-primary glow-text">Confirm</h3>
+        </div>
+        <p id="modal-body" class="text-xs text-primary/70 font-mono leading-relaxed"></p>
+        <div id="modal-warning" class="hidden text-[10px] text-yellow-400/80 border border-yellow-400/20 bg-yellow-400/5 rounded px-3 py-2 font-mono"></div>
+        <div class="flex gap-3 justify-end mt-1">
+            <button onclick="modalCancel()"
+                class="px-4 py-2 text-[10px] font-bold uppercase tracking-wider border border-primary/30 text-primary/50 hover:text-primary hover:border-primary/60 rounded transition-all">
+                Cancel
+            </button>
+            <button id="modal-confirm-btn" onclick="modalConfirm()"
+                class="px-4 py-2 text-[10px] font-bold uppercase tracking-wider border rounded transition-all">
+                Confirm
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+let _modalCallback = null;
+
+function showModal({ icon, title, body, warning, confirmLabel, confirmClass, onConfirm }) {
+    document.getElementById('modal-icon').textContent = icon || 'help';
+    document.getElementById('modal-title').textContent = title || 'Confirm';
+    document.getElementById('modal-body').textContent = body || '';
+    const warnEl = document.getElementById('modal-warning');
+    if (warning) {
+        warnEl.textContent = warning;
+        warnEl.classList.remove('hidden');
+    } else {
+        warnEl.classList.add('hidden');
+    }
+    const btn = document.getElementById('modal-confirm-btn');
+    btn.textContent = confirmLabel || 'Confirm';
+    btn.className = `px-4 py-2 text-[10px] font-bold uppercase tracking-wider border rounded transition-all ${confirmClass || 'border-primary/50 text-primary hover:bg-primary/10'}`;
+    _modalCallback = onConfirm;
+    document.getElementById('skill-modal').classList.add('open');
+}
+
+function modalCancel() {
+    document.getElementById('skill-modal').classList.remove('open');
+    _modalCallback = null;
+}
+
+function modalConfirm() {
+    document.getElementById('skill-modal').classList.remove('open');
+    if (_modalCallback) _modalCallback();
+    _modalCallback = null;
+}
+
+// Close on backdrop click
+document.getElementById('skill-modal').addEventListener('click', function(e) {
+    if (e.target === this) modalCancel();
+});
+
+async function overrideSkill(name) {
+    showModal({
+        icon: 'edit_note',
+        title: 'Override Skill',
+        body: `Copy builtin skill "${name}" to workspace for customization?`,
+        warning: null,
+        confirmLabel: 'Override',
+        confirmClass: 'border-primary/60 text-primary hover:bg-primary/10',
+        onConfirm: async () => {
+            try {
+                const resp = await fetch(`/skills/${name}/override`, { method: 'POST' });
+                const data = await resp.json();
+                if (data.success) {
+                    window.location.reload();
+                } else {
+                    showModal({ icon: 'error', title: 'Error', body: data.error || 'Override failed', confirmLabel: 'OK', onConfirm: () => {} });
+                }
+            } catch (err) {
+                console.error('Override failed:', err);
+            }
+        }
+    });
+}
+
+async function restoreSkill(name) {
+    showModal({
+        icon: 'restore',
+        title: 'Restore Builtin',
+        body: `Restore "${name}" to the original builtin version?`,
+        warning: '⚠ This will permanently delete the workspace copy.',
+        confirmLabel: 'Restore',
+        confirmClass: 'border-yellow-400/60 text-yellow-400 hover:bg-yellow-400/10',
+        onConfirm: async () => {
+            try {
+                const resp = await fetch(`/skills/${name}/restore`, { method: 'POST' });
+                const data = await resp.json();
+                if (data.success) {
+                    window.location.reload();
+                } else {
+                    showModal({ icon: 'error', title: 'Error', body: data.error || 'Restore failed', confirmLabel: 'OK', onConfirm: () => {} });
+                }
+            } catch (err) {
+                console.error('Restore failed:', err);
+            }
+        }
+    });
+}
+
+async function saveSkill(name) {
+    const ta = document.getElementById('skill-content');
+    if (!ta) return;
+    const btn = event.currentTarget;
+    const origText = btn.innerHTML;
+    btn.innerHTML = '<span class="material-symbols-outlined text-[14px] animate-spin">progress_activity</span>Saving…';
+    btn.disabled = true;
+    try {
+        const resp = await fetch(`/skills/${name}/save`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: ta.value })
+        });
+        const data = await resp.json();
+        if (data.success) {
+            btn.innerHTML = '<span class="material-symbols-outlined text-[14px]">check</span>Saved!';
+            setTimeout(() => { btn.innerHTML = origText; btn.disabled = false; }, 1500);
+        } else {
+            showModal({ icon: 'error', title: 'Error', body: data.error || 'Save failed', confirmLabel: 'OK', onConfirm: () => {} });
+            btn.innerHTML = origText; btn.disabled = false;
+        }
+    } catch (err) {
+        console.error('Save failed:', err);
+        btn.innerHTML = origText; btn.disabled = false;
+    }
+}
+</script>
+{% endblock %}

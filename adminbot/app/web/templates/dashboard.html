@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block title %}Adminbot Dashboard{% endblock %}
+{% block page_title %}Bot Dashboard{% endblock %}
+{% block page_subtitle %}One surface for status, control, and links into each Nanobot dashboard.{% endblock %}
+
+{% block content %}
+<section class="summary-grid">
+    <div class="summary-card">
+        <div class="summary-label">Total Bots</div>
+        <div class="summary-value">{{ bots|length }}</div>
+    </div>
+    <div class="summary-card">
+        <div class="summary-label">Running</div>
+        <div class="summary-value">{{ running_count }}</div>
+    </div>
+    <div class="summary-card">
+        <div class="summary-label">Stopped</div>
+        <div class="summary-value">{{ stopped_count }}</div>
+    </div>
+    <div class="summary-card summary-card-warning">
+        <div class="summary-label">Needs Attention</div>
+        <div class="summary-value">{{ attention_count }}</div>
+    </div>
+    <div class="summary-card">
+        <div class="summary-label">Never Started</div>
+        <div class="summary-value">{{ never_started_count }}</div>
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-header">
+        <h2>Bot Fleet</h2>
+        <a class="button button-primary" href="/bots/new">Create Bot</a>
+    </div>
+    {% if bots %}
+    <div class="table-wrap">
+        <table class="bot-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Status</th>
+                    <th>Signal</th>
+                    <th>Workspace</th>
+                    <th>Web Port</th>
+                    <th>Runtime</th>
+                    <th>Updated</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for bot in bots %}
+                <tr class="{% if bot.attention %}bot-row-attention{% endif %}">
+                    <td>
+                        <a class="inline-link" href="/bots/{{ bot.id }}">{{ bot.name }}</a>
+                    </td>
+                    <td>
+                        <span class="status status-{{ bot.status_tone }}">{{ bot.status }}</span>
+                    </td>
+                    <td>
+                        <div class="signal-stack">
+                            <div>{{ bot.status_detail }}</div>
+                            {% if bot.attention %}
+                            <span class="signal-chip signal-chip-warning">check last exit</span>
+                            {% elif bot.last_run_at == "-" %}
+                            <span class="signal-chip">not started</span>
+                            {% else %}
+                            <span class="signal-chip">stable</span>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td class="mono">{{ bot.workspace }}</td>
+                    <td>{{ bot.web_port }}</td>
+                    <td>
+                        <div class="signal-stack mono">
+                            <div>pid {{ bot.pid }}</div>
+                            <div>run {{ bot.last_run_label }}</div>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="signal-stack mono">
+                            <div>{{ bot.updated_label }}</div>
+                            <div class="muted">{{ bot.updated_at }}</div>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="action-row">
+                            <form method="post" action="/bots/{{ bot.id }}/start">
+                                <button class="button button-small" type="submit">Start</button>
+                            </form>
+                            <form method="post" action="/bots/{{ bot.id }}/stop">
+                                <button class="button button-small" type="submit">Stop</button>
+                            </form>
+                            <form method="post" action="/bots/{{ bot.id }}/restart">
+                                <button class="button button-small" type="submit">Restart</button>
+                            </form>
+                            <a class="button button-small button-link" href="/bots/{{ bot.id }}/logs">Logs</a>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <h3>No bots yet</h3>
+        <p>Create the first bot to start managing multiple Nanobot instances from this UI.</p>
+        <a class="button button-primary" href="/bots/new">Create Bot</a>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}

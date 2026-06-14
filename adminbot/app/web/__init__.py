@@ -1,0 +1,1 @@
+"""Adminbot web UI package."""

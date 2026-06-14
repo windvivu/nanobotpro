@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+
+{% block title %}Session: {{ session_key }} — Nanobot OS{% endblock %}
+
+{% block content %}
+<!-- Sidebar -->
+<aside class="w-full lg:w-72 flex flex-col gap-6">
+    <div class="matrix-card p-6 flex flex-col items-center text-center gap-4">
+        <div
+            class="w-20 h-20 flex items-center justify-center text-primary glow-text border-2 border-primary/30 rounded-full relative">
+            <div class="absolute inset-0 border border-primary animate-pulse rounded-full opacity-20"></div>
+            <span class="material-symbols-outlined text-4xl">chat</span>
+        </div>
+        <div>
+            <h2 class="text-lg font-bold glow-text tracking-widest uppercase">Chat_Log</h2>
+            <p class="text-[10px] text-primary/50 font-mono truncate max-w-[200px]">{{ session_key }}</p>
+        </div>
+    </div>
+
+    {% set active_page = "sessions" %}
+
+
+    {% include "_sidebar_nav.html" %}
+
+    <!-- Session Info -->
+    <div class="matrix-card p-4 text-[10px] leading-relaxed text-primary/40 uppercase tracking-tighter">
+        <div class="flex justify-between mb-1">
+            <span>Total_Messages</span>
+            <span class="text-primary/70">{{ message_count }}</span>
+        </div>
+        <div class="w-full bg-primary/10 h-1 mb-3">
+            <div class="bg-primary h-full shadow-[0_0_5px_#00FF41]" style="width: {{ [message_count, 100] | min }}%">
+            </div>
+        </div>
+    </div>
+</aside>
+
+<!-- Main Content -->
+<div class="flex-1 flex flex-col gap-4">
+    <!-- Header -->
+    <div class="matrix-card p-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <span class="material-symbols-outlined glow-text text-sm">forum</span>
+            <h3 class="text-xs font-bold uppercase tracking-widest glow-text">Conversation Log</h3>
+        </div>
+        <span class="text-[10px] text-primary/30 font-mono">{{ message_count }} MSG</span>
+    </div>
+
+    {% if messages %}
+    <!-- Chat Messages -->
+    <div class="flex flex-col gap-4 max-h-[calc(100vh-180px)] overflow-y-auto pr-2" id="chatContainer"
+        style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;">
+
+        {% for msg in messages %}
+        {% if msg.role == "user" %}
+        <!-- User Message -->
+        <div class="flex justify-start">
+            <div class="w-fit max-w-[70%] flex flex-col items-start gap-0.5">
+                <div class="flex items-center gap-2 text-[9px] text-primary/40 uppercase tracking-wider">
+                    <span class="material-symbols-outlined text-[12px] text-primary/50">person</span>
+                    <span class="font-bold text-primary/60">USER</span>
+                    <span>{{ msg.timestamp }}</span>
+                </div>
+                <div
+                    class="bg-black/40 border border-primary/20 px-3 py-1.5 text-xs leading-snug text-left whitespace-normal break-words">
+                    {{ msg.content }}</div>
+            </div>
+        </div>
+
+        {% elif msg.role == "assistant" %}
+        <!-- Assistant Message -->
+        <div class="flex justify-start">
+            <div class="w-fit max-w-[70%] flex flex-col items-start gap-0.5">
+                <div class="flex items-center gap-2 text-[9px] text-primary/40 uppercase tracking-wider">
+                    <span class="material-symbols-outlined text-[12px] text-primary/50">smart_toy</span>
+                    <span class="font-bold text-primary/60">NANOBOT</span>
+                    <span>{{ msg.timestamp }}</span>
+                </div>
+                <div
+                    class="bg-primary/15 border border-primary/50 px-3 py-1.5 text-xs leading-snug text-left text-primary/80 whitespace-normal break-words">
+                    {% if msg.has_tool_calls %}<div
+                        class="flex items-center gap-2 mb-1 text-[9px] text-yellow-400/70 uppercase"><span
+                            class="material-symbols-outlined text-[12px]">build</span><span>Tool Call</span></div>{%
+                    endif %}{{ msg.content }}</div>
+            </div>
+        </div>
+
+        {% elif msg.role == "tool" %}
+        <!-- Tool Result -->
+        <div class="flex justify-start pl-6">
+            <div class="w-fit max-w-[60%] flex flex-col items-start gap-0.5">
+                <div class="flex items-center gap-2 text-[9px] text-primary/30 uppercase tracking-wider">
+                    <span class="material-symbols-outlined text-[12px] text-primary/30">terminal</span>
+                    <span class="font-bold">TOOL_RESULT</span>
+                    {% if msg.tool_call_id %}
+                    <span class="text-primary/20 font-mono">{{ msg.tool_call_id[:8] }}..</span>
+                    {% endif %}
+                </div>
+                <div class="bg-black/60 border border-primary/10 px-3 py-1 text-[11px] font-mono leading-snug text-left text-primary/40 whitespace-normal break-words max-h-24 overflow-y-auto"
+                    style="scrollbar-width: thin; scrollbar-color: #00FF4133 transparent;">{{ msg.content[:300] }}{% if
+                    msg.content | length > 300 %}...{% endif %}</div>
+            </div>
+        </div>
+
+        {% else %}
+        <!-- Other roles (system, etc.) -->
+        <div class="flex justify-center">
+            <div class="max-w-[70%]">
+                <div class="text-[10px] text-primary/20 uppercase tracking-widest text-center mb-1">
+                    {{ msg.role | upper }}
+                </div>
+                <div
+                    class="bg-black/20 border border-primary/10 px-4 py-2 text-xs text-primary/30 text-center whitespace-pre-wrap break-words">
+                    {{ msg.content[:200] }}{% if msg.content | length > 200 %}...{% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        {% endfor %}
+    </div>
+    {% else %}
+    <!-- Empty State -->
+    <div class="matrix-card p-12 flex flex-col items-center text-center gap-4">
+        <span class="material-symbols-outlined text-6xl text-primary/20">chat_bubble_outline</span>
+        <h3 class="text-sm font-bold uppercase tracking-widest text-primary/40">No Messages</h3>
+        <p class="text-[10px] text-primary/20 uppercase tracking-wider">This session has no messages yet</p>
+    </div>
+    {% endif %}
+
+    <!-- Terminal Log Footer -->
+    <div class="matrix-card p-4 font-mono text-[11px] leading-tight space-y-1 mt-auto">
+        <div class="flex gap-2">
+            <span class="text-primary/40">[LOG]</span>
+            <span class="text-primary">Session loaded: {{ session_key }}</span>
+        </div>
+        <div class="flex gap-2">
+            <span class="text-primary/40">[LOG]</span>
+            <span class="text-primary">Messages decoded: {{ message_count }} | Format: JSONL</span>
+        </div>
+        <div class="flex gap-2 pt-2 border-t border-primary/10 mt-2">
+            <span class="text-primary/60">$</span>
+            <span class="text-primary cursor-default outline-none">root@nanobot_os:/sessions/detail# <span
+                    class="bg-primary text-black ml-1 px-1"> </span></span>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+    /* Disable CRT scanline effect on session detail for readability */
+    .crt-overlay,
+    .crt-scanline {
+        display: none !important;
+    }
+</style>
+<script>
+    // Auto-scroll to bottom of chat container
+    const chatContainer = document.getElementById('chatContainer');
+    if (chatContainer) {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+</script>
+{% endblock %}

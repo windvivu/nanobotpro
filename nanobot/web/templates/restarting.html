@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+
+{% block title %}Restarting Gateway - Nanobot OS{% endblock %}
+
+{% block content %}
+<div class="w-full flex-1 self-stretch min-h-[70vh] flex items-center justify-center">
+    <div class="matrix-card w-full max-w-2xl p-8 text-center">
+        <div class="flex justify-center mb-6">
+            <span class="material-symbols-outlined text-5xl text-primary animate-spin">restart_alt</span>
+        </div>
+        <h1 class="text-2xl font-bold uppercase tracking-[0.35em] text-primary glow-text mb-3">Restarting</h1>
+        <p class="text-sm text-primary/50 font-mono mb-6">Gateway is applying configuration changes.</p>
+
+        <div class="border border-primary/20 bg-black/40 p-4 text-left font-mono text-xs space-y-2">
+            <div class="flex items-center gap-2">
+                <span id="restart-step-request-dot" class="w-2 h-2 rounded-full bg-yellow-400 shadow-[0_0_6px_#facc15]"></span>
+                <span id="restart-step-request">Sending restart request...</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <span id="restart-step-wait-dot" class="w-2 h-2 rounded-full bg-primary/20"></span>
+                <span id="restart-step-wait" class="text-primary/45">Waiting for gateway to come back online...</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <span id="restart-step-return-dot" class="w-2 h-2 rounded-full bg-primary/20"></span>
+                <span id="restart-step-return" class="text-primary/45">Returning to dashboard...</span>
+            </div>
+        </div>
+
+        <p id="restart-detail" class="mt-5 text-[10px] text-primary/35 font-mono">
+            This usually takes a few seconds. Keep this tab open.
+        </p>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const NEXT_URL = {{ next_url | tojson }};
+
+function setStep(id, state, text) {
+    const dot = document.getElementById(id + '-dot');
+    const label = document.getElementById(id);
+    if (!dot || !label) return;
+
+    if (state === 'ok') {
+        dot.className = 'w-2 h-2 rounded-full bg-primary shadow-[0_0_6px_#00FF41]';
+        label.className = 'text-primary/80';
+    } else if (state === 'active') {
+        dot.className = 'w-2 h-2 rounded-full bg-yellow-400 shadow-[0_0_6px_#facc15]';
+        label.className = 'text-yellow-400/80';
+    } else if (state === 'error') {
+        dot.className = 'w-2 h-2 rounded-full bg-red-500 shadow-[0_0_6px_#ef4444]';
+        label.className = 'text-red-400/80';
+    }
+
+    if (text) label.textContent = text;
+}
+
+function setDetail(text) {
+    const detail = document.getElementById('restart-detail');
+    if (detail) detail.textContent = text;
+}
+
+async function triggerRestart() {
+    try {
+        await fetch('/config/restart', { method: 'POST' });
+        setStep('restart-step-request', 'ok', 'Restart request sent.');
+    } catch (err) {
+        setStep('restart-step-request', 'ok', 'Gateway accepted restart and dropped connection.');
+    }
+
+    setStep('restart-step-wait', 'active');
+    pollUntilReady();
+}
+
+function pollUntilReady() {
+    let attempts = 0;
+    const poll = setInterval(async function() {
+        attempts += 1;
+        setDetail('Checking gateway status... attempt ' + attempts);
+        try {
+            const resp = await fetch('/healthz', {
+                cache: 'no-store',
+                signal: AbortSignal.timeout(2000)
+            });
+            if (resp.ok) {
+                clearInterval(poll);
+                setStep('restart-step-wait', 'ok', 'Gateway is back online.');
+                setStep('restart-step-return', 'active');
+                setDetail('Redirecting...');
+                setTimeout(function() {
+                    window.location.href = NEXT_URL || '/';
+                }, 700);
+            }
+        } catch (err) {
+            if (attempts >= 40) {
+                clearInterval(poll);
+                setStep('restart-step-wait', 'error', 'Gateway did not respond yet.');
+                setDetail('Refresh this page, or open the dashboard again after checking the process logs.');
+            }
+        }
+    }, 1500);
+}
+
+setTimeout(triggerRestart, 300);
+</script>
+{% endblock %}

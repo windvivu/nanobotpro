@@ -1,0 +1,606 @@
+{% extends "base.html" %}
+
+{% block title %}Cron Jobs — Nanobot OS{% endblock %}
+
+{% block content %}
+<!-- Sidebar -->
+<aside class="w-full lg:w-72 flex flex-col gap-6">
+    <div class="matrix-card p-6 flex flex-col items-center text-center gap-4">
+        <div
+            class="w-20 h-20 flex items-center justify-center text-primary glow-text border-2 border-primary/30 rounded-full relative">
+            <div class="absolute inset-0 border border-primary animate-pulse rounded-full opacity-20"></div>
+            <span class="material-symbols-outlined text-4xl">schedule</span>
+        </div>
+        <div>
+            <h2 class="text-lg font-bold glow-text tracking-widest uppercase">Cron_Jobs</h2>
+            <p class="text-[10px] text-primary/50 font-mono" id="sidebar-count">{{ total }} JOBS LOADED</p>
+        </div>
+    </div>
+
+    {% set active_page = "cron" %}
+    {% include "_sidebar_nav.html" %}
+</aside>
+
+<!-- Main Content -->
+<div class="flex-1 flex flex-col gap-4">
+
+    <!-- Header -->
+    <div class="matrix-card p-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <span class="material-symbols-outlined glow-text text-sm">schedule</span>
+            <h3 class="text-xs font-bold uppercase tracking-widest glow-text">Scheduled Jobs</h3>
+        </div>
+        <div class="flex items-center gap-3">
+            <span class="text-[10px] text-primary/30 font-mono" id="header-count">TOTAL: {{ total }}</span>
+            <button onclick="toggleCreateForm()"
+                class="px-3 py-1.5 border border-primary/40 text-[10px] font-bold uppercase tracking-widest hover:bg-primary/10 hover:border-primary transition-all flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-sm">add</span>
+                New Job
+            </button>
+        </div>
+    </div>
+
+    <!-- Create Form (collapsible) -->
+    <div id="create-form" class="matrix-card p-6 hidden">
+        <div class="flex items-center gap-3 mb-5 pb-3 border-b border-primary/20">
+            <span class="material-symbols-outlined glow-text text-sm">add_circle</span>
+            <h3 class="text-xs font-bold uppercase tracking-widest glow-text">Create New Job</h3>
+            <button onclick="toggleCreateForm()" class="ml-auto text-primary/40 hover:text-primary transition-colors">
+                <span class="material-symbols-outlined text-sm">close</span>
+            </button>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- Name -->
+            <div>
+                <label class="text-[10px] text-primary/50 uppercase tracking-widest block mb-1">Name</label>
+                <input id="cron-name" type="text" placeholder="e.g. daily_report"
+                    class="w-full bg-black/50 border border-primary/30 text-primary text-sm px-3 py-2 font-mono focus:border-primary focus:outline-none transition-colors">
+            </div>
+            <!-- Schedule Type -->
+            <div>
+                <label class="text-[10px] text-primary/50 uppercase tracking-widest block mb-1">Schedule Type</label>
+                <select id="cron-schedule-kind" onchange="onScheduleKindChange()"
+                    class="w-full bg-black/50 border border-primary/30 text-primary text-sm px-3 py-2 font-mono focus:border-primary focus:outline-none transition-colors">
+                    <option value="every">Every (interval)</option>
+                    <option value="cron">Cron Expression</option>
+                </select>
+            </div>
+            <!-- Interval (for "every" type) -->
+            <div id="interval-group">
+                <label class="text-[10px] text-primary/50 uppercase tracking-widest block mb-1">Interval (seconds)</label>
+                <div class="flex items-center gap-2">
+                    <input id="cron-interval" type="number" value="3600" min="10"
+                        class="w-full bg-black/50 border border-primary/30 text-primary text-sm px-3 py-2 font-mono focus:border-primary focus:outline-none transition-colors"
+                        oninput="updateIntervalHint()">
+                    <span id="interval-hint" class="text-[10px] text-primary/40 whitespace-nowrap">≈ 1h</span>
+                </div>
+            </div>
+            <!-- Cron Expression (for "cron" type) -->
+            <div id="cron-expr-group" class="hidden">
+                <label class="text-[10px] text-primary/50 uppercase tracking-widest block mb-1">Cron Expression</label>
+                <input id="cron-expr" type="text" placeholder="0 9 * * *"
+                    class="w-full bg-black/50 border border-primary/30 text-primary text-sm px-3 py-2 font-mono focus:border-primary focus:outline-none transition-colors">
+                <span class="text-[9px] text-primary/30 mt-1 block">min hour day month weekday</span>
+            </div>
+            <!-- Timezone (for "cron" type) -->
+            <div id="cron-tz-group" class="hidden">
+                <label class="text-[10px] text-primary/50 uppercase tracking-widest block mb-1">Timezone (optional)</label>
+                <input id="cron-tz" type="text" placeholder="Asia/Ho_Chi_Minh"
+                    class="w-full bg-black/50 border border-primary/30 text-primary text-sm px-3 py-2 font-mono focus:border-primary focus:outline-none transition-colors">
+            </div>
+            <!-- Task -->
+            <div class="md:col-span-2">
+                <label class="text-[10px] text-primary/50 uppercase tracking-widest block mb-1">Task Description</label>
+                <textarea id="cron-task" rows="2" placeholder="What should the agent do?"
+                    class="w-full bg-black/50 border border-primary/30 text-primary text-sm px-3 py-2 font-mono focus:border-primary focus:outline-none transition-colors resize-y"></textarea>
+            </div>
+            <!-- Channel -->
+            <div>
+                <label class="text-[10px] text-primary/50 uppercase tracking-widest block mb-1">Channel (optional)</label>
+                <input id="cron-channel" type="text" placeholder="telegram"
+                    class="w-full bg-black/50 border border-primary/30 text-primary text-sm px-3 py-2 font-mono focus:border-primary focus:outline-none transition-colors">
+            </div>
+            <!-- Chat ID -->
+            <div>
+                <label class="text-[10px] text-primary/50 uppercase tracking-widest block mb-1">Chat ID (optional)</label>
+                <input id="cron-chat-id" type="text" placeholder="123456789"
+                    class="w-full bg-black/50 border border-primary/30 text-primary text-sm px-3 py-2 font-mono focus:border-primary focus:outline-none transition-colors">
+            </div>
+            <!-- Deliver -->
+            <div class="flex items-center gap-2">
+                <input id="cron-deliver" type="checkbox"
+                    class="w-4 h-4 accent-[#00FF41] bg-black border-primary/30">
+                <label for="cron-deliver" class="text-[10px] text-primary/50 uppercase tracking-widest">Deliver response to channel</label>
+            </div>
+            <!-- Force Deliver -->
+            <div class="flex items-center gap-2">
+                <input id="cron-force-deliver" type="checkbox"
+                    class="w-4 h-4 accent-[#00FF41] bg-black border-primary/30">
+                <label for="cron-force-deliver" class="text-[10px] text-primary/50 uppercase tracking-widest">Force deliver (skip evaluator)</label>
+            </div>
+        </div>
+        <!-- Submit -->
+        <div class="mt-5 pt-4 border-t border-primary/10 flex justify-end">
+            <button onclick="createJob()"
+                class="px-5 py-2 border border-primary bg-primary/10 text-sm font-bold uppercase tracking-widest hover:bg-primary hover:text-black transition-all flex items-center gap-2">
+                <span class="material-symbols-outlined text-sm">check</span>
+                Create Job
+            </button>
+        </div>
+        <!-- Error display -->
+        <div id="create-error" class="hidden mt-3 text-[11px] text-red-400 bg-red-500/10 border border-red-500/20 p-2"></div>
+    </div>
+
+    <!-- Jobs List -->
+    <div id="jobs-container">
+        {% if jobs %}
+        {% for job in jobs %}
+        <div class="matrix-card p-5 mb-3 group" id="job-{{ job.id }}" data-job-id="{{ job.id }}">
+            <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-3">
+                    {% if job.enabled %}
+                    <span class="w-3 h-3 rounded-full bg-primary shadow-[0_0_8px_#00FF41] animate-pulse"></span>
+                    {% else %}
+                    <span class="w-3 h-3 rounded-full bg-yellow-500/50 shadow-[0_0_4px_rgba(234,179,8,0.3)]"></span>
+                    {% endif %}
+                    <span class="text-sm font-bold uppercase tracking-widest {{ 'glow-text' if job.enabled else 'text-primary/40' }}">{{ job.name }}</span>
+                    {% if job.enabled %}
+                    <span class="px-1.5 py-0.5 border border-primary/40 text-[8px] font-bold uppercase tracking-wider text-primary/80 bg-primary/10">Active</span>
+                    {% else %}
+                    <span class="px-1.5 py-0.5 border border-yellow-500/30 text-[8px] font-bold uppercase tracking-wider text-yellow-400/70 bg-yellow-500/5">Paused</span>
+                    {% endif %}
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-[10px] text-primary/70 font-mono">{{ job.schedule_display }}</span>
+                    <span class="px-1.5 py-0.5 border border-primary/30 text-[8px] font-bold uppercase tracking-wider text-primary/60">{{ job.schedule_kind }}</span>
+                </div>
+            </div>
+            <!-- Task -->
+            <div class="text-[11px] text-primary/60 mb-3 font-mono bg-black/30 p-2 border border-primary/10 leading-relaxed">
+                {{ job.task }}
+            </div>
+            <!-- Meta row -->
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-4 text-[10px] text-primary/60">
+                    {% if job.channel %}
+                    <span class="flex items-center gap-1">
+                        <span class="material-symbols-outlined text-[10px]">send</span>
+                        {{ job.channel }}{% if job.chat_id %}:{{ job.chat_id }}{% endif %}
+                    </span>
+                    {% endif %}
+                    {% if job.last_run %}
+                    <span class="flex items-center gap-1">
+                        <span class="material-symbols-outlined text-[10px]">history</span>
+                        Last: <span class="utc-time" data-utc="{{ job.last_run }}">{{ job.last_run }}</span>
+                    </span>
+                    {% endif %}
+                    {% if job.last_status %}
+                    <span class="flex items-center gap-1 {{ 'text-primary/70' if job.last_status == 'ok' else 'text-red-400' }}">
+                        <span class="material-symbols-outlined text-[10px]">{{ 'check_circle' if job.last_status == 'ok' else 'error' }}</span>
+                        {{ job.last_status }}
+                    </span>
+                    {% endif %}
+                    {% if job.next_run %}
+                    <span class="flex items-center gap-1">
+                        <span class="material-symbols-outlined text-[10px]">schedule</span>
+                        Next: <span class="utc-time" data-utc="{{ job.next_run }}">{{ job.next_run }}</span>
+                    </span>
+                    {% endif %}
+                </div>
+                <!-- Actions -->
+                <div class="flex items-center gap-2 opacity-60 group-hover:opacity-100 transition-opacity">
+                    {% if job.name|lower != 'dream' %}
+                    <button onclick="openEditModal('{{ job.id }}')" title="Edit"
+                        class="px-2 py-1 border border-primary/20 text-[9px] font-bold uppercase tracking-wider hover:bg-primary/10 hover:border-primary transition-all flex items-center gap-1">
+                        <span class="material-symbols-outlined text-xs">edit</span>
+                        Edit
+                    </button>
+                    {% endif %}
+                    <button onclick="toggleJob('{{ job.id }}')" title="{{ 'Pause' if job.enabled else 'Resume' }}"
+                        class="px-2 py-1 border border-primary/20 text-[9px] font-bold uppercase tracking-wider hover:bg-primary/10 hover:border-primary transition-all flex items-center gap-1">
+                        <span class="material-symbols-outlined text-xs">{{ 'pause' if job.enabled else 'play_arrow' }}</span>
+                        {{ 'Pause' if job.enabled else 'Resume' }}
+                    </button>
+                    <button onclick="runJob('{{ job.id }}')" title="Run Now"
+                        class="px-2 py-1 border border-primary/20 text-[9px] font-bold uppercase tracking-wider hover:bg-primary/10 hover:border-primary transition-all flex items-center gap-1">
+                        <span class="material-symbols-outlined text-xs">play_circle</span>
+                        Run
+                    </button>
+                    {% if job.name|lower != 'dream' %}
+                    <button onclick="confirmDeleteJob('{{ job.id }}', '{{ job.name }}')" title="Delete"
+                        class="px-2 py-1 border border-red-500/20 text-red-400/60 text-[9px] font-bold uppercase tracking-wider hover:bg-red-500/10 hover:border-red-500/40 hover:text-red-400 transition-all flex items-center gap-1">
+                        <span class="material-symbols-outlined text-xs">delete</span>
+                        Del
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div id="empty-state" class="matrix-card p-12 flex flex-col items-center text-center gap-4">
+            <span class="material-symbols-outlined text-6xl text-primary/20">schedule</span>
+            <h3 class="text-sm font-bold uppercase tracking-widest text-primary/40">No Cron Jobs</h3>
+            <p class="text-[10px] text-primary/20">Click [+ New Job] to create a scheduled task</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Terminal Footer -->
+    <div class="matrix-card p-4 font-mono text-[11px] leading-tight space-y-1 mt-auto">
+        <div class="flex gap-2">
+            <span class="text-primary/40">[CRN]</span>
+            <span class="text-primary">Cron service status: <span class="text-white">{{ 'RUNNING' if service_running else 'STOPPED' }}</span></span>
+        </div>
+        <div class="flex gap-2">
+            <span class="text-primary/40">[CRN]</span>
+            <span class="text-primary">Jobs loaded: {{ total }} | Store: ~/.nanobot/cron/jobs.json</span>
+        </div>
+        <div class="flex gap-2 pt-2 border-t border-primary/10 mt-2">
+            <span class="text-primary/60">$</span>
+            <span class="text-primary cursor-default">root@nanobot_os:/cron# <span
+                    class="bg-primary text-black ml-1 px-1"> </span></span>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirm Modal -->
+<div id="deleteModal" class="fixed inset-0 z-50 bg-black/80 items-center justify-center" style="display: none;">
+    <div class="matrix-card p-6 w-full max-w-sm flex flex-col gap-5 border-red-500/40 shadow-[0_0_30px_rgba(255,0,0,0.15)] relative">
+        <div class="flex items-center gap-3">
+            <span class="material-symbols-outlined text-red-500">delete_forever</span>
+            <h3 class="text-sm font-bold uppercase tracking-widest text-red-400">Delete Job</h3>
+        </div>
+        <p class="text-xs text-primary/70 leading-relaxed">
+            Are you sure you want to delete job <strong id="delete-job-name" class="text-red-400"></strong>?
+        </p>
+        <p class="text-[10px] text-primary/40 leading-relaxed font-mono">
+            > This action cannot be undone.<br>
+            > The job will be permanently removed from jobs.json.
+        </p>
+        <div class="flex gap-3 mt-2">
+            <button id="delete-confirm-btn"
+                class="flex-1 px-4 py-3 border border-red-500/50 bg-red-500/10 text-red-400 font-bold uppercase tracking-widest text-sm hover:bg-red-500/20 text-center transition-all duration-300 flex items-center justify-center gap-2">
+                <span class="material-symbols-outlined text-sm">delete_forever</span>
+                Delete
+            </button>
+            <button type="button" onclick="document.getElementById('deleteModal').style.display='none'"
+                class="px-4 py-3 border border-primary/20 text-primary/40 font-bold uppercase tracking-widest text-sm hover:text-primary transition-colors">
+                Cancel
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Modal -->
+<div id="editModal" class="fixed inset-0 z-50 bg-black/80 items-center justify-center" style="display: none;">
+    <div class="matrix-card p-6 w-full max-w-lg flex flex-col gap-4 relative">
+        <div class="flex items-center gap-3 pb-3 border-b border-primary/20">
+            <span class="material-symbols-outlined glow-text">edit</span>
+            <h3 class="text-sm font-bold uppercase tracking-widest glow-text">Edit Job</h3>
+            <button onclick="document.getElementById('editModal').style.display='none'" class="ml-auto text-primary/40 hover:text-primary">
+                <span class="material-symbols-outlined text-sm">close</span>
+            </button>
+        </div>
+        <input type="hidden" id="edit-job-id">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <label class="text-[10px] text-primary/50 uppercase tracking-widest block mb-1">Name</label>
+                <input id="edit-name" type="text"
+                    class="w-full bg-black/50 border border-primary/30 text-primary text-sm px-3 py-2 font-mono focus:border-primary focus:outline-none transition-colors">
+            </div>
+            <div>
+                <label class="text-[10px] text-primary/50 uppercase tracking-widest block mb-1">Schedule Type</label>
+                <select id="edit-schedule-kind" onchange="onEditScheduleKindChange()"
+                    class="w-full bg-black/50 border border-primary/30 text-primary text-sm px-3 py-2 font-mono focus:border-primary focus:outline-none transition-colors">
+                    <option value="every">Every (interval)</option>
+                    <option value="cron">Cron Expression</option>
+                </select>
+            </div>
+            <div id="edit-interval-group">
+                <label class="text-[10px] text-primary/50 uppercase tracking-widest block mb-1">Interval (seconds)</label>
+                <input id="edit-interval" type="number" min="10"
+                    class="w-full bg-black/50 border border-primary/30 text-primary text-sm px-3 py-2 font-mono focus:border-primary focus:outline-none transition-colors">
+            </div>
+            <div id="edit-cron-expr-group" class="hidden">
+                <label class="text-[10px] text-primary/50 uppercase tracking-widest block mb-1">Cron Expression</label>
+                <input id="edit-cron-expr" type="text"
+                    class="w-full bg-black/50 border border-primary/30 text-primary text-sm px-3 py-2 font-mono focus:border-primary focus:outline-none transition-colors">
+            </div>
+            <div id="edit-cron-tz-group" class="hidden">
+                <label class="text-[10px] text-primary/50 uppercase tracking-widest block mb-1">Timezone</label>
+                <input id="edit-cron-tz" type="text"
+                    class="w-full bg-black/50 border border-primary/30 text-primary text-sm px-3 py-2 font-mono focus:border-primary focus:outline-none transition-colors">
+            </div>
+            <div class="md:col-span-2">
+                <label class="text-[10px] text-primary/50 uppercase tracking-widest block mb-1">Task Description</label>
+                <textarea id="edit-task" rows="2"
+                    class="w-full bg-black/50 border border-primary/30 text-primary text-sm px-3 py-2 font-mono focus:border-primary focus:outline-none transition-colors resize-y"></textarea>
+            </div>
+            <div>
+                <label class="text-[10px] text-primary/50 uppercase tracking-widest block mb-1">Channel</label>
+                <input id="edit-channel" type="text"
+                    class="w-full bg-black/50 border border-primary/30 text-primary text-sm px-3 py-2 font-mono focus:border-primary focus:outline-none transition-colors">
+            </div>
+            <div>
+                <label class="text-[10px] text-primary/50 uppercase tracking-widest block mb-1">Chat ID</label>
+                <input id="edit-chat-id" type="text"
+                    class="w-full bg-black/50 border border-primary/30 text-primary text-sm px-3 py-2 font-mono focus:border-primary focus:outline-none transition-colors">
+            </div>
+            <div class="flex items-center gap-2">
+                <input id="edit-deliver" type="checkbox" class="w-4 h-4 accent-[#00FF41] bg-black border-primary/30">
+                <label for="edit-deliver" class="text-[10px] text-primary/50 uppercase tracking-widest">Deliver response</label>
+            </div>
+            <div class="flex items-center gap-2">
+                <input id="edit-force-deliver" type="checkbox" class="w-4 h-4 accent-[#00FF41] bg-black border-primary/30">
+                <label for="edit-force-deliver" class="text-[10px] text-primary/50 uppercase tracking-widest">Force deliver</label>
+            </div>
+        </div>
+        <div id="edit-error" class="hidden text-[11px] text-red-400 bg-red-500/10 border border-red-500/20 p-2"></div>
+        <div class="flex gap-3 pt-3 border-t border-primary/10">
+            <button onclick="saveEdit()"
+                class="flex-1 px-4 py-2 border border-primary bg-primary/10 font-bold uppercase tracking-widest text-sm hover:bg-primary hover:text-black transition-all flex items-center justify-center gap-2">
+                <span class="material-symbols-outlined text-sm">save</span>
+                Save
+            </button>
+            <button onclick="document.getElementById('editModal').style.display='none'"
+                class="px-4 py-2 border border-primary/20 text-primary/40 font-bold uppercase tracking-widest text-sm hover:text-primary transition-colors">
+                Cancel
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+    .crt-overlay,
+    .crt-scanline {
+        display: none !important;
+    }
+</style>
+<script>
+    // Convert UTC timestamps to browser local time
+    document.querySelectorAll('.utc-time').forEach(el => {
+        const utc = el.dataset.utc;
+        if (!utc) return;
+        const d = new Date(utc + ' UTC');
+        if (isNaN(d)) return;
+        const pad = n => String(n).padStart(2, '0');
+        el.textContent = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    });
+
+    function toggleCreateForm() {
+        const form = document.getElementById('create-form');
+        form.classList.toggle('hidden');
+    }
+
+    function onScheduleKindChange() {
+        const kind = document.getElementById('cron-schedule-kind').value;
+        document.getElementById('interval-group').classList.toggle('hidden', kind !== 'every');
+        document.getElementById('cron-expr-group').classList.toggle('hidden', kind !== 'cron');
+        document.getElementById('cron-tz-group').classList.toggle('hidden', kind !== 'cron');
+    }
+
+    function updateIntervalHint() {
+        const secs = parseInt(document.getElementById('cron-interval').value) || 0;
+        const hint = document.getElementById('interval-hint');
+        if (secs < 60) hint.textContent = `= ${secs}s`;
+        else if (secs < 3600) hint.textContent = `≈ ${Math.round(secs / 60)}m`;
+        else if (secs < 86400) hint.textContent = `≈ ${(secs / 3600).toFixed(1)}h`;
+        else hint.textContent = `≈ ${(secs / 86400).toFixed(1)}d`;
+    }
+
+    async function createJob() {
+        const errEl = document.getElementById('create-error');
+        errEl.classList.add('hidden');
+
+        const kind = document.getElementById('cron-schedule-kind').value;
+        const body = {
+            name: document.getElementById('cron-name').value,
+            task: document.getElementById('cron-task').value,
+            schedule_kind: kind,
+            channel: document.getElementById('cron-channel').value,
+            chat_id: document.getElementById('cron-chat-id').value,
+            deliver: document.getElementById('cron-deliver').checked,
+            force_deliver: document.getElementById('cron-force-deliver').checked,
+        };
+        if (kind === 'every') {
+            body.interval_seconds = parseInt(document.getElementById('cron-interval').value) || 3600;
+        } else if (kind === 'cron') {
+            body.cron_expr = document.getElementById('cron-expr').value;
+            body.tz = document.getElementById('cron-tz').value;
+        }
+
+        try {
+            const resp = await fetch('/cron/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            const data = await resp.json();
+            if (data.ok) {
+                location.reload();
+            } else {
+                errEl.textContent = data.error || 'Failed to create job';
+                errEl.classList.remove('hidden');
+            }
+        } catch (e) {
+            errEl.textContent = 'Network error: ' + e.message;
+            errEl.classList.remove('hidden');
+        }
+    }
+
+    async function toggleJob(jobId) {
+        try {
+            const resp = await fetch(`/cron/${jobId}/toggle`, { method: 'POST' });
+            const data = await resp.json();
+            if (data.ok) location.reload();
+            else alert('Error: ' + (data.error || 'Unknown'));
+        } catch (e) {
+            alert('Network error: ' + e.message);
+        }
+    }
+
+    async function runJob(jobId) {
+        const btn = event.target.closest('button');
+        const origHTML = btn.innerHTML;
+        btn.innerHTML = '<span class="material-symbols-outlined text-xs animate-spin">progress_activity</span> Running...';
+        btn.disabled = true;
+        try {
+            const resp = await fetch(`/cron/${jobId}/run`, { method: 'POST' });
+            const data = await resp.json();
+            if (data.ok) {
+                btn.innerHTML = '<span class="material-symbols-outlined text-xs">check</span> Done';
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                btn.innerHTML = origHTML;
+                btn.disabled = false;
+                alert('Error: ' + (data.error || 'Unknown'));
+            }
+        } catch (e) {
+            btn.innerHTML = origHTML;
+            btn.disabled = false;
+            alert('Network error: ' + e.message);
+        }
+    }
+
+    let _deleteJobId = null;
+    function confirmDeleteJob(jobId, jobName) {
+        _deleteJobId = jobId;
+        document.getElementById('delete-job-name').textContent = jobName;
+        document.getElementById('deleteModal').style.display = 'flex';
+        document.getElementById('delete-confirm-btn').onclick = () => deleteJob(jobId);
+    }
+
+    async function deleteJob(jobId) {
+        document.getElementById('deleteModal').style.display = 'none';
+        try {
+            const resp = await fetch(`/cron/${jobId}`, { method: 'DELETE' });
+            const data = await resp.json();
+            if (data.ok) {
+                const el = document.getElementById('job-' + jobId);
+                if (el) {
+                    el.style.opacity = '0';
+                    el.style.transform = 'translateX(-20px)';
+                    el.style.transition = 'all 0.3s ease';
+                    setTimeout(() => {
+                        el.remove();
+                        updateCounts();
+                    }, 300);
+                }
+            } else {
+                alert('Error: ' + (data.error || 'Unknown'));
+            }
+        } catch (e) {
+            alert('Network error: ' + e.message);
+        }
+    }
+
+    function updateCounts() {
+        const count = document.querySelectorAll('[data-job-id]').length;
+        const headerCount = document.getElementById('header-count');
+        const sidebarCount = document.getElementById('sidebar-count');
+        if (headerCount) headerCount.textContent = 'TOTAL: ' + count;
+        if (sidebarCount) sidebarCount.textContent = count + ' JOBS LOADED';
+        if (count === 0) {
+            const container = document.getElementById('jobs-container');
+            container.innerHTML = `
+                <div id="empty-state" class="matrix-card p-12 flex flex-col items-center text-center gap-4">
+                    <span class="material-symbols-outlined text-6xl text-primary/20">schedule</span>
+                    <h3 class="text-sm font-bold uppercase tracking-widest text-primary/40">No Cron Jobs</h3>
+                    <p class="text-[10px] text-primary/20">Click [+ New Job] to create a scheduled task</p>
+                </div>`;
+        }
+    }
+
+    // ---- Edit Modal ----
+    let _jobsCache = null;
+    async function _fetchJobs() {
+        if (_jobsCache) return _jobsCache;
+        try {
+            const resp = await fetch('/cron/list');
+            const data = await resp.json();
+            _jobsCache = data.jobs || [];
+            return _jobsCache;
+        } catch (e) {
+            return [];
+        }
+    }
+
+    async function openEditModal(jobId) {
+        const jobs = await _fetchJobs();
+        const job = jobs.find(j => j.id === jobId);
+        if (!job) { alert('Job not found'); return; }
+
+        document.getElementById('edit-job-id').value = job.id;
+        document.getElementById('edit-name').value = job.name;
+        document.getElementById('edit-task').value = job.task;
+        document.getElementById('edit-channel').value = job.channel || '';
+        document.getElementById('edit-chat-id').value = job.chat_id || '';
+        document.getElementById('edit-deliver').checked = job.deliver;
+        document.getElementById('edit-force-deliver').checked = job.force_deliver;
+        document.getElementById('edit-schedule-kind').value = job.schedule_kind;
+
+        if (job.schedule_kind === 'every' && job.schedule_every_ms) {
+            document.getElementById('edit-interval').value = job.schedule_every_ms / 1000;
+        }
+        if (job.schedule_kind === 'cron') {
+            document.getElementById('edit-cron-expr').value = job.schedule_expr || '';
+            document.getElementById('edit-cron-tz').value = job.schedule_tz || '';
+        }
+        onEditScheduleKindChange();
+        document.getElementById('edit-error').classList.add('hidden');
+        document.getElementById('editModal').style.display = 'flex';
+    }
+
+    function onEditScheduleKindChange() {
+        const kind = document.getElementById('edit-schedule-kind').value;
+        document.getElementById('edit-interval-group').classList.toggle('hidden', kind !== 'every');
+        document.getElementById('edit-cron-expr-group').classList.toggle('hidden', kind !== 'cron');
+        document.getElementById('edit-cron-tz-group').classList.toggle('hidden', kind !== 'cron');
+    }
+
+    async function saveEdit() {
+        const errEl = document.getElementById('edit-error');
+        errEl.classList.add('hidden');
+        const jobId = document.getElementById('edit-job-id').value;
+        const kind = document.getElementById('edit-schedule-kind').value;
+
+        const body = {
+            name: document.getElementById('edit-name').value,
+            task: document.getElementById('edit-task').value,
+            schedule_kind: kind,
+            channel: document.getElementById('edit-channel').value,
+            chat_id: document.getElementById('edit-chat-id').value,
+            deliver: document.getElementById('edit-deliver').checked,
+            force_deliver: document.getElementById('edit-force-deliver').checked,
+        };
+        if (kind === 'every') {
+            body.interval_seconds = parseInt(document.getElementById('edit-interval').value) || 3600;
+        } else if (kind === 'cron') {
+            body.cron_expr = document.getElementById('edit-cron-expr').value;
+            body.tz = document.getElementById('edit-cron-tz').value;
+        }
+
+        try {
+            const resp = await fetch(`/cron/${jobId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            const data = await resp.json();
+            if (data.ok) {
+                _jobsCache = null;
+                location.reload();
+            } else {
+                errEl.textContent = data.error || 'Failed to update job';
+                errEl.classList.remove('hidden');
+            }
+        } catch (e) {
+            errEl.textContent = 'Network error: ' + e.message;
+            errEl.classList.remove('hidden');
+        }
+    }
+</script>
+{% endblock %}

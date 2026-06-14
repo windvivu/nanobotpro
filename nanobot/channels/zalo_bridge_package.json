@@ -1,0 +1,10 @@
+{
+    "name": "nanobot-zalo-bridge",
+    "version": "1.0.0",
+    "private": true,
+    "description": "Zalo bridge for nanobot — uses zca-js unofficial API",
+    "main": "zalo_bridge.js",
+    "dependencies": {
+        "zca-js": "^2.1.2"
+    }
+}

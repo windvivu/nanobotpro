@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+
+{% block title %}Memory — Nanobot OS{% endblock %}
+
+{% block content %}
+<!-- Sidebar -->
+<aside class="w-full lg:w-72 flex flex-col gap-6">
+    <div class="matrix-card p-6 flex flex-col items-center text-center gap-4">
+        <div
+            class="w-20 h-20 flex items-center justify-center text-primary glow-text border-2 border-primary/30 rounded-full relative">
+            <div class="absolute inset-0 border border-primary animate-pulse rounded-full opacity-20"></div>
+            <span class="material-symbols-outlined text-4xl">memory</span>
+        </div>
+        <div>
+            <h2 class="text-lg font-bold glow-text tracking-widest uppercase">Memory_Bank</h2>
+            <p class="text-[10px] text-primary/50 font-mono">READ-ONLY VIEWER</p>
+        </div>
+    </div>
+
+    {% set active_page = "memory" %}
+
+
+    {% include "_sidebar_nav.html" %}
+
+    <!-- File Info -->
+    <div class="matrix-card p-4 text-[10px] leading-relaxed text-primary/40 uppercase tracking-tighter space-y-1">
+        <div class="flex justify-between">
+            <span>Memory.md</span>
+            <span class="text-primary/70">{{ memory.size | filesizeformat if memory.exists else 'N/A' }}</span>
+        </div>
+        <div class="flex justify-between">
+            <span>History.md</span>
+            <span class="text-primary/70">{{ history.size | filesizeformat if history.exists else 'N/A' }}</span>
+        </div>
+        {% if memory.modified %}
+        <div class="flex justify-between pt-1 border-t border-primary/10">
+            <span>Last_Modified</span>
+            <span class="text-primary/70">{{ memory.modified }}</span>
+        </div>
+        {% endif %}
+    </div>
+</aside>
+
+<!-- Main Content -->
+<div class="flex-1 flex flex-col gap-4">
+
+    <!-- Tab Headers -->
+    <div class="matrix-card p-0 flex">
+        <button id="tab-memory" onclick="switchTab('memory')"
+            class="flex-1 px-6 py-4 flex items-center justify-center gap-3 text-xs font-bold uppercase tracking-widest border-b-2 border-primary glow-text bg-primary/5 transition-all">
+            <span class="material-symbols-outlined text-sm">psychology</span>
+            MEMORY.md
+        </button>
+        <button id="tab-history" onclick="switchTab('history')"
+            class="flex-1 px-6 py-4 flex items-center justify-center gap-3 text-xs font-bold uppercase tracking-widest border-b-2 border-transparent text-primary/40 hover:text-primary/70 transition-all">
+            <span class="material-symbols-outlined text-sm">history</span>
+            HISTORY.md
+        </button>
+    </div>
+
+    <!-- Memory Content -->
+    <div id="content-memory" class="matrix-card p-4 flex-1">
+        {% if memory.exists %}
+        <pre class="text-xs text-primary/80 font-mono leading-relaxed whitespace-pre-wrap break-words max-h-[calc(100vh-350px)] overflow-y-auto"
+            style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;">{{ memory.content }}</pre>
+        {% else %}
+        <div class="flex flex-col items-center justify-center py-16 text-center gap-4">
+            <span class="material-symbols-outlined text-5xl text-primary/20">memory</span>
+            <h3 class="text-sm font-bold uppercase tracking-widest text-primary/40">No Memory File</h3>
+            <p class="text-[10px] text-primary/20">MEMORY.md will be created by memory consolidation</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- History Content (hidden by default) -->
+    <div id="content-history" class="matrix-card p-4 flex-1 hidden">
+        {% if history.exists %}
+        <pre class="text-xs text-primary/80 font-mono leading-relaxed whitespace-pre-wrap break-words max-h-[calc(100vh-350px)] overflow-y-auto"
+            style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;">{{ history.content }}</pre>
+        {% else %}
+        <div class="flex flex-col items-center justify-center py-16 text-center gap-4">
+            <span class="material-symbols-outlined text-5xl text-primary/20">history</span>
+            <h3 class="text-sm font-bold uppercase tracking-widest text-primary/40">No History File</h3>
+            <p class="text-[10px] text-primary/20">HISTORY.md will be created by memory consolidation</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Terminal Footer -->
+    <div class="matrix-card p-4 font-mono text-[11px] leading-tight space-y-1">
+        <div class="flex gap-2">
+            <span class="text-primary/40">[MEM]</span>
+            <span class="text-primary">Memory store: {{ workspace }}/memory/</span>
+        </div>
+        <div class="flex gap-2">
+            <span class="text-primary/40">[MEM]</span>
+            <span class="text-primary">Files: MEMORY.md ({{ 'found' if memory.exists else 'not found' }}) | HISTORY.md
+                ({{ 'found' if history.exists else 'not found' }})</span>
+        </div>
+        <div class="flex gap-2 pt-2 border-t border-primary/10 mt-2">
+            <span class="text-primary/60">$</span>
+            <span class="text-primary cursor-default">root@nanobot_os:/memory# <span
+                    class="bg-primary text-black ml-1 px-1"> </span></span>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+    .crt-overlay,
+    .crt-scanline {
+        display: none !important;
+    }
+</style>
+<script>
+    function switchTab(tab) {
+        // Hide all
+        document.getElementById('content-memory').classList.add('hidden');
+        document.getElementById('content-history').classList.add('hidden');
+        // Reset tab styles
+        document.getElementById('tab-memory').className = 'flex-1 px-6 py-4 flex items-center justify-center gap-3 text-xs font-bold uppercase tracking-widest border-b-2 border-transparent text-primary/40 hover:text-primary/70 transition-all';
+        document.getElementById('tab-history').className = 'flex-1 px-6 py-4 flex items-center justify-center gap-3 text-xs font-bold uppercase tracking-widest border-b-2 border-transparent text-primary/40 hover:text-primary/70 transition-all';
+        // Show selected
+        document.getElementById('content-' + tab).classList.remove('hidden');
+        document.getElementById('tab-' + tab).className = 'flex-1 px-6 py-4 flex items-center justify-center gap-3 text-xs font-bold uppercase tracking-widest border-b-2 border-primary glow-text bg-primary/5 transition-all';
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+
+{% block title %}{{ filename }} — Nanobot OS{% endblock %}
+
+{% block content %}
+<!-- Sidebar -->
+<aside class="w-full lg:w-72 flex flex-col gap-6">
+    <div class="matrix-card p-6 flex flex-col items-center text-center gap-4">
+        <div
+            class="w-20 h-20 flex items-center justify-center text-primary glow-text border-2 border-primary/30 rounded-full relative">
+            <div class="absolute inset-0 border border-primary animate-pulse rounded-full opacity-20"></div>
+            <span class="material-symbols-outlined text-4xl">edit_document</span>
+        </div>
+        <div>
+            <h2 class="text-lg font-bold glow-text tracking-widest uppercase">{{ filename }}</h2>
+            <p class="text-[10px] text-primary/50 font-mono truncate max-w-[200px]">{{ workspace }}</p>
+        </div>
+    </div>
+
+    {% set active_page = "user" %}
+
+
+    {% include "_sidebar_nav.html" %}
+</aside>
+
+<!-- Main Content -->
+<div class="flex-1 flex flex-col gap-4">
+
+    {% if saved %}
+    <div id="flashMsg"
+        class="fixed top-6 right-6 z-50 matrix-card border-primary bg-black/95 px-6 py-4 flex items-center gap-4 shadow-[0_0_20px_rgba(0,255,65,0.3)]"
+        style="animation: toastIn 0.3s ease-out;">
+        <span class="material-symbols-outlined text-primary glow-text">check_circle</span>
+        <span class="text-sm font-bold glow-text uppercase tracking-widest">{{ filename }} Saved</span>
+        <button onclick="document.getElementById('flashMsg').style.display='none'"
+            class="ml-4 text-primary/40 hover:text-primary transition-colors">
+            <span class="material-symbols-outlined text-sm">close</span>
+        </button>
+    </div>
+    {% endif %}
+
+    {% if error %}
+    <div class="matrix-card border-red-500 bg-red-950/30 px-6 py-4 flex items-center gap-4">
+        <span class="material-symbols-outlined text-red-500 blinking">error</span>
+        <span class="text-sm font-bold text-red-400 uppercase tracking-widest">{{ error }}</span>
+    </div>
+    {% endif %}
+
+    <!-- Editor Header -->
+    <div class="matrix-card p-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <span class="material-symbols-outlined glow-text text-sm">edit_document</span>
+            <h3 class="text-xs font-bold uppercase tracking-widest glow-text">Editing: {{ filename }}</h3>
+        </div>
+        <div class="flex items-center gap-4">
+            {% if default_template %}
+            <button type="button" id="toggleTemplateBtn" onclick="toggleTemplate()"
+                class="px-4 py-2 border border-primary/30 bg-black/40 text-primary/60 font-bold uppercase tracking-widest text-[10px] hover:border-primary hover:text-primary hover:bg-primary/10 transition-all duration-300 flex items-center gap-2">
+                <span class="material-symbols-outlined text-[14px]">content_copy</span>
+                <span id="toggleTemplateBtnText">Show Template</span>
+            </button>
+            {% endif %}
+            <span class="text-[10px] text-primary/30 font-mono hidden md:inline">{{ workspace }}/{{ filename }}</span>
+        </div>
+    </div>
+
+    <!-- Editor + Template side-by-side -->
+    <form method="POST" action="/workspace/{{ file_key }}" id="editorForm">
+        <div class="flex gap-4 flex-1 items-start" id="editorRow">
+            <!-- Editor (left) -->
+            <div class="flex-1 min-w-0">
+                <div class="matrix-card p-4">
+                    <textarea name="content" id="editor"
+                        class="w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.15)] outline-none p-4 text-primary/90 font-mono text-xs leading-relaxed resize-none h-[500px] transition-all duration-300"
+                        style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;"
+                        spellcheck="false">{{ content }}</textarea>
+                </div>
+            </div>
+
+            {% if default_template %}
+            <!-- Template Reference Panel (right, hidden by default) -->
+            <div id="templatePanel" class="min-w-0" style="flex: 0 0 45%; display: none;">
+                <div class="matrix-card p-4 border-white/20 flex flex-col" style="max-height: 540px;">
+                    <div class="flex items-center justify-between mb-3 flex-shrink-0">
+                        <div class="flex items-center gap-2">
+                            <span class="material-symbols-outlined text-white/60 text-sm">description</span>
+                            <span class="text-[10px] font-bold uppercase tracking-widest text-white/60">Default
+                                Template</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button type="button" onclick="copyTemplate()"
+                                class="px-3 py-1.5 border border-white/20 text-white/60 font-bold uppercase tracking-widest text-[9px] hover:border-white hover:text-white hover:bg-white/10 transition-all duration-300 flex items-center gap-1.5">
+                                <span class="material-symbols-outlined text-[12px]">content_copy</span>
+                                <span id="copyBtnText">Copy All</span>
+                            </button>
+                            <button type="button" onclick="toggleTemplate()"
+                                class="px-2 py-1.5 text-white/30 hover:text-white transition-colors">
+                                <span class="material-symbols-outlined text-sm">close</span>
+                            </button>
+                        </div>
+                    </div>
+                    <pre id="templateContent"
+                        class="flex-1 w-full bg-black/80 border border-white/10 p-4 text-white/80 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words overflow-y-auto select-all"
+                        style="scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.3) transparent;">{{ default_template }}</pre>
+                    <div class="mt-2 text-[9px] text-white/30 uppercase tracking-wider flex-shrink-0">
+                        Read-only — select text or Copy All
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Save button (below both panels) -->
+        <div class="flex items-center gap-6 mt-4">
+            <button type="submit"
+                class="px-8 py-3 border border-primary bg-primary/10 text-primary font-bold uppercase tracking-[0.3em] text-sm hover:bg-primary hover:text-black transition-all duration-300 glow-text flex items-center gap-3 group">
+                <span class="material-symbols-outlined text-sm group-hover:text-black transition-colors">save</span>
+                <span>Save {{ filename }}</span>
+                <span class="blinking">_</span>
+            </button>
+            <span class="text-[10px] text-primary/30 uppercase tracking-wider">
+                Changes take effect on next agent message
+            </span>
+        </div>
+    </form>
+
+    <!-- Terminal Footer -->
+    <div class="matrix-card p-4 font-mono text-[11px] leading-tight space-y-1">
+        <div class="flex gap-2">
+            <span class="text-primary/40">[FS]</span>
+            <span class="text-primary">File: {{ workspace }}/{{ filename }}</span>
+        </div>
+        <div class="flex gap-2 pt-2 border-t border-primary/10 mt-2">
+            <span class="text-primary/60">$</span>
+            <span class="text-primary cursor-default">root@nanobot_os:/workspace/{{ file_key }}# <span
+                    class="bg-primary text-black ml-1 px-1"> </span></span>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+    .crt-overlay,
+    .crt-scanline {
+        display: none !important;
+    }
+
+    @keyframes toastIn {
+        from {
+            opacity: 0;
+            transform: translateX(100px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
+    }
+
+    @keyframes toastOut {
+        from {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        to {
+            opacity: 0;
+            transform: translateX(100px);
+        }
+    }
+</style>
+<script>
+    // Auto-hide toast
+    const flash = document.getElementById('flashMsg');
+    if (flash) {
+        setTimeout(() => { flash.style.animation = 'toastOut 0.4s ease-in forwards'; setTimeout(() => flash.style.display = 'none', 400); }, 3000);
+    }
+
+    // Tab key inserts spaces instead of changing focus
+    const editor = document.getElementById('editor');
+    if (editor) {
+        editor.addEventListener('keydown', (e) => {
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                const start = editor.selectionStart;
+                const end = editor.selectionEnd;
+                editor.value = editor.value.substring(0, start) + '    ' + editor.value.substring(end);
+                editor.selectionStart = editor.selectionEnd = start + 4;
+            }
+        });
+    }
+
+    // Toggle template reference panel
+    function toggleTemplate() {
+        const panel = document.getElementById('templatePanel');
+        const btnText = document.getElementById('toggleTemplateBtnText');
+        if (!panel) return;
+        const isHidden = panel.style.display === 'none' || panel.style.display === '';
+        panel.style.display = isHidden ? 'flex' : 'none';
+        if (btnText) {
+            btnText.textContent = isHidden ? 'Hide Template' : 'Show Template';
+        }
+    }
+
+    // Copy template content to clipboard
+    function copyTemplate() {
+        const content = document.getElementById('templateContent');
+        const btnText = document.getElementById('copyBtnText');
+        if (!content) return;
+        navigator.clipboard.writeText(content.textContent).then(() => {
+            if (btnText) {
+                btnText.textContent = 'Copied!';
+                setTimeout(() => { btnText.textContent = 'Copy All'; }, 2000);
+            }
+        }).catch(() => {
+            // Fallback: select the text
+            const range = document.createRange();
+            range.selectNodeContents(content);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+        });
+    }
+
+    // Preserve template panel across saves
+    document.querySelectorAll('form').forEach(form => {
+        form.addEventListener('submit', function () {
+            const panel = document.getElementById('templatePanel');
+            if (panel && panel.style.display !== 'none' && panel.style.display !== '') {
+                const url = new URL(form.action, window.location.origin);
+                url.searchParams.set('tpl', '1');
+                form.action = url.toString();
+            }
+        });
+    });
+    // Restore template panel if tpl=1
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('tpl') === '1') {
+        toggleTemplate();
+    }
+</script>
+{% endblock %}

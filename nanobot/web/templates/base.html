@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>{% block title %}Nanobot OS{% endblock %}</title>
+    <link rel="icon" href="/static/catmatrix.png" type="image/png" />
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+        rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;700&display=swap"
+        rel="stylesheet" />
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#00FF41",
+                        "matrix-dark": "#0a0a0a",
+                    },
+                    fontFamily: {
+                        "mono": ["'JetBrains Mono'", "monospace"]
+                    },
+                },
+            },
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @keyframes matrix-rain {
+        0% { transform: translateY(-100%); }
+        100% { transform: translateY(100vh); }
+    }
+    @keyframes blink {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.3; }
+    }
+    @keyframes scanline {
+        0% { transform: translateY(-100%); }
+        100% { transform: translateY(100%); }
+    }
+    .matrix-rain-container {
+        position: fixed;
+        inset: 0;
+        background: #000;
+        overflow: hidden;
+        z-index: -2;
+    }
+    .matrix-foreground-container {
+        position: fixed;
+        inset: 0;
+        overflow: hidden;
+        z-index: 100;
+        pointer-events: none;
+    }
+    .matrix-column {
+        position: absolute;
+        top: -100%;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 1.1rem;
+        line-height: 1;
+        writing-mode: vertical-rl;
+        text-orientation: upright;
+        color: #00FF41;
+        user-select: none;
+        pointer-events: none;
+        white-space: nowrap;
+        text-shadow: 0 0 8px rgba(0, 255, 65, 0.8);
+    }
+    .matrix-column-foreground {
+        position: absolute;
+        top: -100%;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 1.8rem;
+        line-height: 1;
+        writing-mode: vertical-rl;
+        text-orientation: upright;
+        color: #00FF41;
+        user-select: none;
+        pointer-events: none;
+        white-space: nowrap;
+        text-shadow: 0 0 15px rgba(0, 255, 65, 1), 0 0 30px rgba(0, 255, 65, 0.5);
+        opacity: 0.95;
+        filter: brightness(1.2);
+        font-weight: 700;
+    }
+    .crt-overlay {
+        position: fixed;
+        inset: 0;
+        background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+        background-size: 100% 4px, 3px 100%;
+        pointer-events: none;
+        z-index: 50;
+    }
+    .crt-scanline {
+        position: fixed;
+        inset: 0;
+        height: 2px;
+        background: rgba(0, 255, 65, 0.1);
+        animation: scanline 8s linear infinite;
+        z-index: 51;
+        pointer-events: none;
+    }
+    .glow-text {
+        text-shadow: 0 0 5px rgba(0, 255, 65, 0.7);
+    }
+    .matrix-card {
+        background-color: rgba(10, 10, 10, 0.7);
+        backdrop-filter: blur(8px);
+        border: 1px solid #00FF41;
+        box-shadow: 0 0 15px rgba(0, 255, 65, 0.2), inset 0 0 10px rgba(0, 255, 65, 0.1);
+    }
+    .matrix-card:hover {
+        box-shadow: 0 0 25px rgba(0, 255, 65, 0.4), inset 0 0 15px rgba(0, 255, 65, 0.2);
+        transition: all 0.3s ease;
+    }
+    .blinking {
+        animation: blink 1.5s step-end infinite;
+    }
+    .rain-anim { animation: matrix-rain linear infinite; }
+
+    /* ── Active Nav Item ── */
+    @keyframes nav-scan {
+        0%   { transform: translateX(-100%); opacity: 0; }
+        10%  { opacity: 1; }
+        90%  { opacity: 1; }
+        100% { transform: translateX(100%); opacity: 0; }
+    }
+    @keyframes nav-glow-pulse {
+        0%, 100% { box-shadow: 0 0 8px rgba(0,255,65,0.35), inset 0 0 8px rgba(0,255,65,0.12), 2px 0 0 0 #00FF41 inset; }
+        50%       { box-shadow: 0 0 22px rgba(0,255,65,0.7), inset 0 0 16px rgba(0,255,65,0.28), 2px 0 0 0 #00FF41 inset; }
+    }
+    @keyframes nav-char-flicker {
+        0%, 92%, 100% { opacity: 1; }
+        93% { opacity: 0.6; }
+        95% { opacity: 1; }
+        97% { opacity: 0.4; }
+        99% { opacity: 1; }
+    }
+    .nav-active {
+        position: relative;
+        overflow: hidden;
+        animation: nav-glow-pulse 2.4s ease-in-out infinite;
+        background: linear-gradient(90deg, rgba(0,255,65,0.18) 0%, rgba(0,255,65,0.06) 100%) !important;
+        border-left-color: #00FF41 !important;
+        border-left-width: 4px !important;
+    }
+    .nav-active::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 40%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent 0%, rgba(0,255,65,0.25) 50%, transparent 100%);
+        animation: nav-scan 3s ease-in-out infinite;
+        pointer-events: none;
+        z-index: 1;
+    }
+    .nav-active::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: repeating-linear-gradient(
+            0deg,
+            transparent,
+            transparent 3px,
+            rgba(0,255,65,0.03) 3px,
+            rgba(0,255,65,0.03) 4px
+        );
+        pointer-events: none;
+        z-index: 0;
+    }
+    .nav-active span, .nav-active .nav-label {
+        position: relative;
+        z-index: 2;
+        text-shadow: 0 0 8px rgba(0,255,65,0.9), 0 0 16px rgba(0,255,65,0.5);
+        animation: nav-char-flicker 5s step-end infinite;
+    }
+    .nav-active .nav-tag {
+        position: relative;
+        z-index: 2;
+    }
+
+    /* Global matrix scrollbar */
+    ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+        background: rgba(0, 255, 65, 0.03);
+    }
+    ::-webkit-scrollbar-thumb {
+        background: rgba(0, 255, 65, 0.4);
+        border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+        background: rgba(0, 255, 65, 0.7);
+    }
+    ::-webkit-scrollbar-corner {
+        background: transparent;
+    }
+    * {
+        scrollbar-width: thin;
+        scrollbar-color: rgba(0, 255, 65, 0.4) rgba(0, 255, 65, 0.03);
+    }
+
+    /* Prompt Viewer scrollbar — brighter */
+    #prompt-viewer-content::-webkit-scrollbar {
+        width: 6px;
+    }
+    #prompt-viewer-content::-webkit-scrollbar-track {
+        background: rgba(0, 255, 65, 0.08);
+    }
+    #prompt-viewer-content::-webkit-scrollbar-thumb {
+        background: rgba(0, 255, 65, 0.5);
+        border-radius: 3px;
+        box-shadow: 0 0 4px rgba(0, 255, 65, 0.3);
+    }
+    #prompt-viewer-content::-webkit-scrollbar-thumb:hover {
+        background: rgba(0, 255, 65, 0.8);
+        box-shadow: 0 0 8px rgba(0, 255, 65, 0.5);
+    }
+    #prompt-viewer-content {
+        scrollbar-width: thin;
+        scrollbar-color: rgba(0, 255, 65, 0.5) rgba(0, 255, 65, 0.08);
+    }
+    /* Browser extensions can inject fixed closed-shadow overlays that block dashboard clicks. */
+    bit-notification-bar-root {
+        pointer-events: none !important;
+    }
+</style>
+    {% block head_extra %}{% endblock %}
+</head>
+
+<body class="bg-black text-primary font-mono selection:bg-primary selection:text-black">
+
+    <!-- Matrix Rain Background -->
+    <div class="matrix-rain-container">
+        <div class="matrix-column rain-anim" style="left: 2%; animation-duration: 12s; animation-delay: -2s;">
+            ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿ1234567890</div>
+        <div class="matrix-column rain-anim"
+            style="left: 7%; animation-duration: 8s; animation-delay: -5s; opacity: 0.6; font-size: 0.8rem;">
+            ZXCVMBNALSKDJFHGQPWOEIRUT</div>
+        <div class="matrix-column rain-anim" style="left: 12%; animation-duration: 15s; animation-delay: -1s;">
+            7894561230*+-/&lt;&gt;!@#$%^&amp;*()</div>
+        <div class="matrix-column rain-anim"
+            style="left: 17%; animation-duration: 10s; animation-delay: -8s; opacity: 0.4;">ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿ</div>
+        <div class="matrix-column rain-anim" style="left: 22%; animation-duration: 18s; animation-delay: -3s;">
+            qwertyuiopasdfghjklzxcvbnm</div>
+        <div class="matrix-column rain-anim" style="left: 27%; animation-duration: 9s; animation-delay: -12s;">
+            01010101010101010101010101</div>
+        <div class="matrix-column rain-anim"
+            style="left: 32%; animation-duration: 14s; animation-delay: -4s; opacity: 0.7;">ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿ</div>
+        <div class="matrix-column rain-anim" style="left: 37%; animation-duration: 11s; animation-delay: -9s;">
+            !@#$%^&amp;*()_+-=[]{}|;':",./</div>
+        <div class="matrix-column rain-anim"
+            style="left: 42%; animation-duration: 16s; animation-delay: -6s; opacity: 0.5;">0987654321QWERTYUIOPASDFGH
+        </div>
+        <div class="matrix-column rain-anim" style="left: 47%; animation-duration: 13s; animation-delay: -10s;">
+            ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿ</div>
+        <div class="matrix-column rain-anim" style="left: 52%; animation-duration: 12s; animation-delay: -2s;">
+            ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿ1234567890</div>
+        <div class="matrix-column rain-anim"
+            style="left: 57%; animation-duration: 8s; animation-delay: -5s; opacity: 0.6; font-size: 0.8rem;">
+            ZXCVMBNALSKDJFHGQPWOEIRUT</div>
+        <div class="matrix-column rain-anim" style="left: 62%; animation-duration: 15s; animation-delay: -1s;">
+            7894561230*+-/&lt;&gt;!@#$%^&amp;*()</div>
+        <div class="matrix-column rain-anim"
+            style="left: 67%; animation-duration: 10s; animation-delay: -8s; opacity: 0.4;">ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿ</div>
+        <div class="matrix-column rain-anim" style="left: 72%; animation-duration: 18s; animation-delay: -3s;">
+            qwertyuiopasdfghjklzxcvbnm</div>
+        <div class="matrix-column rain-anim" style="left: 77%; animation-duration: 9s; animation-delay: -12s;">
+            01010101010101010101010101</div>
+        <div class="matrix-column rain-anim"
+            style="left: 82%; animation-duration: 14s; animation-delay: -4s; opacity: 0.7;">ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿ</div>
+        <div class="matrix-column rain-anim" style="left: 87%; animation-duration: 11s; animation-delay: -9s;">
+            !@#$%^&amp;*()_+-=[]{}|;':",./</div>
+        <div class="matrix-column rain-anim"
+            style="left: 92%; animation-duration: 16s; animation-delay: -6s; opacity: 0.5;">0987654321QWERTYUIOPASDFGH
+        </div>
+        <div class="matrix-column rain-anim" style="left: 97%; animation-duration: 13s; animation-delay: -10s;">
+            ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿ</div>
+    </div>
+    <div class="matrix-foreground-container">
+        <div class="matrix-column-foreground rain-anim"
+            style="left: 15%; animation-duration: 6s; animation-delay: -1s;">ｶｷｸｹｺｻｼｽｾｿｱｲｳｴｵ0123456789</div>
+        <div class="matrix-column-foreground rain-anim"
+            style="left: 80%; animation-duration: 7s; animation-delay: -4s;">ﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖ</div>
+    </div>
+    <div class="crt-overlay"></div>
+    <div class="crt-scanline"></div>
+
+    <!-- Main App -->
+    <div class="relative z-10 flex flex-col min-h-screen">
+        <!-- Header -->
+        <header
+            class="matrix-card border-t-0 border-x-0 rounded-none px-8 py-4 flex items-center justify-between sticky top-0 z-[70]">
+            <div class="flex items-center gap-6">
+                <div class="flex-shrink-0">
+                    <img src="/static/catmatrix.png" alt="Cat Matrix Icon"
+                        class="w-12 h-12 rounded-full object-cover border-2 border-primary/50"
+                        style="filter: brightness(0.85) sepia(1) hue-rotate(80deg) saturate(4); box-shadow: 0 0 12px rgba(0,255,65,0.4);">
+                </div>
+                <div class="flex flex-col">
+                    <h1 class="text-xl font-bold tracking-[0.2em] glow-text uppercase">Nanobot OS v{{ nanobot_version }}</h1>
+                    <p class="text-[10px] text-primary/60 tracking-widest">SYSTEM_VERSION: ULTIMATE_MATRIX_EDITION</p>
+                    <p class="text-[10px] text-primary/50 tracking-widest">DEVELOPED_BY: HOANG_MINH_QUAN</p>
+                </div>
+                <!-- Fleet Claim Badge (neon yellow, hidden when unclaimed) -->
+                <div id="fleet-badge"
+                    class="hidden ml-2 px-3 py-1.5 rounded border flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider transition-all duration-500"
+                    style="border-color: rgba(255, 230, 0, 0.6); background: rgba(255, 230, 0, 0.08); color: #ffe600; text-shadow: 0 0 8px rgba(255, 230, 0, 0.5); box-shadow: 0 0 12px rgba(255, 230, 0, 0.15), inset 0 0 8px rgba(255, 230, 0, 0.05);">
+                    <span class="material-symbols-outlined text-sm" style="color: #ffe600;">hub</span>
+                    <span id="fleet-badge-text">Fleet: —</span>
+                    <span id="fleet-badge-ip" class="text-[9px] opacity-60"></span>
+                </div>
+                <!-- Default Password Warning Badge -->
+                <div id="default-pwd-badge" style="display:none;"
+                    class="ml-2 px-3 py-1.5 rounded border flex items-center gap-2 text-[10px] font-bold tracking-wider cursor-pointer transition-all duration-300"
+                    style="border-color: rgba(255,200,0,0.6); background: rgba(255,200,0,0.08); color: #ffc800; text-shadow: 0 0 8px rgba(255,200,0,0.5); box-shadow: 0 0 12px rgba(255,200,0,0.15);"
+                    onclick="window.location='/config#web-section'" title="Click to change password in Settings">
+                    <span class="material-symbols-outlined text-sm" style="color: #ffc800;">lock_open</span>
+                    <span id="default-pwd-text">Default Password Active</span>
+                </div>
+            </div>
+            <div class="flex items-center gap-6">
+                <!-- Prompt Viewer Toggle -->
+                <button onclick="togglePromptViewer()" title="View System Prompt"
+                    class="w-10 h-10 flex items-center justify-center border border-primary/30 hover:border-primary hover:bg-primary/10 text-primary/50 hover:text-primary transition-all duration-300 rounded-full">
+                    <span class="material-symbols-outlined text-lg">article</span>
+                </button>
+                <!-- Console Log Toggle -->
+                <button onclick="toggleConsoleViewer()" title="View Console Logs" id="console-viewer-btn"
+                    class="w-10 h-10 flex items-center justify-center border border-primary/30 hover:border-primary hover:bg-primary/10 text-primary/50 hover:text-primary transition-all duration-300 rounded-full">
+                    <span class="material-symbols-outlined text-lg">terminal</span>
+                </button>
+                <button id="server-status-btn"
+                    class="px-6 py-2 border border-primary bg-primary/10 glow-text flex items-center gap-2 group hover:bg-primary hover:text-black transition-all">
+                    <span id="server-status-dot" class="blinking">●</span>
+                    <span id="server-status-text" class="font-bold tracking-widest uppercase text-sm">Online</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Prompt Viewer Slide-out Panel -->
+        <div id="prompt-viewer-panel"
+            class="fixed top-0 right-0 h-full w-full md:w-[600px] lg:w-[700px] z-[60] transform translate-x-full transition-transform duration-300 ease-in-out flex flex-col"
+            style="background: rgba(5, 5, 5, 0.97); border-left: 1px solid rgba(0, 255, 65, 0.3); pointer-events: none; visibility: hidden;">
+            <!-- Header -->
+            <div class="flex items-center justify-between px-5 py-3 border-b border-primary/20"
+                style="background: rgba(0, 255, 65, 0.03);">
+                <div class="flex items-center gap-3">
+                    <span class="material-symbols-outlined text-primary/70 text-sm">article</span>
+                    <span class="text-[11px] font-bold uppercase tracking-widest text-primary/80">System Prompt</span>
+                    <span id="prompt-status" class="text-[9px] text-primary/30 font-mono"></span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span id="prompt-header-chars" class="text-[9px] text-primary/40 font-mono"></span>
+                    <button onclick="copyPrompt(this)"
+                        class="h-8 px-3 flex items-center justify-center gap-1.5 border border-primary/20 hover:border-primary hover:bg-primary/10 text-primary/40 hover:text-primary transition-all rounded text-[10px] font-bold uppercase tracking-wider">
+                        <span class="material-symbols-outlined text-sm">content_copy</span>
+                        <span>Copy</span>
+                    </button>
+                    <button onclick="togglePromptViewer()"
+                        class="w-8 h-8 flex items-center justify-center border border-primary/20 hover:border-primary hover:bg-primary/10 text-primary/40 hover:text-primary transition-all rounded">
+                        <span class="material-symbols-outlined text-sm">close</span>
+                    </button>
+                </div>
+            </div>
+            <!-- Content -->
+            <div id="prompt-viewer-content" class="flex-1 overflow-auto p-5">
+                <pre class="text-[11px] text-primary/90 font-mono whitespace-pre-wrap break-words leading-relaxed"
+                    id="prompt-text">Loading...</pre>
+            </div>
+            <!-- Footer -->
+            <div class="px-5 py-2 border-t border-primary/10 flex items-center justify-between">
+                <span id="prompt-chars" class="text-[9px] text-primary/20 font-mono"></span>
+                <span id="prompt-modified" class="text-[9px] text-primary/20 font-mono"></span>
+            </div>
+        </div>
+        <!-- Backdrop -->
+        <div id="prompt-viewer-backdrop" onclick="togglePromptViewer()"
+            class="fixed inset-0 z-[55] bg-black/50 hidden transition-opacity duration-300"></div>
+
+        <div id="console-viewer-panel"
+            class="fixed bottom-0 left-0 right-0 h-[45vh] z-[60] transform translate-y-full transition-transform duration-300 ease-in-out flex flex-col"
+            style="background: rgba(3, 3, 3, 0.97); border-top: 1px solid rgba(0, 255, 65, 0.3); pointer-events: none; visibility: hidden;">
+            <!-- Header -->
+            <div class="flex items-center justify-between px-5 py-2 border-b border-primary/20"
+                style="background: rgba(0, 255, 65, 0.03);">
+                <div class="flex items-center gap-1">
+                    <span class="material-symbols-outlined text-primary/70 text-sm mr-1">terminal</span>
+                    <!-- Tabs -->
+                    <button onclick="switchConsoleTab('logs')" id="console-tab-logs"
+                        class="px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-primary/80 border-b-2 border-primary transition-all">
+                        System Logs
+                    </button>
+                    <button onclick="switchConsoleTab('exec')" id="console-tab-exec"
+                        class="px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-primary/30 border-b-2 border-transparent transition-all hover:text-primary/60">
+                        Exec Output
+                    </button>
+                    <span id="console-status" class="text-[9px] text-primary/30 font-mono ml-2"></span>
+                    <span id="console-count" class="text-[9px] text-primary/40 font-mono"></span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="clearConsole()"
+                        class="h-7 px-3 flex items-center justify-center gap-1.5 border border-primary/20 hover:border-primary hover:bg-primary/10 text-primary/40 hover:text-primary transition-all rounded text-[10px] font-bold uppercase tracking-wider">
+                        <span class="material-symbols-outlined text-sm">delete</span>
+                        <span>Clear</span>
+                    </button>
+                    <button onclick="toggleConsoleFilter()" id="console-filter-btn"
+                        class="h-7 px-3 flex items-center justify-center gap-1.5 border border-primary/20 hover:border-primary hover:bg-primary/10 text-primary/40 hover:text-primary transition-all rounded text-[10px] font-bold uppercase tracking-wider">
+                        <span class="material-symbols-outlined text-sm">filter_alt</span>
+                        <span>Filter</span>
+                    </button>
+                    <button onclick="toggleConsolePause()" id="console-pause-btn"
+                        class="h-7 px-3 flex items-center justify-center gap-1.5 border border-primary/20 hover:border-primary hover:bg-primary/10 text-primary/40 hover:text-primary transition-all rounded text-[10px] font-bold uppercase tracking-wider">
+                        <span class="material-symbols-outlined text-sm">pause</span>
+                        <span>Pause</span>
+                    </button>
+                    <button onclick="toggleConsoleViewer()"
+                        class="w-7 h-7 flex items-center justify-center border border-primary/20 hover:border-primary hover:bg-primary/10 text-primary/40 hover:text-primary transition-all rounded">
+                        <span class="material-symbols-outlined text-sm">close</span>
+                    </button>
+                </div>
+            </div>
+            <!-- Tab Contents -->
+            <div id="console-viewer-content" class="flex-1 overflow-auto p-4 font-mono text-[11px] leading-[1.6]">
+            </div>
+            <div id="exec-viewer-content" class="flex-1 overflow-auto p-4 font-mono text-[11px] leading-[1.6] hidden">
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <main class="flex-1 p-6 lg:p-10 flex flex-col lg:flex-row gap-8 max-w-[1600px] mx-auto w-full">
+            {% block content %}{% endblock %}
+        </main>
+
+        <!-- Footer -->
+        <footer class="mt-auto px-10 py-4 text-center">
+            <p class="text-[10px] text-primary/30 uppercase tracking-[0.5em] glow-text">Wake up, Neo... The Matrix has
+                you.</p>
+        </footer>
+    </div>
+
+    <!-- Global Logout Confirm Modal -->
+    <div id="logoutModal" class="fixed inset-0 z-50 bg-black/80 items-center justify-center" style="display: none;">
+        <div
+            class="matrix-card p-6 w-full max-w-sm flex flex-col gap-5 border-red-500/40 shadow-[0_0_30px_rgba(255,0,0,0.15)] relative">
+            <div class="flex items-center gap-3">
+                <span class="material-symbols-outlined text-red-500">logout</span>
+                <h3 class="text-sm font-bold uppercase tracking-widest text-red-400">System Logout</h3>
+            </div>
+            <p class="text-xs text-primary/70 leading-relaxed">
+                Are you sure you want to disconnect from the Matrix?
+            </p>
+            <p class="text-[10px] text-primary/40 leading-relaxed font-mono">
+                > Your session token will be destroyed.<br>
+                > Re-authentication required to access dashboard.
+            </p>
+            <div class="flex gap-3 mt-2">
+                <a href="/logout"
+                    class="flex-1 px-4 py-3 border border-red-500/50 bg-red-500/10 text-red-400 font-bold uppercase tracking-widest text-sm hover:bg-red-500/20 text-center transition-all duration-300 flex items-center justify-center gap-2">
+                    <span class="material-symbols-outlined text-sm">power_settings_new</span>
+                    Logout
+                </a>
+                <button type="button" onclick="document.getElementById('logoutModal').style.display='none'"
+                    class="px-4 py-3 border border-primary/20 text-primary/40 font-bold uppercase tracking-widest text-sm hover:text-primary transition-colors">
+                    Stay Connected
+                </button>
+            </div>
+        </div>
+    </div>
+
+    {% block scripts %}{% endblock %}
+
+    <script>
+        // ── Prompt Viewer (smart polling) ──
+        let _promptViewerOpen = false;
+        let _promptPollTimer = null;
+        let _promptLastMtime = 0;
+
+        function togglePromptViewer() {
+            const panel = document.getElementById('prompt-viewer-panel');
+            const backdrop = document.getElementById('prompt-viewer-backdrop');
+            _promptViewerOpen = !_promptViewerOpen;
+
+            if (_promptViewerOpen) {
+                panel.style.pointerEvents = 'auto';
+                panel.style.visibility = 'visible';
+                panel.classList.remove('translate-x-full');
+                backdrop.classList.remove('hidden');
+                backdrop.style.pointerEvents = 'auto';
+                document.querySelectorAll('.crt-overlay, .crt-scanline').forEach(function (el) { el.style.display = 'none'; });
+                _promptLastMtime = 0; // Force first load
+                fetchPrompt();
+                _promptPollTimer = setInterval(fetchPrompt, 3000);
+            } else {
+                panel.classList.add('translate-x-full');
+                panel.style.pointerEvents = 'none';
+                setTimeout(function () {
+                    if (!_promptViewerOpen) panel.style.visibility = 'hidden';
+                }, 300);
+                backdrop.classList.add('hidden');
+                backdrop.style.pointerEvents = 'none';
+                document.querySelectorAll('.crt-overlay, .crt-scanline').forEach(function (el) { el.style.display = ''; });
+                if (_promptPollTimer) {
+                    clearInterval(_promptPollTimer);
+                    _promptPollTimer = null;
+                }
+            }
+        }
+
+        async function fetchPrompt() {
+            const statusEl = document.getElementById('prompt-status');
+            try {
+                const resp = await fetch('/api/prompt?since=' + _promptLastMtime);
+
+                if (resp.status === 304) {
+                    // Not modified
+                    if (statusEl) statusEl.textContent = '● live';
+                    return;
+                }
+
+                const data = await resp.json();
+
+                if (data.exists) {
+                    document.getElementById('prompt-text').textContent = data.content;
+                    _promptLastMtime = data.mtime;
+
+                    // Footer info
+                    const charsEl = document.getElementById('prompt-chars');
+                    const modEl = document.getElementById('prompt-modified');
+                    const headerCharsEl = document.getElementById('prompt-header-chars');
+                    if (charsEl) charsEl.textContent = data.size.toLocaleString() + ' chars';
+                    if (headerCharsEl) headerCharsEl.textContent = data.size.toLocaleString() + ' chars';
+                    if (modEl) modEl.textContent = 'Updated: ' + new Date(data.mtime * 1000).toLocaleTimeString();
+                    if (statusEl) statusEl.textContent = '● live';
+                } else {
+                    document.getElementById('prompt-text').textContent = '(prompt.md not found — send a message first to generate it)';
+                    if (statusEl) statusEl.textContent = '';
+                }
+            } catch (e) {
+                if (statusEl) statusEl.textContent = '● error';
+                console.warn('Prompt fetch error:', e);
+            }
+        }
+
+        async function copyPrompt(btn) {
+            const text = document.getElementById('prompt-text').textContent;
+            try {
+                await navigator.clipboard.writeText(text);
+                const orig = btn.innerHTML;
+                btn.innerHTML = '<span class="material-symbols-outlined text-sm">check</span><span>Copied!</span>';
+                btn.classList.add('border-primary', 'text-primary');
+                setTimeout(function () {
+                    btn.innerHTML = orig;
+                    btn.classList.remove('border-primary', 'text-primary');
+                }, 1500);
+            } catch (e) {
+                console.warn('Copy failed:', e);
+            }
+        }
+
+        // ===== Console Log Viewer =====
+        let _consoleOpen = false;
+        let _consoleEventSource = null;
+        let _consolePaused = false;
+        let _consoleLineCount = 0;
+        let _execLineCount = 0;
+        let _activeConsoleTab = 'logs';
+        let _consoleFilterOn = false;
+        const _LEVEL_COLORS = {
+            'DEBUG': 'rgba(0, 255, 65, 0.4)',
+            'INFO': 'rgba(0, 255, 65, 0.85)',
+            'SUCCESS': 'rgba(0, 200, 255, 0.85)',
+            'WARNING': 'rgba(255, 200, 0, 0.9)',
+            'ERROR': 'rgba(255, 80, 80, 0.95)',
+            'CRITICAL': 'rgba(255, 30, 30, 1)',
+        };
+
+        function toggleConsoleViewer() {
+            const panel = document.getElementById('console-viewer-panel');
+            _consoleOpen = !_consoleOpen;
+
+            if (_consoleOpen) {
+                panel.style.pointerEvents = 'auto';
+                panel.style.visibility = 'visible';
+                panel.classList.remove('translate-y-full');
+                document.querySelectorAll('.crt-overlay, .crt-scanline').forEach(function (el) { el.style.display = 'none'; });
+                document.body.style.paddingBottom = '45vh';
+                sessionStorage.setItem('consoleOpen', '1');
+                connectConsoleSSE();
+            } else {
+                panel.classList.add('translate-y-full');
+                panel.style.pointerEvents = 'none';
+                setTimeout(function () {
+                    if (!_consoleOpen) panel.style.visibility = 'hidden';
+                }, 300);
+                document.querySelectorAll('.crt-overlay, .crt-scanline').forEach(function (el) { el.style.display = ''; });
+                document.body.style.paddingBottom = '';
+                sessionStorage.removeItem('consoleOpen');
+                disconnectConsoleSSE();
+            }
+        }
+
+        function connectConsoleSSE() {
+            if (_consoleEventSource) return;
+            const statusEl = document.getElementById('console-status');
+            _consoleEventSource = new EventSource('/api/logs/stream');
+
+            _consoleEventSource.addEventListener('logs', function (e) {
+                if (_consolePaused) return;
+                try {
+                    const entries = JSON.parse(e.data);
+                    appendConsoleEntries(entries);
+                } catch (err) {
+                    console.warn('Console parse error:', err);
+                }
+            });
+
+            _consoleEventSource.addEventListener('exec', function (e) {
+                if (_consolePaused) return;
+                try {
+                    const entries = JSON.parse(e.data);
+                    appendExecEntries(entries);
+                } catch (err) {
+                    console.warn('Exec parse error:', err);
+                }
+            });
+
+            _consoleEventSource.onopen = function () {
+                if (statusEl) statusEl.textContent = '● connected';
+            };
+            _consoleEventSource.onerror = function () {
+                if (statusEl) statusEl.textContent = '● reconnecting...';
+            };
+        }
+
+        function disconnectConsoleSSE() {
+            if (_consoleEventSource) {
+                _consoleEventSource.close();
+                _consoleEventSource = null;
+            }
+            const statusEl = document.getElementById('console-status');
+            if (statusEl) statusEl.textContent = '';
+        }
+
+        function appendConsoleEntries(entries) {
+            const container = document.getElementById('console-viewer-content');
+            const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 30;
+
+            for (const entry of entries) {
+                const line = document.createElement('div');
+                const color = _LEVEL_COLORS[entry.level] || 'rgba(0, 255, 65, 0.6)';
+                const levelPad = entry.level.padEnd(8);
+                line.style.color = color;
+                line.dataset.level = entry.level;
+                line.textContent = entry.timestamp + ' ' + levelPad + ' [' + entry.module.split('.').pop() + '] ' + entry.message;
+                if (_consoleFilterOn && entry.level === 'DEBUG') {
+                    line.style.display = 'none';
+                }
+                container.appendChild(line);
+                _consoleLineCount++;
+            }
+
+            // Limit DOM nodes
+            while (container.children.length > 500) {
+                container.removeChild(container.firstChild);
+            }
+
+            // Auto-scroll if was at bottom
+            if (wasAtBottom) {
+                container.scrollTop = container.scrollHeight;
+            }
+
+            const countEl = document.getElementById('console-count');
+            if (countEl) countEl.textContent = _consoleLineCount + ' lines';
+        }
+
+        function clearConsole() {
+            if (_activeConsoleTab === 'logs') {
+                document.getElementById('console-viewer-content').innerHTML = '';
+                _consoleLineCount = 0;
+            } else {
+                document.getElementById('exec-viewer-content').innerHTML = '';
+                _execLineCount = 0;
+            }
+            const countEl = document.getElementById('console-count');
+            if (countEl) countEl.textContent = '0 lines';
+        }
+
+        function toggleConsolePause() {
+            _consolePaused = !_consolePaused;
+            const btn = document.getElementById('console-pause-btn');
+            if (_consolePaused) {
+                btn.innerHTML = '<span class="material-symbols-outlined text-sm">play_arrow</span><span>Resume</span>';
+                btn.classList.add('border-yellow-500/50', 'text-yellow-400');
+            } else {
+                btn.innerHTML = '<span class="material-symbols-outlined text-sm">pause</span><span>Pause</span>';
+                btn.classList.remove('border-yellow-500/50', 'text-yellow-400');
+            }
+        }
+
+        function toggleConsoleFilter() {
+            _consoleFilterOn = !_consoleFilterOn;
+            const btn = document.getElementById('console-filter-btn');
+            if (_consoleFilterOn) {
+                btn.innerHTML = '<span class="material-symbols-outlined text-sm">filter_alt</span><span>Filter ON</span>';
+                btn.classList.add('border-primary', 'text-primary', 'bg-primary/10');
+            } else {
+                btn.innerHTML = '<span class="material-symbols-outlined text-sm">filter_alt</span><span>Filter</span>';
+                btn.classList.remove('border-primary', 'text-primary', 'bg-primary/10');
+            }
+            // Toggle visibility of existing DEBUG lines
+            const container = document.getElementById('console-viewer-content');
+            container.querySelectorAll('[data-level="DEBUG"]').forEach(function (el) {
+                el.style.display = _consoleFilterOn ? 'none' : '';
+            });
+        }
+
+        function switchConsoleTab(tab) {
+            _activeConsoleTab = tab;
+            const logsTab = document.getElementById('console-tab-logs');
+            const execTab = document.getElementById('console-tab-exec');
+            const logsContent = document.getElementById('console-viewer-content');
+            const execContent = document.getElementById('exec-viewer-content');
+            const countEl = document.getElementById('console-count');
+
+            if (tab === 'logs') {
+                logsTab.className = 'px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-primary/80 border-b-2 border-primary transition-all';
+                execTab.className = 'px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-primary/30 border-b-2 border-transparent transition-all hover:text-primary/60';
+                logsContent.classList.remove('hidden');
+                execContent.classList.add('hidden');
+                if (countEl) countEl.textContent = _consoleLineCount + ' lines';
+            } else {
+                execTab.className = 'px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-primary/80 border-b-2 border-primary transition-all';
+                logsTab.className = 'px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-primary/30 border-b-2 border-transparent transition-all hover:text-primary/60';
+                execContent.classList.remove('hidden');
+                logsContent.classList.add('hidden');
+                if (countEl) countEl.textContent = _execLineCount + ' lines';
+            }
+        }
+
+        function appendExecEntries(entries) {
+            const container = document.getElementById('exec-viewer-content');
+            const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 30;
+
+            for (const entry of entries) {
+                const block = document.createElement('div');
+                block.style.marginBottom = '8px';
+                block.style.borderLeft = '2px solid ' + (entry.exit_code === 0 ? 'rgba(0, 255, 65, 0.4)' : 'rgba(255, 80, 80, 0.6)');
+                block.style.paddingLeft = '8px';
+
+                // Command header
+                const header = document.createElement('div');
+                header.style.color = 'rgba(0, 200, 255, 0.9)';
+                header.textContent = '$ ' + entry.command + '  (' + entry.duration + 's, exit: ' + entry.exit_code + ')';
+                block.appendChild(header);
+
+                // stdout
+                if (entry.stdout && entry.stdout.trim()) {
+                    const out = document.createElement('div');
+                    out.style.color = 'rgba(0, 255, 65, 0.75)';
+                    out.style.whiteSpace = 'pre-wrap';
+                    out.style.wordBreak = 'break-all';
+                    out.textContent = entry.stdout.slice(0, 3000);
+                    block.appendChild(out);
+                }
+
+                // stderr
+                if (entry.stderr && entry.stderr.trim()) {
+                    const err = document.createElement('div');
+                    err.style.color = 'rgba(255, 80, 80, 0.8)';
+                    err.style.whiteSpace = 'pre-wrap';
+                    err.style.wordBreak = 'break-all';
+                    err.textContent = 'STDERR: ' + entry.stderr.slice(0, 2000);
+                    block.appendChild(err);
+                }
+
+                container.appendChild(block);
+                _execLineCount++;
+            }
+
+            // Limit DOM blocks
+            while (container.children.length > 100) {
+                container.removeChild(container.firstChild);
+            }
+
+            if (wasAtBottom) {
+                container.scrollTop = container.scrollHeight;
+            }
+
+            if (_activeConsoleTab === 'exec') {
+                const countEl = document.getElementById('console-count');
+                if (countEl) countEl.textContent = _execLineCount + ' lines';
+            }
+        }
+
+        // ===== Auto-restore panels on page load =====
+        (function () {
+            if (sessionStorage.getItem('consoleOpen') === '1') {
+                toggleConsoleViewer();
+            }
+        })();
+
+        // ===== Server Health Check =====
+        (function () {
+            let _online = true;
+            async function checkHealth() {
+                const dot = document.getElementById('server-status-dot');
+                const text = document.getElementById('server-status-text');
+                const btn = document.getElementById('server-status-btn');
+                try {
+                    const r = await fetch('/api/prompt?since=0', { signal: AbortSignal.timeout(3000) });
+                    if (!_online) {
+                        _online = true;
+                        dot.className = 'blinking';
+                        dot.style.color = '';
+                        text.textContent = 'Online';
+                        btn.className = 'px-6 py-2 border border-primary bg-primary/10 glow-text flex items-center gap-2 group hover:bg-primary hover:text-black transition-all';
+                    }
+                } catch {
+                    if (_online) {
+                        _online = false;
+                        dot.className = '';
+                        dot.style.color = '#ff4444';
+                        text.textContent = 'Offline';
+                        btn.className = 'px-6 py-2 border border-red-500/50 bg-red-500/10 flex items-center gap-2 transition-all';
+                    }
+                }
+            }
+            checkHealth();
+            setInterval(checkHealth, 5000);
+        })();
+
+        // ===== Fleet Badge =====
+        (function () {
+            async function checkFleet() {
+                try {
+                    const r = await fetch('/api/fleet/status', { signal: AbortSignal.timeout(3000) });
+                    const data = await r.json();
+                    const badge = document.getElementById('fleet-badge');
+                    const textEl = document.getElementById('fleet-badge-text');
+                    const ipEl = document.getElementById('fleet-badge-ip');
+                    if (data.fleet_id) {
+                        textEl.textContent = 'Fleet: ' + data.fleet_id;
+                        ipEl.textContent = data.claimed_by ? '(' + data.claimed_by + ')' : '';
+                        badge.classList.remove('hidden');
+                        badge.title = 'Claimed at: ' + (data.claimed_at || '—');
+                    } else {
+                        badge.classList.add('hidden');
+                    }
+                } catch { /* ignore */ }
+            }
+            checkFleet();
+            setInterval(checkFleet, 10000);
+        })();
+
+        // ===== Default Password Badge =====
+        (function () {
+            async function checkPasswordStatus() {
+                try {
+                    const r = await fetch('/api/password-status', { signal: AbortSignal.timeout(3000) });
+                    const data = await r.json();
+                    const badge = document.getElementById('default-pwd-badge');
+                    if (!badge) return;
+                    if (data.is_default) {
+                        badge.style.display = 'flex';
+                        const textEl = document.getElementById('default-pwd-text');
+                        if (textEl) textEl.textContent = '\u26a0 Default Pwd: ' + data.password;
+                    } else {
+                        badge.style.display = 'none';
+                    }
+                } catch { /* ignore */ }
+            }
+            checkPasswordStatus();
+            setInterval(checkPasswordStatus, 30000);
+        })();
+    </script>
+</body>
+
+</html>

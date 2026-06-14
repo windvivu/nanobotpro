@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}{{ bot.name }} Logs{% endblock %}
+{% block page_title %}{{ bot.name }} Logs{% endblock %}
+{% block page_subtitle %}Tail view for {{ stream }} output.{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-header">
+        <h2>Log Viewer</h2>
+        <div class="action-row">
+            <a class="button button-small {% if stream == 'stdout' %}button-primary{% endif %}" href="/bots/{{ bot.id }}/logs?stream=stdout&tail={{ tail }}">stdout</a>
+            <a class="button button-small {% if stream == 'stderr' %}button-primary{% endif %}" href="/bots/{{ bot.id }}/logs?stream=stderr&tail={{ tail }}">stderr</a>
+            <a class="button button-small button-link" href="/bots/{{ bot.id }}">Back to Bot</a>
+        </div>
+    </div>
+    <div class="log-toolbar">
+        <div class="log-toolbar-group">
+            <label class="log-control">
+                <span>Tail</span>
+                <select id="tail-select" data-bot-id="{{ bot.id }}" data-stream="{{ stream }}">
+                    {% for size in [100, 200, 500, 1000] %}
+                    <option value="{{ size }}" {% if tail == size %}selected{% endif %}>Last {{ size }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label class="log-control log-control-wide">
+                <span>Search</span>
+                <input id="log-filter" type="search" placeholder="Filter lines..." />
+            </label>
+        </div>
+        <label class="log-toggle">
+            <input id="log-autorefresh" type="checkbox" checked />
+            <span>Auto refresh</span>
+        </label>
+    </div>
+    <pre class="log-block">{% if lines %}{% for line in lines %}{{ line }}
+{% endfor %}{% else %}(no log lines yet){% endif %}</pre>
+</section>
+{% endblock %}

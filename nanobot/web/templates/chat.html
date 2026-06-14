@@ -1,0 +1,667 @@
+{% extends "base.html" %}
+
+{% block title %}Chat — Nanobot OS{% endblock %}
+
+{% block content %}
+<!-- Sidebar -->
+<aside class="w-full lg:w-72 flex flex-col gap-6 flex-shrink-0">
+    <div class="matrix-card p-6 flex flex-col items-center text-center gap-4">
+        <div
+            class="w-20 h-20 flex items-center justify-center text-primary glow-text border-2 border-primary/30 rounded-full relative">
+            <div class="absolute inset-0 border border-primary animate-pulse rounded-full opacity-20"></div>
+            <span class="material-symbols-outlined text-4xl">chat</span>
+        </div>
+        <div>
+            <h2 class="text-lg font-bold glow-text tracking-widest uppercase">{{ bot_name }}</h2>
+            <p class="text-[10px] text-primary/50 font-mono">PROFILE: {{ profile_name }}</p>
+        </div>
+        <div id="ws-status" class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span>
+            <span class="text-[10px] text-yellow-400/70 uppercase tracking-widest font-bold">Connecting...</span>
+        </div>
+    </div>
+
+    {% set active_page = "chat" %}
+
+
+    {% include "_sidebar_nav.html" %}
+</aside>
+
+<!-- Main Chat Area -->
+<div class="flex-1 flex flex-col min-h-0 lg:sticky lg:top-6 relative" style="height: calc(100vh - 160px); min-height: 500px;">
+    <!-- Chat Header -->
+    <div class="matrix-card p-4 flex items-center justify-between flex-shrink-0">
+        <div class="flex items-center gap-3">
+            <span class="material-symbols-outlined glow-text">forum</span>
+            <h3 class="text-xs font-bold uppercase tracking-widest glow-text">Web Chat</h3>
+        </div>
+        <div class="flex items-center gap-4">
+            <span class="text-[10px] text-primary/30 font-mono">SESSION: {{ session_key }}</span>
+            <button onclick="newConversation()" id="btn-new-conv"
+                class="px-3 py-1.5 border border-primary/50 text-[9px] text-primary/70 uppercase tracking-widest hover:border-primary hover:text-primary hover:shadow-[0_0_10px_rgba(0,255,65,0.3)] transition-all flex items-center gap-1">
+                <span class="material-symbols-outlined text-[12px]">add_comment</span>New Conversation
+            </button>
+        </div>
+    </div>
+
+    <!-- Messages Area -->
+    <div id="messages" class="flex-1 overflow-y-auto p-4 space-y-4 min-h-0"
+        style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;">
+
+        <!-- Welcome message -->
+        <div id="welcome-msg" class="flex flex-col items-center justify-center py-12 text-center gap-4">
+            <span class="material-symbols-outlined text-6xl text-primary/20">smart_toy</span>
+            <h3 class="text-sm font-bold uppercase tracking-widest text-primary/40">{{ bot_name }}</h3>
+            <p class="text-[10px] text-primary/20 uppercase tracking-wider max-w-sm">
+                Start a conversation. Messages are saved to session {{ session_key }}.
+            </p>
+        </div>
+    </div>
+
+    <!-- Smart scroll: new message banner -->
+    <div id="new-msg-banner" onclick="scrollToBottomForce()">▼ New message</div>
+
+    <!-- Typing Indicator -->
+    <div id="typing" class="px-4 py-2 hidden flex-shrink-0">
+        <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-primary/40 text-sm animate-pulse">more_horiz</span>
+            <span class="text-[10px] text-primary/40 uppercase tracking-widest">{{ bot_name }} is thinking...</span>
+        </div>
+    </div>
+
+    <!-- New Conversation Confirm Modal -->
+    <div id="new-conv-modal" style="display:none; position:absolute; inset:0; z-index:100;
+         background:rgba(0,0,0,0.55); backdrop-filter:blur(4px);
+         align-items:center; justify-content:center;">
+        <div style="border:1px solid rgba(0,255,65,0.7); background:#0a1a0a; padding:2rem; max-width:360px; text-align:center; box-shadow:0 0 40px rgba(0,255,65,0.15);">
+            <span class="material-symbols-outlined" style="font-size:2.2rem; color:#00FF41; opacity:0.9;">add_comment</span>
+            <p style="color:#00FF41; font-family:monospace; font-size:0.8rem; margin:0.8rem 0 0.4rem; text-transform:uppercase; letter-spacing:0.1em; text-shadow:0 0 8px rgba(0,255,65,0.5);">Bắt đầu hội thoại mới?</p>
+            <p style="color:rgba(0,255,65,0.75); font-family:monospace; font-size:0.68rem; margin-bottom:1.5rem;">Nội dung chưa lưu sẽ được đưa vào bộ nhớ dài hạn trước khi xóa.</p>
+            <div style="display:flex; gap:0.75rem; justify-content:center;">
+                <button onclick="confirmNewConv()" id="btn-confirm-new"
+                    style="padding:0.5rem 1.2rem; border:1px solid #00FF41; background:rgba(0,255,65,0.15); color:#00FF41;
+                           font-family:monospace; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.1em; cursor:pointer;
+                           transition:background 0.2s; text-shadow:0 0 6px rgba(0,255,65,0.4);" onmouseover="this.style.background='rgba(0,255,65,0.28)'" onmouseout="this.style.background='rgba(0,255,65,0.15)'">
+                    Xác nhận
+                </button>
+                <button onclick="closeNewConvModal()"
+                    style="padding:0.5rem 1.2rem; border:1px solid rgba(0,255,65,0.4); background:transparent; color:rgba(0,255,65,0.7);
+                           font-family:monospace; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.1em; cursor:pointer;
+                           transition:all 0.2s;" onmouseover="this.style.borderColor='rgba(0,255,65,0.8)'" onmouseout="this.style.borderColor='rgba(0,255,65,0.4)'">
+                    Hủy
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Input Area -->
+    <div class="matrix-card p-4 flex-shrink-0">
+        <form id="chat-form" class="flex gap-3" onsubmit="sendMessage(event)">
+            <div class="flex-1 relative">
+                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-primary/30 text-sm font-mono">$</span>
+                <input type="text" id="chat-input" autocomplete="off" spellcheck="false" placeholder="Type a message..."
+                    class="w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.15)] outline-none pl-8 pr-4 py-3 text-primary/90 font-mono text-sm transition-all duration-300"
+                    style="caret-color: #00FF41;">
+            </div>
+            <button type="submit" id="send-btn"
+                class="px-6 py-3 border border-primary bg-primary/10 text-primary font-bold uppercase tracking-widest text-xs hover:bg-primary hover:text-black transition-all duration-300 flex items-center gap-2 group">
+                <span class="material-symbols-outlined text-sm group-hover:text-black">send</span>
+                Send
+            </button>
+            <button type="button" id="stop-btn" onclick="stopStream()" style="display:none"
+                class="px-6 py-3 border border-red-500/60 bg-red-500/10 text-red-400 font-bold uppercase tracking-widest text-xs hover:bg-red-500/30 hover:text-red-300 transition-all duration-300 flex items-center gap-2">
+                <span class="material-symbols-outlined text-sm">stop_circle</span>
+                Stop
+            </button>
+        </form>
+        <div class="flex items-center justify-between mt-2">
+            <span class="text-[9px] text-primary/20 font-mono uppercase tracking-wider">
+                WebSocket · {{ profile_name }} · Press Enter to send
+            </span>
+            <span id="char-count" class="text-[9px] text-primary/20 font-mono">0</span>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- Markdown + LaTeX rendering -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+<style>
+    .crt-overlay,
+    .crt-scanline {
+        display: none !important;
+    }
+
+    .msg-user {
+        background: rgba(0, 0, 0, 0.4);
+        border: 1px solid rgba(0, 255, 65, 0.2);
+    }
+
+    .msg-bot {
+        background: rgba(0, 255, 65, 0.08);
+        border: 1px solid rgba(0, 255, 65, 0.35);
+    }
+
+    .msg-error {
+        background: rgba(255, 80, 80, 0.08);
+        border: 1px solid rgba(255, 80, 80, 0.35);
+    }
+
+    @keyframes msgIn {
+        from {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .msg-animate {
+        animation: msgIn 0.3s ease-out;
+    }
+
+    /* Markdown rendering */
+    .msg-content p { margin-bottom: 0.5em; }
+    .msg-content p:last-child { margin-bottom: 0; }
+    .msg-content ul, .msg-content ol { margin: 0.4em 0 0.4em 1.2em; }
+    .msg-content li { margin-bottom: 0.2em; }
+    .msg-content h1, .msg-content h2, .msg-content h3 {
+        font-weight: bold; margin: 0.6em 0 0.3em; text-shadow: 0 0 5px rgba(0,255,65,0.7);
+    }
+    .msg-content strong { color: #00FF41; text-shadow: 0 0 4px rgba(0,255,65,0.5); }
+    .msg-content em { color: rgba(0,255,65,0.8); font-style: italic; }
+    .msg-content a { color: #00FF41; text-decoration: underline; opacity: 0.8; }
+    .msg-content code {
+        background: rgba(0, 255, 65, 0.1);
+        padding: 0.1em 0.3em;
+        font-size: 0.85em;
+        border: 1px solid rgba(0, 255, 65, 0.15);
+    }
+    .msg-content pre {
+        background: rgba(0, 0, 0, 0.6);
+        border: 1px solid rgba(0, 255, 65, 0.15);
+        padding: 0.75em;
+        margin: 0.5em 0;
+        overflow-x: auto;
+        font-size: 0.85em;
+    }
+    .msg-content pre code { background: none; border: none; padding: 0; }
+    .msg-content blockquote {
+        border-left: 2px solid rgba(0,255,65,0.4);
+        padding-left: 0.75em;
+        margin: 0.5em 0;
+        color: rgba(0,255,65,0.6);
+    }
+    .msg-content table { border-collapse: collapse; margin: 0.5em 0; font-size: 0.85em; }
+    .msg-content th, .msg-content td {
+        border: 1px solid rgba(0,255,65,0.2);
+        padding: 0.3em 0.6em;
+    }
+    .msg-content th { background: rgba(0,255,65,0.08); }
+    .msg-content hr {
+        border: none;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(0,255,65,0.4) 20%, rgba(0,255,65,0.4) 80%, transparent);
+        margin: 1.8em 0;
+        box-shadow: 0 0 6px rgba(0,255,65,0.25);
+    }
+
+    /* KaTeX — match matrix green theme */
+    .msg-content .katex { color: #00FF41 !important; font-size: 1em; }
+    .msg-content .katex-display {
+        overflow-x: auto;
+        padding: 0.5em 0;
+        margin: 0.5em 0;
+    }
+    .msg-content .katex-display > .katex { color: #00FF41 !important; }
+
+    /* Smart scroll banner */
+    #new-msg-banner {
+        display: none;
+        position: absolute;
+        bottom: 110px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 50;
+        cursor: pointer;
+        padding: 0.3rem 0.9rem;
+        font-size: 0.65rem;
+        font-family: 'JetBrains Mono', monospace;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        border: 1px solid rgba(0,255,65,0.6);
+        background: rgba(0,10,2,0.92);
+        color: #00FF41;
+        border-radius: 2px;
+        box-shadow: 0 0 14px rgba(0,255,65,0.25);
+        animation: bannerPulse 1.5s ease-in-out infinite;
+        white-space: nowrap;
+        backdrop-filter: blur(4px);
+    }
+    @keyframes bannerPulse {
+        0%,100% { box-shadow: 0 0 8px rgba(0,255,65,0.2); }
+        50%  { box-shadow: 0 0 20px rgba(0,255,65,0.45); }
+    }
+</style>
+
+<script>
+    const messagesEl = document.getElementById('messages');
+    const inputEl = document.getElementById('chat-input');
+    const typingEl = document.getElementById('typing');
+    const welcomeEl = document.getElementById('welcome-msg');
+    const statusEl = document.getElementById('ws-status');
+    const charCountEl = document.getElementById('char-count');
+    const sendBtn = document.getElementById('send-btn');
+
+    let ws = null;
+    let isProcessing = false;
+
+    // ── Smart Auto-Scroll ──────────────────────────────────────
+    const newMsgBanner = document.getElementById('new-msg-banner');
+    let userIsAtBottom = true;
+    const NEAR_BOTTOM_PX = 80;
+
+    function isNearBottom() {
+        return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < NEAR_BOTTOM_PX;
+    }
+
+    messagesEl.addEventListener('scroll', () => {
+        if (isNearBottom()) {
+            userIsAtBottom = true;
+            newMsgBanner.style.display = 'none';
+        } else {
+            userIsAtBottom = false;
+        }
+    }, { passive: true });
+
+    function scrollToBottom() {
+        if (userIsAtBottom) {
+            requestAnimationFrame(() => {
+                messagesEl.scrollTop = messagesEl.scrollHeight;
+            });
+        } else {
+            newMsgBanner.style.display = 'block';
+        }
+    }
+
+    function scrollToBottomForce() {
+        userIsAtBottom = true;
+        newMsgBanner.style.display = 'none';
+        requestAnimationFrame(() => {
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+        });
+    }
+
+    // ── Render bot message: Markdown + LaTeX ──────────────────
+    const _katexOpts = {
+        delimiters: [
+            { left: '$$', right: '$$', display: true },
+            { left: '$',  right: '$',  display: false },
+            { left: '\\[', right: '\\]', display: true },
+            { left: '\\(', right: '\\)', display: false },
+        ],
+        throwOnError: false,
+    };
+
+    function renderContent(text) {
+        // Hide ---+--- temporarily with a unique token that marked won't mess up
+        const token = "SENDDIVIDERTOKEN123456789";
+        const modText = text.replace(/---+---/g, `\n\n${token}\n\n`);
+
+        // 1. Parse Markdown → HTML
+        const rawHtml = marked.parse(modText, { breaks: true, gfm: true });
+        // 2. Sanitize XSS
+        const clean = DOMPurify.sanitize(rawHtml);
+
+        const dividerHtml = `
+            <div class="my-5 flex items-center justify-center gap-3 opacity-90 w-full" style="clear:both;">
+                <div class="h-px bg-primary/40 flex-1 shadow-[0_0_8px_rgba(0,255,65,0.4)]"></div>
+                <div class="px-3 py-1 text-[9px] text-primary/80 font-mono tracking-widest uppercase border border-primary/40 rounded-full bg-primary/10 shadow-[0_0_10px_rgba(0,255,65,0.2)] flex items-center gap-1">
+                    <span class="material-symbols-outlined text-[13px]">forum</span>
+                </div>
+                <div class="h-px bg-primary/40 flex-1 shadow-[0_0_8px_rgba(0,255,65,0.4)]"></div>
+            </div>
+        `;
+        let finalHtml = clean.replace(new RegExp(`<p>${token}</p>`, 'g'), dividerHtml);
+        finalHtml = finalHtml.replace(new RegExp(token, 'g'), dividerHtml);
+
+        // 3. Inject into temp element
+        const el = document.createElement('div');
+        el.innerHTML = finalHtml;
+
+        // 4. Auto-render LaTeX ($...$ and $$...$$)
+        if (typeof renderMathInElement !== 'undefined') {
+            renderMathInElement(el, _katexOpts);
+        }
+        return el.innerHTML;
+    }
+
+    // Load history
+    const history = {{ history | safe }};
+    if (history.length > 0) {
+        welcomeEl.style.display = 'none';
+        history.forEach(msg => appendMessage(msg.role, msg.content, false));
+        scrollToBottom();
+    }
+
+    // Character count
+    inputEl.addEventListener('input', () => {
+        charCountEl.textContent = inputEl.value.length;
+    });
+
+    // WebSocket connection
+    function connect() {
+        const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        ws = new WebSocket(`${protocol}//${location.host}/chat/ws`);
+
+        ws.onopen = () => {
+            statusEl.innerHTML = `
+                <span class="w-2 h-2 rounded-full bg-primary shadow-[0_0_5px_#00FF41]"></span>
+                <span class="text-[10px] text-primary/70 uppercase tracking-widest font-bold">Online</span>
+            `;
+        };
+
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+
+            if (data.type === 'typing') {
+                typingEl.classList.remove('hidden');
+                scrollToBottom();
+            } else if (data.type === 'progress') {
+                // Stream progress — update last bot message or show typing
+                updateProgress(data.content);
+            } else if (data.type === 'stream_delta') {
+                // Real streaming — append delta text live
+                typingEl.classList.add('hidden');
+                removeProgress();
+                appendStreamDelta(data.content);
+            } else if (data.type === 'stream_end') {
+                // Streaming done — render final markdown
+                finalizeStream(data.content);
+            } else if (data.type === 'message') {
+                // Non-streaming fallback — typewriter effect
+                typingEl.classList.add('hidden');
+                removeProgress();
+                typewriteMessage(data.content);
+            } else if (data.type === 'error') {
+                typingEl.classList.add('hidden');
+                removeProgress();
+                finalizeStream(null); // clean up any in-progress stream
+                appendMessage('error', data.content);
+                isProcessing = false;
+                inputEl.disabled = false;
+                sendBtn.disabled = false;
+            }
+        };
+
+        ws.onclose = () => {
+            statusEl.innerHTML = `
+                <span class="w-2 h-2 rounded-full bg-red-500"></span>
+                <span class="text-[10px] text-red-400/70 uppercase tracking-widest font-bold">Disconnected</span>
+            `;
+            // Reconnect after 3s
+            setTimeout(connect, 3000);
+        };
+
+        ws.onerror = () => {
+            statusEl.innerHTML = `
+                <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                <span class="text-[10px] text-red-400/70 uppercase tracking-widest font-bold">Error</span>
+            `;
+        };
+    }
+
+    function sendMessage(e) {
+        e.preventDefault();
+        const text = inputEl.value.trim();
+        if (!text || isProcessing || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+        isProcessing = true;
+        inputEl.disabled = true;
+        sendBtn.style.display = 'none';
+        document.getElementById('stop-btn').style.display = 'flex';
+        welcomeEl.style.display = 'none';
+
+        appendMessage('user', text);
+        ws.send(JSON.stringify({ text }));
+        inputEl.value = '';
+        charCountEl.textContent = '0';
+    }
+
+    function appendMessage(role, content, animate = true) {
+        const wrapper = document.createElement('div');
+        const isUser = role === 'user';
+        const isError = role === 'error';
+        const cssClass = isError ? 'msg-error' : (isUser ? 'msg-user' : 'msg-bot');
+
+        wrapper.className = `flex justify-start ${animate ? 'msg-animate' : ''}`;
+        wrapper.innerHTML = `
+            <div class="w-fit max-w-[85%] flex flex-col items-start gap-0.5">
+                <div class="flex items-center gap-2 text-[9px] uppercase tracking-wider ${isError ? 'text-red-400/40' : 'text-primary/40'}">
+                    <span class="material-symbols-outlined text-[12px] ${isError ? 'text-red-400/50' : 'text-primary/50'}">${isUser ? 'person' : (isError ? 'error' : 'smart_toy')}</span>
+                    <span class="font-bold ${isError ? 'text-red-400/60' : 'text-primary/60'}">${isUser ? 'YOU' : (isError ? 'ERROR' : '{{ bot_name | upper }}')}</span>
+                </div>
+                <div class="${cssClass} px-3 py-2 text-sm font-mono leading-relaxed ${isError ? 'text-red-400/80' : 'text-primary/80'} break-words msg-content">${isUser || isError ? escapeHtml(content) : renderContent(content)}</div>
+            </div>
+        `;
+        messagesEl.appendChild(wrapper);
+        scrollToBottom();
+    }
+
+    let progressEl = null;
+    let typewriteTimer = null;
+    let streamEl = null;  // Active stream bubble element
+
+    // ── Real Streaming ─────────────────────────────────────────
+    function appendStreamDelta(delta) {
+        if (!streamEl) {
+            // Create stream bubble on first delta
+            streamEl = document.createElement('div');
+            streamEl.className = 'flex justify-start msg-animate';
+            streamEl.innerHTML = `
+                <div class="w-fit max-w-[85%] flex flex-col items-start gap-0.5">
+                    <div class="flex items-center gap-2 text-[9px] uppercase tracking-wider text-primary/40">
+                        <span class="material-symbols-outlined text-[12px] text-primary/50">smart_toy</span>
+                        <span class="font-bold text-primary/60">{{ bot_name | upper }}</span>
+                        <span class="material-symbols-outlined text-[12px] text-primary/30 animate-pulse stream-indicator">more_horiz</span>
+                    </div>
+                    <div class="msg-bot px-3 py-2 text-sm font-mono leading-relaxed text-primary/80 whitespace-pre-wrap break-words msg-content"></div>
+                </div>
+            `;
+            messagesEl.appendChild(streamEl);
+            streamEl._rawText = "";
+        }
+        const contentEl = streamEl.querySelector('.msg-content');
+        if (contentEl) {
+            streamEl._rawText += delta;
+            contentEl.textContent = streamEl._rawText.replace(/---+---/g, '\n[ 💬 ]\n');
+        }
+        scrollToBottom();
+    }
+
+    function finalizeStream(fullContent) {
+        if (!streamEl) return;
+        const contentEl = streamEl.querySelector('.msg-content');
+        const indicator = streamEl.querySelector('.stream-indicator');
+        if (indicator) indicator.remove();
+
+        if (contentEl && fullContent) {
+            // Smooth transition: fade to rendered markdown
+            contentEl.style.transition = 'opacity 0.15s ease';
+            contentEl.style.opacity = '0.3';
+            setTimeout(() => {
+                contentEl.innerHTML = renderContent(fullContent);
+                contentEl.classList.remove('whitespace-pre-wrap');
+                contentEl.style.opacity = '1';
+                scrollToBottom();
+            }, 150);
+        }
+        streamEl = null;
+        isProcessing = false;
+        inputEl.disabled = false;
+        sendBtn.style.display = 'flex';
+        document.getElementById('stop-btn').style.display = 'none';
+        inputEl.focus();
+        scrollToBottom();
+    }
+
+    function stopStream() {
+        // Send stop signal to backend
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'stop' }));
+        }
+        // Finalize with whatever we have so far
+        if (streamEl) {
+            const contentEl = streamEl.querySelector('.msg-content');
+            const currentText = contentEl ? contentEl.textContent : '';
+            finalizeStream(currentText);
+        } else {
+            // Not streaming — just reset UI
+            isProcessing = false;
+            inputEl.disabled = false;
+            sendBtn.style.display = 'flex';
+            document.getElementById('stop-btn').style.display = 'none';
+            typingEl.classList.add('hidden');
+            removeProgress();
+        }
+    }
+
+    function typewriteMessage(content) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'flex justify-start msg-animate';
+        wrapper.innerHTML = `
+            <div class="w-fit max-w-[85%] flex flex-col items-start gap-0.5">
+                <div class="flex items-center gap-2 text-[9px] uppercase tracking-wider text-primary/40">
+                    <span class="material-symbols-outlined text-[12px] text-primary/50">smart_toy</span>
+                    <span class="font-bold text-primary/60">{{ bot_name | upper }}</span>
+                </div>
+                <div class="msg-bot px-3 py-2 text-sm font-mono leading-relaxed text-primary/80 whitespace-pre-wrap break-words msg-content"></div>
+            </div>
+        `;
+        messagesEl.appendChild(wrapper);
+        const contentEl = wrapper.querySelector('.msg-content');
+
+        // Split into words, preserving whitespace/newlines
+        const words = content.match(/\S+|\s+/g) || [content];
+        let i = 0;
+        const speed = 30; // ms per word
+
+        function nextWord() {
+            if (i < words.length) {
+                wrapper._rawText = (wrapper._rawText || "") + words[i];
+                contentEl.textContent = wrapper._rawText.replace(/---+---/g, '\n[ 💬 ]\n');
+                i++;
+                scrollToBottom();
+                typewriteTimer = setTimeout(nextWord, speed);
+            } else {
+                // Typewriter done → smooth fade to rendered Markdown + LaTeX
+                contentEl.style.transition = 'opacity 0.15s ease';
+                contentEl.style.opacity = '0.3';
+                setTimeout(() => {
+                    contentEl.innerHTML = renderContent(content);
+                    contentEl.classList.remove('whitespace-pre-wrap');
+                    contentEl.style.opacity = '1';
+                    scrollToBottom();
+                }, 150);
+                typewriteTimer = null;
+                isProcessing = false;
+                inputEl.disabled = false;
+                sendBtn.style.display = 'flex';
+                document.getElementById('stop-btn').style.display = 'none';
+                inputEl.focus();
+                scrollToBottom();
+            }
+        }
+        nextWord();
+    }
+
+    function updateProgress(content) {
+        typingEl.classList.add('hidden');
+        if (!progressEl) {
+            progressEl = document.createElement('div');
+            progressEl.className = 'flex justify-start msg-animate';
+            progressEl.innerHTML = `
+                <div class="w-fit max-w-[85%] flex flex-col items-start gap-0.5">
+                    <div class="flex items-center gap-2 text-[9px] uppercase tracking-wider text-primary/40">
+                        <span class="material-symbols-outlined text-[12px] text-primary/50">smart_toy</span>
+                        <span class="font-bold text-primary/60">{{ bot_name | upper }}</span>
+                        <span class="material-symbols-outlined text-[12px] text-primary/30 animate-pulse">more_horiz</span>
+                    </div>
+                    <div class="msg-bot px-3 py-2 text-sm font-mono leading-relaxed text-primary/60 whitespace-pre-wrap break-words msg-content"></div>
+                </div>
+            `;
+            messagesEl.appendChild(progressEl);
+        }
+        const contentEl = progressEl.querySelector('.msg-content');
+        if (contentEl) contentEl.textContent = content;
+        scrollToBottom();
+    }
+
+    function removeProgress() {
+        if (progressEl) {
+            progressEl.remove();
+            progressEl = null;
+        }
+    }
+
+    function newConversation() {
+        const modal = document.getElementById('new-conv-modal');
+        modal.style.display = 'flex';
+    }
+
+    async function confirmNewConv() {
+        const btn = document.getElementById('btn-confirm-new');
+        btn.textContent = 'Processing...';
+        btn.disabled = true;
+        try {
+            const resp = await fetch('/chat/new-conversation', { method: 'POST' });
+            const data = await resp.json();
+            closeNewConvModal();
+            if (data.success) {
+                // Clear UI
+                messagesEl.innerHTML = '';
+                messagesEl.appendChild(welcomeEl);
+                welcomeEl.style.display = 'flex';
+                scrollToBottomForce();
+            } else {
+                alert('Lỗi: ' + (data.error || 'Không thể tạo session mới'));
+            }
+        } catch (e) {
+            closeNewConvModal();
+            alert('Lỗi kết nối: ' + e.message);
+        } finally {
+            btn.textContent = 'Xác nhận';
+            btn.disabled = false;
+        }
+    }
+
+    function closeNewConvModal() {
+        document.getElementById('new-conv-modal').style.display = 'none';
+    }
+
+    // Close modal on backdrop click
+    document.getElementById('new-conv-modal').addEventListener('click', function(e) {
+        if (e.target === this) closeNewConvModal();
+    });
+
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+
+    // Start connection
+    connect();
+    inputEl.focus();
+</script>
+{% endblock %}

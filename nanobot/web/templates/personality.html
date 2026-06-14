@@ -1,0 +1,548 @@
+{% extends "base.html" %}
+
+{% block title %}Personality — Nanobot OS{% endblock %}
+
+{% block content %}
+<!-- Sidebar -->
+<aside class="w-full lg:w-72 flex flex-col gap-6">
+    <div class="matrix-card p-6 flex flex-col items-center text-center gap-4">
+        <div
+            class="w-20 h-20 flex items-center justify-center text-primary glow-text border-2 border-primary/30 rounded-full relative">
+            <div class="absolute inset-0 border border-primary animate-pulse rounded-full opacity-20"></div>
+            <span class="material-symbols-outlined text-4xl">psychology</span>
+        </div>
+        <div>
+            <h2 class="text-lg font-bold glow-text tracking-widest uppercase">Personality</h2>
+            <p class="text-[10px] text-primary/50 font-mono">SOUL · MEMORY · HISTORY</p>
+        </div>
+    </div>
+
+    {% set active_page = "personality" %}
+
+
+    {% include "_sidebar_nav.html" %}
+
+    <!-- File info -->
+    <div class="matrix-card p-4 text-[10px] leading-relaxed text-primary/40 uppercase tracking-tighter space-y-1">
+        <div class="flex justify-between">
+            <span>SOUL.md</span>
+            <span class="text-primary/70">{{ soul.size ~ ' B' if soul.exists else 'N/A' }}</span>
+        </div>
+        <div class="flex justify-between">
+            <span>Memory.md</span>
+            <span class="text-primary/70">{{ memory.size ~ ' B' if memory.exists else 'N/A' }}</span>
+        </div>
+        <div class="flex justify-between">
+            <span>History.md</span>
+            <span class="text-primary/70">{{ history.size ~ ' B' if history.exists else 'N/A' }}</span>
+        </div>
+    </div>
+</aside>
+
+<!-- Main Content -->
+<div class="flex-1 flex flex-col gap-4">
+
+    {% if saved %}
+    <div id="flashMsg"
+        class="fixed top-6 right-6 z-50 matrix-card border-primary bg-black/95 px-6 py-4 flex items-center gap-4 shadow-[0_0_20px_rgba(0,255,65,0.3)]"
+        style="animation: toastIn 0.3s ease-out;">
+        <span class="material-symbols-outlined text-primary glow-text">check_circle</span>
+        <span class="text-sm font-bold glow-text uppercase tracking-widest">SOUL.md Saved</span>
+        <button onclick="document.getElementById('flashMsg').style.display='none'"
+            class="ml-4 text-primary/40 hover:text-primary transition-colors">
+            <span class="material-symbols-outlined text-sm">close</span>
+        </button>
+    </div>
+    {% endif %}
+
+    {% if error %}
+    <div class="matrix-card border-red-500 bg-red-950/30 px-6 py-4 flex items-center gap-4">
+        <span class="material-symbols-outlined text-red-500 blinking">error</span>
+        <span class="text-sm font-bold text-red-400 uppercase tracking-widest">{{ error }}</span>
+    </div>
+    {% endif %}
+
+    <!-- Tab Headers -->
+    <div class="matrix-card p-0 flex relative z-40 pointer-events-auto">
+        <button type="button" id="tab-soul" onclick="switchTab('soul')"
+            class="flex-1 px-6 py-4 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest border-b-2 transition-all">
+            <span class="material-symbols-outlined text-sm">auto_awesome</span>SOUL
+        </button>
+        <button type="button" id="tab-user" onclick="switchTab('user')"
+            class="flex-1 px-6 py-4 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest border-b-2 transition-all">
+            <span class="material-symbols-outlined text-sm">person</span>USER
+        </button>
+        <button type="button" id="tab-memory" onclick="switchTab('memory')"
+            class="flex-1 px-6 py-4 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest border-b-2 transition-all">
+            <span class="material-symbols-outlined text-sm">psychology_alt</span>LONG TERM MEMORY
+        </button>
+        <button type="button" id="tab-history" onclick="switchTab('history')"
+            class="flex-1 px-6 py-4 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest border-b-2 transition-all">
+            <span class="material-symbols-outlined text-sm">history</span>HISTORY
+        </button>
+    </div>
+
+    <!-- Tab: SOUL.md (editable) -->
+    <div id="content-soul" class="relative z-10 flex flex-col gap-4 flex-1">
+        <div class="relative z-30 pointer-events-auto flex items-center justify-between">
+            <a href="/profiles" class="flex items-center gap-2 hover:opacity-80 transition-opacity">
+                <span class="material-symbols-outlined text-[12px] text-primary/40">swap_horiz</span>
+                <span class="text-[10px] text-primary/40 uppercase tracking-widest font-bold">Profile:</span>
+                <span
+                    class="text-[10px] font-bold uppercase tracking-wider {{ 'glow-text' if active_profile != 'Default' else 'text-primary/50' }}">{{
+                    active_profile }}</span>
+                {% if active_profile != 'Default' %}
+                <span class="w-1.5 h-1.5 bg-primary rounded-full animate-pulse shadow-[0_0_5px_#00FF41]"></span>
+                {% endif %}
+            </a>
+            {% if default_soul %}
+            <button type="button" onclick="toggleTemplatePanel('soul')"
+                class="px-4 py-2 border border-primary/30 bg-black/40 text-primary/60 font-bold uppercase tracking-widest text-[10px] hover:border-primary hover:text-primary hover:bg-primary/10 transition-all duration-300 flex items-center gap-2">
+                <span class="material-symbols-outlined text-[14px]">content_copy</span>
+                <span id="tplBtnText-soul">Show Template</span>
+            </button>
+            {% endif %}
+        </div>
+        <form method="POST" action="/personality" class="relative z-10 flex flex-col gap-4 flex-1" data-template-key="soul">
+            <input type="hidden" name="file_key" value="soul">
+            <div class="flex gap-4 flex-1 items-stretch">
+                <div class="flex-1 min-w-0 flex flex-col">
+                    <div class="matrix-card p-4 flex-1 flex flex-col">
+                        <textarea name="content" id="soul-editor"
+                            class="flex-1 w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.15)] outline-none p-4 text-primary/90 font-mono text-xs leading-relaxed resize-none min-h-[380px] transition-all duration-300"
+                            style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;"
+                            spellcheck="false">{{ soul.content }}</textarea>
+                    </div>
+                </div>
+                {% if default_soul %}
+                <div id="tplPanel-soul" class="flex-col min-w-0" style="flex: 0 0 45%; display: none;">
+                    <div class="matrix-card p-4 border-white/20 flex-1 flex flex-col h-full">
+                        <div class="flex items-center justify-between mb-3 flex-shrink-0">
+                            <div class="flex items-center gap-2">
+                                <span class="material-symbols-outlined text-white/60 text-sm">description</span>
+                                <span class="text-[10px] font-bold uppercase tracking-widest text-white/60">Default
+                                    SOUL.md</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button type="button" onclick="copyTpl('soul')"
+                                    class="px-3 py-1.5 border border-white/20 text-white/60 font-bold uppercase tracking-widest text-[9px] hover:border-white hover:text-white hover:bg-white/10 transition-all duration-300 flex items-center gap-1.5">
+                                    <span class="material-symbols-outlined text-[12px]">content_copy</span>
+                                    <span id="copyBtn-soul">Copy All</span>
+                                </button>
+                                <button type="button" onclick="toggleTemplatePanel('soul')"
+                                    class="px-2 py-1.5 text-white/30 hover:text-white transition-colors">
+                                    <span class="material-symbols-outlined text-sm">close</span>
+                                </button>
+                            </div>
+                        </div>
+                        <pre id="tplContent-soul"
+                            class="flex-1 w-full bg-black/80 border border-white/10 p-4 text-white/80 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words overflow-y-auto select-all"
+                            style="scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.3) transparent;">{{ default_soul }}</pre>
+                        <div class="mt-2 text-[9px] text-white/30 uppercase tracking-wider flex-shrink-0">
+                            Read-only — select text or Copy All
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            <div class="flex items-center gap-6">
+                <button type="submit"
+                    class="px-8 py-3 border border-primary bg-primary/10 text-primary font-bold uppercase tracking-[0.3em] text-sm hover:bg-primary hover:text-black transition-all duration-300 glow-text flex items-center gap-3 group">
+                    <span class="material-symbols-outlined text-sm group-hover:text-black transition-colors">save</span>
+                    Save SOUL.md <span class="blinking">_</span>
+                </button>
+                <span class="text-[10px] text-primary/30 uppercase tracking-wider">Takes effect on next agent
+                    message</span>
+                <div class="ml-auto flex flex-col items-end gap-1">
+                    <label for="multi_message_toggle" class="flex items-center gap-3 cursor-pointer py-1 group">
+                        <div class="relative">
+                            <input type="checkbox" id="multi_message_toggle"
+                                class="sr-only peer" />
+                            <div class="w-10 h-5 bg-black/60 border border-primary/30 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300"></div>
+                            <div class="absolute top-[2px] left-[2px] w-4 h-4 bg-primary/30 peer-checked:bg-primary peer-checked:shadow-[0_0_8px_#00FF41] peer-checked:translate-x-5 transition-all duration-300"></div>
+                        </div>
+                        <span class="text-[10px] font-bold uppercase tracking-widest text-primary/60 group-hover:text-primary transition-colors select-none">Multi-Message Split</span>
+                    </label>
+                    <span class="text-[9px] text-primary/40 uppercase tracking-widest leading-none">*Chỉ hoạt động khi channel tắt streaming (Streaming: OFF)</span>
+                </div>
+            </div>
+            <!-- Hidden input: sends current toggle state to POST handler -->
+            <input type="hidden" name="multi_message_enabled" id="multi_message_hidden"
+                value="{{ 'true' if multi_message_enabled else 'false' }}">
+        </form>
+    </div>
+
+    <!-- Tab: USER.md (editable) -->
+    <div id="content-user" class="relative z-10 flex flex-col gap-4 flex-1 hidden" style="display: none;">
+        <div class="relative z-30 pointer-events-auto flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-[12px] text-primary/40">person</span>
+                <span class="text-[10px] text-primary/40 uppercase tracking-widest font-bold">Profile User Context</span>
+            </div>
+            {% if default_user %}
+            <button type="button" onclick="toggleTemplatePanel('user')"
+                class="px-4 py-2 border border-primary/30 bg-black/40 text-primary/60 font-bold uppercase tracking-widest text-[10px] hover:border-primary hover:text-primary hover:bg-primary/10 transition-all duration-300 flex items-center gap-2">
+                <span class="material-symbols-outlined text-[14px]">content_copy</span>
+                <span id="tplBtnText-user">Show Template</span>
+            </button>
+            {% endif %}
+        </div>
+        <form method="POST" action="/personality" class="relative z-10 flex flex-col gap-4 flex-1" data-template-key="user">
+            <input type="hidden" name="file_key" value="user">
+            <div class="flex gap-4 flex-1 items-stretch">
+                <div class="flex-1 min-w-0 flex flex-col">
+                    <div class="matrix-card p-4 flex-1 flex flex-col">
+                        <textarea name="content" id="user-editor"
+                            class="flex-1 w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.15)] outline-none p-4 text-primary/90 font-mono text-xs leading-relaxed resize-none min-h-[380px] transition-all duration-300"
+                            style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;"
+                            spellcheck="false">{{ user.content }}</textarea>
+                    </div>
+                </div>
+                {% if default_user %}
+                <div id="tplPanel-user" class="flex-col min-w-0" style="flex: 0 0 45%; display: none;">
+                    <div class="matrix-card p-4 border-white/20 flex-1 flex flex-col h-full">
+                        <div class="flex items-center justify-between mb-3 flex-shrink-0">
+                            <div class="flex items-center gap-2">
+                                <span class="material-symbols-outlined text-white/60 text-sm">description</span>
+                                <span class="text-[10px] font-bold uppercase tracking-widest text-white/60">Default
+                                    USER.md</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button type="button" onclick="copyTpl('user')"
+                                    class="px-3 py-1.5 border border-white/20 text-white/60 font-bold uppercase tracking-widest text-[9px] hover:border-white hover:text-white hover:bg-white/10 transition-all duration-300 flex items-center gap-1.5">
+                                    <span class="material-symbols-outlined text-[12px]">content_copy</span>
+                                    <span id="copyBtn-user">Copy All</span>
+                                </button>
+                                <button type="button" onclick="toggleTemplatePanel('user')"
+                                    class="px-2 py-1.5 text-white/30 hover:text-white transition-colors">
+                                    <span class="material-symbols-outlined text-sm">close</span>
+                                </button>
+                            </div>
+                        </div>
+                        <pre id="tplContent-user"
+                            class="flex-1 w-full bg-black/80 border border-white/10 p-4 text-white/80 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words overflow-y-auto select-all"
+                            style="scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.3) transparent;">{{ default_user }}</pre>
+                        <div class="mt-2 text-[9px] text-white/30 uppercase tracking-wider flex-shrink-0">
+                            Read-only — select text or Copy All
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            <div class="flex items-center gap-6">
+                <button type="submit"
+                    class="px-8 py-3 border border-primary bg-primary/10 text-primary font-bold uppercase tracking-[0.3em] text-sm hover:bg-primary hover:text-black transition-all duration-300 glow-text flex items-center gap-3 group">
+                    <span class="material-symbols-outlined text-sm group-hover:text-black transition-colors">save</span>
+                    Save USER.md <span class="blinking">_</span>
+                </button>
+                <span class="text-[10px] text-primary/30 uppercase tracking-wider">Takes effect on next agent
+                    message</span>
+            </div>
+        </form>
+    </div>
+
+    <!-- Tab: MEMORY.md (read-only) -->
+    <div id="content-memory" class="relative z-10 flex flex-col gap-4 flex-1 hidden" style="display: none;">
+        <div class="relative z-30 pointer-events-auto flex justify-end gap-3">
+            <!-- Reset Memory button -->
+            <button type="button" onclick="document.getElementById('resetMemoryModal').style.display='flex'"
+                class="px-4 py-2 border border-red-500/30 bg-black/40 text-red-400/60 font-bold uppercase tracking-widest text-[10px] hover:border-red-500 hover:text-red-400 hover:bg-red-500/10 transition-all duration-300 flex items-center gap-2"
+                title="Reset MEMORY.md to template + clear HISTORY.md">
+                <span class="material-symbols-outlined text-[14px]">delete_sweep</span>
+                Reset Memory
+            </button>
+            {% if default_memory %}
+            <button type="button" onclick="toggleTemplatePanel('memory')"
+                class="px-4 py-2 border border-primary/30 bg-black/40 text-primary/60 font-bold uppercase tracking-widest text-[10px] hover:border-primary hover:text-primary hover:bg-primary/10 transition-all duration-300 flex items-center gap-2">
+                <span class="material-symbols-outlined text-[14px]">content_copy</span>
+                <span id="tplBtnText-memory">Show Template</span>
+            </button>
+            {% endif %}
+        </div>
+        <div class="flex gap-4 flex-1 items-stretch">
+            <div class="matrix-card p-4 flex-1 min-w-0">
+                {% if memory.exists %}
+                <pre class="text-xs text-primary/80 font-mono leading-relaxed whitespace-pre-wrap break-words max-h-[calc(100vh-300px)] overflow-y-auto"
+                    style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;">{{ memory.content }}</pre>
+                {% else %}
+                <div class="flex flex-col items-center justify-center py-16 text-center gap-4">
+                    <span class="material-symbols-outlined text-5xl text-primary/20">psychology_alt</span>
+                    <p class="text-[10px] text-primary/30 uppercase tracking-widest">MEMORY.md will be created after
+                        memory
+                        consolidation</p>
+                </div>
+                {% endif %}
+            </div>
+            {% if default_memory %}
+            <div id="tplPanel-memory" class="flex-col min-w-0" style="flex: 0 0 45%; display: none;">
+                <div class="matrix-card p-4 border-white/20 flex-1 flex flex-col h-full">
+                    <div class="flex items-center justify-between mb-3 flex-shrink-0">
+                        <div class="flex items-center gap-2">
+                            <span class="material-symbols-outlined text-white/60 text-sm">description</span>
+                            <span class="text-[10px] font-bold uppercase tracking-widest text-white/60">Default
+                                MEMORY.md</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button type="button" onclick="copyTpl('memory')"
+                                class="px-3 py-1.5 border border-white/20 text-white/60 font-bold uppercase tracking-widest text-[9px] hover:border-white hover:text-white hover:bg-white/10 transition-all duration-300 flex items-center gap-1.5">
+                                <span class="material-symbols-outlined text-[12px]">content_copy</span>
+                                <span id="copyBtn-memory">Copy All</span>
+                            </button>
+                            <button type="button" onclick="toggleTemplatePanel('memory')"
+                                class="px-2 py-1.5 text-white/30 hover:text-white transition-colors">
+                                <span class="material-symbols-outlined text-sm">close</span>
+                            </button>
+                        </div>
+                    </div>
+                    <pre id="tplContent-memory"
+                        class="flex-1 w-full bg-black/80 border border-white/10 p-4 text-white/80 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words overflow-y-auto select-all"
+                        style="scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.3) transparent;">{{ default_memory }}</pre>
+                    <div class="mt-2 text-[9px] text-white/30 uppercase tracking-wider flex-shrink-0">
+                        Read-only — select text or Copy All
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Tab: HISTORY.md (read-only, no template) -->
+    <div id="content-history" class="relative z-10 flex flex-col gap-4 flex-1 hidden" style="display: none;">
+        <div class="relative z-30 pointer-events-auto flex justify-end">
+            <button type="button" onclick="document.getElementById('resetMemoryModal').style.display='flex'"
+                class="px-4 py-2 border border-red-500/30 bg-black/40 text-red-400/60 font-bold uppercase tracking-widest text-[10px] hover:border-red-500 hover:text-red-400 hover:bg-red-500/10 transition-all duration-300 flex items-center gap-2"
+                title="Reset MEMORY.md to template + clear HISTORY.md">
+                <span class="material-symbols-outlined text-[14px]">delete_sweep</span>
+                Reset Memory
+            </button>
+        </div>
+        <div class="matrix-card p-4 flex-1">
+            {% if history.exists %}
+            <pre class="text-xs text-primary/80 font-mono leading-relaxed whitespace-pre-wrap break-words max-h-[calc(100vh-300px)] overflow-y-auto"
+                style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;">{{ history.content }}</pre>
+            {% else %}
+            <div class="flex flex-col items-center justify-center py-16 text-center gap-4">
+                <span class="material-symbols-outlined text-5xl text-primary/20">history</span>
+                <p class="text-[10px] text-primary/30 uppercase tracking-widest">HISTORY.md will be created after memory
+                    consolidation</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Reset Memory Confirm Modal -->
+    <div id="resetMemoryModal" class="fixed inset-0 z-50 bg-black/80 items-center justify-center"
+        style="display: none;">
+        <div
+            class="matrix-card p-6 w-full max-w-md flex flex-col gap-5 border-red-500/40 shadow-[0_0_30px_rgba(255,0,0,0.15)]">
+            <div class="flex items-center gap-3">
+                <span class="material-symbols-outlined text-red-500">warning</span>
+                <h3 class="text-sm font-bold uppercase tracking-widest text-red-400">Reset Memory</h3>
+            </div>
+            <p class="text-xs text-primary/70 leading-relaxed">
+                This will <strong class="text-red-400">reset MEMORY.md</strong> to default template and
+                <strong class="text-red-400">clear HISTORY.md</strong>.
+            </p>
+            <p class="text-[10px] text-primary/40 leading-relaxed">
+                The bot will forget all learned facts and conversation history.
+                SOUL.md and USER.md will not be affected.
+            </p>
+            <form method="POST" action="/personality/reset-memory" class="flex gap-3">
+                <button type="submit"
+                    class="flex-1 px-6 py-3 border border-red-500/50 bg-red-500/10 text-red-400 font-bold uppercase tracking-widest text-sm hover:bg-red-500/20 transition-all duration-300 flex items-center justify-center gap-2">
+                    <span class="material-symbols-outlined text-sm">delete_sweep</span>
+                    Reset Now
+                </button>
+                <button type="button" onclick="document.getElementById('resetMemoryModal').style.display='none'"
+                    class="px-6 py-3 border border-primary/20 text-primary/40 font-bold uppercase tracking-widest text-sm hover:text-primary transition-colors">
+                    Cancel
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Terminal Footer -->
+    <div class="matrix-card p-4 font-mono text-[11px] leading-tight space-y-1">
+        <div class="flex gap-2">
+            <span class="text-primary/40">[PSY]</span>
+            <span class="text-primary">Workspace: {{ workspace }}</span>
+        </div>
+        <div class="flex gap-2 pt-2 border-t border-primary/10 mt-2">
+            <span class="text-primary/60">$</span>
+            <span class="text-primary cursor-default">root@nanobot_os:/personality# <span
+                    class="bg-primary text-black ml-1 px-1"> </span></span>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+    .crt-overlay,
+    .crt-scanline {
+        display: none !important;
+    }
+
+    @keyframes toastIn {
+        from {
+            opacity: 0;
+            transform: translateX(100px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
+    }
+
+    @keyframes toastOut {
+        from {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        to {
+            opacity: 0;
+            transform: translateX(100px);
+        }
+    }
+
+    .tab-active {
+        border-color: #00FF41;
+        color: #00FF41;
+        text-shadow: 0 0 8px #00FF41;
+        background: rgba(0, 255, 65, 0.05);
+    }
+
+    .tab-inactive {
+        border-color: transparent;
+        color: rgba(0, 255, 65, 0.4);
+    }
+
+    .tab-inactive:hover {
+        color: rgba(0, 255, 65, 0.7);
+    }
+</style>
+<script>
+    const TABS = ['soul', 'user', 'memory', 'history'];
+
+    function switchTab(tab) {
+        if (!TABS.includes(tab)) tab = 'soul';
+        TABS.forEach(t => {
+            const content = document.getElementById('content-' + t);
+            const isActive = t === tab;
+            content.classList.toggle('hidden', !isActive);
+            content.style.display = isActive ? '' : 'none';
+            document.getElementById('tab-' + t).className = document.getElementById('tab-' + t).className
+                .replace('tab-active', '').replace('tab-inactive', '').trim()
+                + ' ' + (isActive ? 'tab-active' : 'tab-inactive');
+        });
+        // Update URL without reload
+        const url = new URL(window.location);
+        url.searchParams.set('tab', tab);
+        window.history.replaceState({}, '', url);
+    }
+
+    // Init from URL param or server-side active_tab
+    switchTab('{{ active_tab }}');
+
+    // Tab key in editors
+    const editor = document.getElementById('soul-editor');
+    const userEditor = document.getElementById('user-editor');
+    [editor, userEditor].forEach(activeEditor => {
+        if (!activeEditor) return;
+        activeEditor.addEventListener('keydown', e => {
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                const s = activeEditor.selectionStart;
+                activeEditor.value = activeEditor.value.substring(0, s) + '    ' + activeEditor.value.substring(activeEditor.selectionEnd);
+                activeEditor.selectionStart = activeEditor.selectionEnd = s + 4;
+            }
+        });
+    });
+
+    // Auto-hide toast
+    const flash = document.getElementById('flashMsg');
+    if (flash) setTimeout(() => { flash.style.animation = 'toastOut 0.4s ease-in forwards'; setTimeout(() => flash.style.display = 'none', 400); }, 3000);
+
+    // Preserve template panel across saves
+    document.querySelectorAll('form').forEach(form => {
+        form.addEventListener('submit', function () {
+            const key = form.dataset.templateKey;
+            if (!key) return;
+            const panel = document.getElementById('tplPanel-' + key);
+            if (panel && panel.style.display !== 'none') {
+                const url = new URL(form.action, window.location.origin);
+                url.searchParams.set('tpl', '1');
+                form.action = url.toString();
+            }
+        });
+    });
+    // Restore template panel if tpl=1
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('tpl') === '1') {
+        toggleTemplatePanel('{{ active_tab }}');
+    }
+
+    // Toggle template reference panel
+    function toggleTemplatePanel(key) {
+        const panel = document.getElementById('tplPanel-' + key);
+        const btnText = document.getElementById('tplBtnText-' + key);
+        if (!panel) return;
+        const isHidden = panel.style.display === 'none' || panel.style.display === '';
+        panel.style.display = isHidden ? 'flex' : 'none';
+        if (btnText) btnText.textContent = isHidden ? 'Hide Template' : 'Show Template';
+    }
+
+    // Copy template content
+    function copyTpl(key) {
+        const content = document.getElementById('tplContent-' + key);
+        const btnText = document.getElementById('copyBtn-' + key);
+        if (!content) return;
+        navigator.clipboard.writeText(content.textContent).then(() => {
+            if (btnText) { btnText.textContent = 'Copied!'; setTimeout(() => { btnText.textContent = 'Copy All'; }, 2000); }
+        }).catch(() => {
+            const range = document.createRange(); range.selectNodeContents(content);
+            const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+        });
+    }
+    // Multi-message split toggle
+    const MULTI_MSG_SECTION = `\n\n## Multi-Message Responses\n\nSplit your responses into multiple separate messages by placing \`---+---\` on its own line between parts. This makes conversations feel natural, like chatting with a real person.\n\n**When to split (ALWAYS split for these):**\n- Answer + follow-up example or tip\n- Greeting/acknowledgment + detailed response\n- Any response longer than 3 sentences\n\n**Rules:**\n- \`---+---\` must be on its OWN line (no other text on that line)\n- Maximum 3 parts per response\n- Short single-sentence answers do NOT need splitting`;
+    const MULTI_MSG_HEADING = '## Multi-Message Responses';
+    const multiToggle = document.getElementById('multi_message_toggle');
+    const multiHidden = document.getElementById('multi_message_hidden');
+
+    function soulHasMultiMsg() {
+        return editor && editor.value.includes(MULTI_MSG_HEADING);
+    }
+
+    function syncMultiMsgToggle() {
+        // Source of truth: server-sent config value (multi_message_enabled)
+        // The hidden input already holds the correct server value ('true'/'false').
+        // We only sync the visual toggle from the hidden input on init.
+        if (multiToggle && multiHidden) {
+            multiToggle.checked = (multiHidden.value === 'true');
+        }
+    }
+
+    if (multiToggle) {
+        syncMultiMsgToggle();
+        multiToggle.addEventListener('change', function () {
+            // 1. Update hidden input so form POST carries the new value
+            if (multiHidden) multiHidden.value = this.checked ? 'true' : 'false';
+            // 2. Add/remove prompt section from SOUL.md editor
+            if (!editor) return;
+            if (this.checked) {
+                if (!soulHasMultiMsg()) {
+                    editor.value = editor.value.trimEnd() + MULTI_MSG_SECTION;
+                }
+            } else {
+                const idx = editor.value.indexOf(MULTI_MSG_HEADING);
+                if (idx !== -1) {
+                    editor.value = editor.value.substring(0, idx).trimEnd() + '\n';
+                }
+            }
+        });
+    }
+</script>
+{% endblock %}

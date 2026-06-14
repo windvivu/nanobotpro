@@ -1,0 +1,1484 @@
+{% extends "base.html" %}
+
+{% block title %}Skills — Nanobot OS{% endblock %}
+
+{% block content %}
+<!-- Sidebar -->
+<aside class="w-full lg:w-72 flex flex-col gap-6">
+    <div class="matrix-card p-6 flex flex-col items-center text-center gap-4">
+        <div
+            class="w-20 h-20 flex items-center justify-center text-primary glow-text border-2 border-primary/30 rounded-full relative">
+            <div class="absolute inset-0 border border-primary animate-pulse rounded-full opacity-20"></div>
+            <span class="material-symbols-outlined text-4xl">extension</span>
+        </div>
+        <div>
+            <h2 class="text-lg font-bold glow-text tracking-widest uppercase">Skills_DB</h2>
+            <p class="text-[10px] text-primary/50 font-mono">{{ total }} SKILLS LOADED</p>
+        </div>
+    </div>
+
+    {% set active_page = "skills" %}
+    {% include "_sidebar_nav.html" %}
+</aside>
+
+<!-- Main Content -->
+<div class="flex-1 flex flex-col gap-4">
+
+    <!-- Tab Header -->
+    <div class="matrix-card p-1 flex gap-1">
+        <button id="tab-installed-btn" onclick="switchTab('installed')"
+            class="flex-1 px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest rounded transition-all flex items-center justify-center gap-2 tab-active">
+            <span class="material-symbols-outlined text-sm">extension</span>Skills ({{ total }})
+        </button>
+        <button id="tab-hub-btn" onclick="switchTab('hub')"
+            class="flex-1 px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest rounded transition-all flex items-center justify-center gap-2 tab-inactive">
+            <span class="material-symbols-outlined text-sm">travel_explore</span>ClawHub
+        </button>
+        <button id="tab-mcp-btn" onclick="switchTab('mcp')"
+            class="flex-1 px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest rounded transition-all flex items-center justify-center gap-2 tab-inactive">
+            <span class="material-symbols-outlined text-sm">hub</span>MCP ({{ mcp_servers|length }})
+        </button>
+    </div>
+
+    <!-- ========== TAB 1: Installed Skills ========== -->
+    <div id="tab-installed" class="flex flex-col gap-4">
+        {% if skills %}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {% for skill in skills %}
+            <div class="matrix-card p-5 flex flex-col gap-3 group" id="skill-card-{{ skill.name }}">
+                <div class="flex items-center justify-between">
+                    <a href="/skills/{{ skill.name }}" class="flex items-center gap-3 flex-1">
+                        <span
+                            class="material-symbols-outlined text-sm {{ 'text-primary glow-text' if skill.available else 'text-primary/30' }}">
+                            {{ 'check_circle' if skill.available else ('toggle_off' if skill.manually_disabled else 'cancel') }}
+                        </span>
+                        <span
+                            class="text-sm font-bold uppercase tracking-widest {{ 'text-primary' if skill.available else 'text-primary/40' }}">{{
+                            skill.name }}</span>
+                    </a>
+                    <div class="flex items-center gap-2">
+                        {% if skill.meets_requirements %}
+                        <button onclick="toggleSkill('{{ skill.name }}')"
+                            class="skill-toggle-btn px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider border rounded transition-all
+                                {{ 'border-primary/40 text-primary hover:bg-primary/10' if skill.available else 'border-red-400/40 text-red-400 hover:bg-red-400/10' }}"
+                            title="{{ 'Click to disable' if skill.available else 'Click to enable' }}">
+                            {{ 'ON' if skill.available else 'OFF' }}
+                        </button>
+                        {% endif %}
+                        <span
+                            class="text-[9px] font-mono px-2 py-0.5 border {{ 'border-primary/30 text-primary/50' if skill.source == 'workspace' else 'border-primary/15 text-primary/30' }}">
+                            {{ skill.source | upper }}
+                        </span>
+                    </div>
+                </div>
+                {% if skill.description %}
+                <p class="text-[11px] text-primary/50 leading-relaxed">{{ skill.description }}</p>
+                {% endif %}
+
+                {# Auto-disabled: system requirements not met #}
+                {% if not skill.meets_requirements %}
+                <div class="flex flex-col mt-1 border border-red-500/30 bg-red-500/5 rounded overflow-hidden">
+                    <div class="flex items-center gap-1.5 px-2.5 py-2 text-[10px] text-red-400 font-bold uppercase tracking-wider cursor-pointer select-none skill-disable-toggle"
+                         onclick="event.preventDefault(); event.stopPropagation(); this.parentElement.classList.toggle('expanded');">
+                        <span class="material-symbols-outlined text-[12px]">block</span>
+                        <span>Auto-disabled</span>
+                        <span class="material-symbols-outlined text-[10px] ml-auto transition-transform skill-chevron">expand_more</span>
+                    </div>
+                    <div class="skill-disable-details">
+                        <div class="flex flex-col gap-1.5 px-2.5 pb-2.5">
+                            {% if skill.missing_reason %}
+                            <div class="text-[10px] text-red-300/80 font-mono leading-relaxed">
+                                {{ skill.missing_reason }}
+                            </div>
+                            {% endif %}
+                            {% if skill.install_hint %}
+                            <div class="flex items-start gap-1.5 mt-0.5">
+                                <span class="text-[9px] text-red-400/50 uppercase tracking-wider mt-0.5 shrink-0">Fix:</span>
+                                <div class="text-[9px] text-red-300/60 font-mono">{{ skill.install_hint }}</div>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                {# Manually disabled indicator #}
+                {% if skill.manually_disabled and skill.meets_requirements %}
+                <div class="flex items-center gap-1.5 mt-1 px-2.5 py-1.5 border border-yellow-500/30 bg-yellow-500/5 rounded text-[10px] text-yellow-400/80">
+                    <span class="material-symbols-outlined text-[12px]">toggle_off</span>
+                    <span>Manually disabled — click <b>OFF</b> to re-enable</span>
+                </div>
+                {% endif %}
+
+                <div class="flex items-center gap-3">
+                    <a href="/skills/{{ skill.name }}"
+                        class="flex items-center gap-2 text-[10px] font-bold text-primary/70 hover:text-primary transition-colors tracking-wider uppercase">
+                        <span class="material-symbols-outlined text-[12px]">arrow_forward</span>
+                        <span>VIEW SKILL.md</span>
+                    </a>
+                    {% if skill.source == 'workspace' and not skill.has_builtin %}
+                    <button onclick="event.preventDefault(); event.stopPropagation(); deleteSkill('{{ skill.name }}')"
+                        class="flex items-center gap-1 text-[10px] font-bold text-red-400/50 hover:text-red-400 transition-colors tracking-wider uppercase ml-auto">
+                        <span class="material-symbols-outlined text-[12px]">delete</span>
+                        <span>DELETE</span>
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="matrix-card p-12 flex flex-col items-center text-center gap-4">
+            <span class="material-symbols-outlined text-6xl text-primary/20">extension_off</span>
+            <h3 class="text-sm font-bold uppercase tracking-widest text-primary/40">No Skills</h3>
+            <p class="text-[10px] text-primary/20">No skills found in workspace or builtin directories</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- ========== TAB 2: ClawHub Marketplace ========== -->
+    <div id="tab-hub" class="hidden flex flex-col gap-4">
+        <!-- Search Bar -->
+        <div class="matrix-card p-4">
+            <div class="flex gap-2">
+                <input id="hub-query" type="text" placeholder="Search skills... (e.g. web scraping, weather, database)"
+                    class="flex-1 bg-transparent border border-primary/30 rounded px-3 py-2.5 text-xs text-primary font-mono outline-none focus:border-primary/60 transition-colors placeholder:text-primary/20"
+                    onkeydown="if(event.key==='Enter') hubSearch()">
+                <button onclick="hubSearch()"
+                    class="px-5 py-2.5 text-[10px] font-bold uppercase tracking-wider border border-primary/50 text-primary hover:bg-primary/10 rounded transition-all flex items-center gap-2">
+                    <span class="material-symbols-outlined text-[14px]">search</span>Search
+                </button>
+                <button onclick="document.getElementById('zip-upload').click()"
+                    class="px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider border border-yellow-400/40 text-yellow-400/70 hover:text-yellow-400 hover:bg-yellow-400/10 rounded transition-all flex items-center gap-2"
+                    title="Install skill from .zip file">
+                    <span class="material-symbols-outlined text-[14px]">upload_file</span>ZIP
+                </button>
+                <input type="file" id="zip-upload" accept=".zip" class="hidden" onchange="hubUploadZip(this)">
+            </div>
+        </div>
+
+        <!-- Loading -->
+        <div id="hub-loading" class="hidden matrix-card p-8 flex flex-col items-center gap-3">
+            <span class="material-symbols-outlined text-3xl text-primary animate-spin">progress_activity</span>
+            <p class="text-[10px] text-primary/50 font-mono">Searching ClawHub registry...</p>
+        </div>
+
+        <!-- Results Grid -->
+        <div id="hub-results-grid" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
+
+        <!-- No Results -->
+        <div id="hub-no-results" class="hidden matrix-card p-8 flex flex-col items-center gap-3">
+            <span class="material-symbols-outlined text-3xl text-primary/20">search_off</span>
+            <p class="text-[10px] text-primary/30 font-mono">No skills found. Try different keywords.</p>
+        </div>
+
+        <!-- Error -->
+        <div id="hub-error" class="hidden matrix-card p-4 border border-red-500/30 bg-red-500/5">
+            <p class="text-[10px] text-red-400 font-mono" id="hub-error-text"></p>
+        </div>
+
+        <!-- Placeholder when no search yet -->
+        <div id="hub-placeholder" class="matrix-card p-10 flex flex-col items-center gap-4 text-center">
+            <span class="material-symbols-outlined text-5xl text-primary/15">travel_explore</span>
+            <div>
+                <h3 class="text-xs font-bold uppercase tracking-widest text-primary/30 mb-1">ClawHub Skill Registry</h3>
+                <p class="text-[10px] text-primary/20 font-mono">Search by keyword to find and install community skills</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== TAB 3: MCP Servers ========== -->
+    <div id="tab-mcp" class="hidden flex flex-col gap-4">
+        {% set tradingview_installed = 'tradingview' in mcp_servers %}
+
+        {% if not tradingview_installed %}
+        <div id="trader-mode-toggle-row" class="flex items-center justify-between">
+            <div>
+                <h3 class="text-[11px] font-bold uppercase tracking-widest text-primary">Trader Mode</h3>
+                <p class="text-[9px] text-primary/35 font-mono mt-1">Show TradingView MCP controls for local chart automation.</p>
+            </div>
+            <button id="trader-mode-toggle" onclick="toggleTraderMode()" class="px-3 py-2 text-[9px] font-bold uppercase tracking-wider border border-primary/35 text-primary/60 hover:text-primary hover:bg-primary/10 rounded transition-all flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[13px]">candlestick_chart</span>
+                <span id="trader-mode-toggle-label">Show Trader Mode</span>
+            </button>
+        </div>
+        {% endif %}
+
+        <!-- Managed TradingView integration -->
+        <div class="matrix-card p-5 flex flex-col gap-4 {{ '' if tradingview_installed else 'hidden' }}" id="tradingview-mcp-card" data-installed="{{ 'true' if tradingview_installed else 'false' }}">
+            <div class="flex flex-col lg:flex-row lg:items-start gap-4 justify-between">
+                <div class="flex items-start gap-3">
+                    <span id="tradingview-health-dot" class="w-2.5 h-2.5 rounded-full bg-primary/20 mt-1.5 transition-all duration-500" title="Checking..."></span>
+                    <div>
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <h3 class="text-[12px] font-bold uppercase tracking-widest text-primary">TradingView Web MCP</h3>
+                            <span class="text-[8px] uppercase border border-yellow-400/30 text-yellow-400/60 px-1.5 py-0.5">Managed</span>
+                            <span class="text-[8px] uppercase border border-primary/20 text-primary/40 px-1.5 py-0.5">CDP localhost:9222</span>
+                        </div>
+                        <p class="text-[10px] text-primary/45 font-mono mt-1 leading-relaxed">
+                            Unofficial local CDP integration. Nanobot downloads pinned GitHub code, runs npm ci, and writes one MCP config entry.
+                        </p>
+                        <p class="text-[9px] text-yellow-400/60 font-mono mt-2 leading-relaxed">
+                            Use only with your own valid TradingView account/subscription and comply with TradingView Terms.
+                        </p>
+                        <p id="tradingview-health-summary" class="inline-flex mt-2 px-2.5 py-1 border border-primary/25 bg-primary/[0.04] text-[9px] text-primary/70 font-mono rounded">
+                            Checking health...
+                        </p>
+                    </div>
+                </div>
+                <div class="flex flex-wrap gap-2 lg:justify-end">
+                    <button id="tradingview-install-btn" onclick="tradingViewInstall()" class="px-3 py-2 text-[9px] font-bold uppercase tracking-wider border border-primary/50 text-primary hover:bg-primary/10 rounded transition-all flex items-center gap-1.5">
+                        <span class="material-symbols-outlined text-[13px]">download</span>Install
+                    </button>
+                    <button id="tradingview-reinstall-btn" onclick="tradingViewReinstall()" class="hidden px-3 py-2 text-[9px] font-bold uppercase tracking-wider border border-yellow-400/40 text-yellow-400/70 hover:bg-yellow-400/10 rounded transition-all flex items-center gap-1.5">
+                        <span class="material-symbols-outlined text-[13px]">sync</span>Reinstall
+                    </button>
+                    <button id="tradingview-uninstall-btn" onclick="tradingViewUninstall()" class="hidden px-3 py-2 text-[9px] font-bold uppercase tracking-wider border border-red-400/40 text-red-400/70 hover:bg-red-400/10 rounded transition-all flex items-center gap-1.5">
+                        <span class="material-symbols-outlined text-[13px]">delete</span>Uninstall
+                    </button>
+                    <button onclick="tradingViewRefreshHealth()" class="px-3 py-2 text-[9px] font-bold uppercase tracking-wider border border-primary/25 text-primary/50 hover:text-primary hover:bg-primary/10 rounded transition-all flex items-center gap-1.5">
+                        <span class="material-symbols-outlined text-[13px]">monitor_heart</span>Health
+                    </button>
+                    <button onclick="tradingViewHelpOpen()" class="px-3 py-2 text-[9px] font-bold uppercase tracking-wider border border-primary/25 text-primary/50 hover:text-primary hover:bg-primary/10 rounded transition-all flex items-center gap-1.5">
+                        <span class="material-symbols-outlined text-[13px]">help</span>Help
+                    </button>
+                </div>
+            </div>
+            <div id="tradingview-health-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-2"></div>
+        </div>
+
+        <!-- Server-side preset catalog -->
+        <div class="flex items-center justify-between">
+            <div>
+                <h3 class="text-[11px] font-bold uppercase tracking-widest text-primary">MCP Preset Bundles</h3>
+                <p class="text-[9px] text-primary/35 font-mono mt-1">Reusable server bundles. Changes require a gateway restart.</p>
+            </div>
+            <button onclick="mcpCustomPresetOpen()" class="px-3 py-2 text-[9px] font-bold uppercase tracking-wider border border-primary/40 text-primary/70 hover:text-primary hover:bg-primary/10 rounded transition-all flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[13px]">add</span>Custom Bundle
+            </button>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {% for preset_id, preset in mcp_presets.items() %}
+            <div class="matrix-card p-4 flex flex-col gap-3">
+                <div class="flex items-start gap-3">
+                    <span class="material-symbols-outlined text-primary/60">deployed_code</span>
+                    <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <span class="text-[11px] font-bold uppercase tracking-wider text-primary">{{ preset.label }}</span>
+                            <span class="text-[8px] uppercase border border-primary/20 text-primary/40 px-1.5 py-0.5">{{ preset.source }}</span>
+                            {% if preset.installed %}<span class="text-[8px] uppercase text-primary/70">{{ 'Enabled' if preset.enabled else 'Disabled' }}</span>{% endif %}
+                        </div>
+                        <p class="text-[9px] text-primary/40 mt-1 leading-relaxed">{{ preset.description }}</p>
+                        <p class="text-[8px] font-mono text-primary/25 mt-2">{{ preset.server_count }} server(s): {{ preset.server_names | join(', ') }}</p>
+                    </div>
+                </div>
+                <div class="flex flex-wrap gap-2 justify-end">
+                    <button onclick="mcpPresetTest('{{ preset_id }}')" class="text-[9px] uppercase text-yellow-400/50 hover:text-yellow-400">Test</button>
+                    {% if preset.installed %}
+                    <button onclick="mcpPresetToggle('{{ preset_id }}', {{ 'false' if preset.enabled else 'true' }})" class="text-[9px] uppercase text-primary/50 hover:text-primary">{{ 'Disable' if preset.enabled else 'Enable' }}</button>
+                    <button onclick="mcpPresetUninstall('{{ preset_id }}')" class="text-[9px] uppercase text-red-400/50 hover:text-red-400">Uninstall</button>
+                    {% else %}
+                    <button onclick="mcpPresetInstall('{{ preset_id }}')" class="text-[9px] uppercase text-primary/60 hover:text-primary">Install</button>
+                    {% if preset.adoptable %}<button onclick="mcpPresetAdopt('{{ preset_id }}')" class="text-[9px] uppercase text-yellow-400/60 hover:text-yellow-400">Adopt Existing</button>{% endif %}
+                    {% endif %}
+                    {% if preset.source == 'custom' %}
+                    <button onclick="mcpCustomPresetOpen('{{ preset_id }}')" class="text-[9px] uppercase text-yellow-400/50 hover:text-yellow-400">Edit</button>
+                    <button onclick="mcpCustomPresetDelete('{{ preset_id }}')" class="text-[9px] uppercase text-red-400/50 hover:text-red-400">Delete</button>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div id="mcp-custom-preset-form" class="hidden matrix-card p-5">
+            <div class="flex items-center justify-between mb-4">
+                <span class="text-[11px] font-bold uppercase tracking-widest text-primary">Custom MCP Bundle</span>
+                <button onclick="mcpCustomPresetClose()" class="text-primary/30 hover:text-primary"><span class="material-symbols-outlined text-sm">close</span></button>
+            </div>
+            <div class="flex flex-col gap-3">
+                <div class="flex flex-col gap-1">
+                    <label class="text-[9px] font-bold uppercase tracking-wider text-primary/60">Preset ID</label>
+                    <input id="mcp-custom-preset-id" type="text" placeholder="docs_bundle" class="bg-black/60 border border-primary/30 focus:border-primary outline-none px-3 py-2 text-primary font-mono text-xs">
+                </div>
+                <div class="flex flex-col gap-1">
+                    <label class="text-[9px] font-bold uppercase tracking-wider text-primary/60">Bundle JSON</label>
+                    <textarea id="mcp-custom-preset-json" rows="12" class="bg-black/60 border border-primary/30 focus:border-primary outline-none px-3 py-2 text-primary font-mono text-xs resize-y" placeholder='{"label":"Docs","servers":{"docs":{"type":"streamableHttp","url":"https://example/mcp"}}}'></textarea>
+                </div>
+                <div class="flex justify-end gap-2">
+                    <button onclick="mcpCustomPresetClose()" class="px-4 py-2 text-[9px] uppercase border border-primary/20 text-primary/50">Cancel</button>
+                    <button onclick="mcpCustomPresetTestAll()" class="px-4 py-2 text-[9px] uppercase border border-yellow-400/40 text-yellow-400/70 hover:bg-yellow-400/10">Test All</button>
+                    <button onclick="mcpCustomPresetSave()" class="px-4 py-2 text-[9px] uppercase border border-primary/50 text-primary hover:bg-primary/10">Save Bundle</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex items-center justify-between mt-2">
+            <div>
+                <h3 class="text-[11px] font-bold uppercase tracking-widest text-primary">Configured MCP Servers</h3>
+                <p class="text-[9px] text-primary/35 font-mono mt-1">Manual servers and materialized bundle servers.</p>
+            </div>
+            <button onclick="mcpToggleAddForm()" class="px-3 py-2 text-[9px] font-bold uppercase tracking-wider border border-yellow-400/30 text-yellow-400/60 hover:text-yellow-400 hover:bg-yellow-400/10 rounded transition-all flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[13px]">add</span>Manual Server
+            </button>
+        </div>
+
+        <!-- Add Form (hidden by default) -->
+        <div id="mcp-add-form" class="hidden matrix-card p-5">
+            <div class="flex items-center justify-between mb-4">
+                <span class="text-[11px] font-bold uppercase tracking-widest text-primary">Add MCP Server</span>
+                <button onclick="mcpToggleAddForm()" class="text-primary/30 hover:text-primary transition-colors">
+                    <span class="material-symbols-outlined text-sm">close</span>
+                </button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="flex flex-col gap-1">
+                    <label class="text-[9px] font-bold uppercase tracking-wider text-primary/60">Name (slug)</label>
+                    <input type="text" id="mcp-name" placeholder="e.g. browser" class="bg-black/60 border border-primary/30 focus:border-primary outline-none px-3 py-2 text-primary font-mono text-xs transition-all">
+                </div>
+                <div class="flex flex-col gap-1">
+                    <label class="text-[9px] font-bold uppercase tracking-wider text-primary/60">Type</label>
+                    <select id="mcp-type" class="bg-black/60 border border-primary/30 focus:border-primary outline-none px-3 py-2 text-primary font-mono text-xs transition-all appearance-none cursor-pointer" onchange="mcpTypeChanged()">
+                        <option value="stdio" style="background:#0a0a0a;color:#00FF41">stdio (command)</option>
+                        <option value="sse" style="background:#0a0a0a;color:#00FF41">sse (http)</option>
+                        <option value="streamableHttp" style="background:#0a0a0a;color:#00FF41">streamableHttp</option>
+                    </select>
+                </div>
+                <div id="mcp-stdio-fields" class="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[9px] font-bold uppercase tracking-wider text-primary/60">Command</label>
+                        <input type="text" id="mcp-command" placeholder="e.g. npx" class="bg-black/60 border border-primary/30 focus:border-primary outline-none px-3 py-2 text-primary font-mono text-xs transition-all">
+                    </div>
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[9px] font-bold uppercase tracking-wider text-primary/60">Args (comma-separated)</label>
+                        <input type="text" id="mcp-args" placeholder="e.g. -y, @playwright/mcp@latest, --headless" class="bg-black/60 border border-primary/30 focus:border-primary outline-none px-3 py-2 text-primary font-mono text-xs transition-all">
+                    </div>
+                </div>
+                <div id="mcp-http-fields" class="hidden md:col-span-2">
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[9px] font-bold uppercase tracking-wider text-primary/60">URL</label>
+                        <input type="text" id="mcp-url" placeholder="e.g. http://localhost:3000/sse" class="bg-black/60 border border-primary/30 focus:border-primary outline-none px-3 py-2 text-primary font-mono text-xs transition-all">
+                    </div>
+                </div>
+                <div class="flex flex-col gap-1">
+                    <label class="text-[9px] font-bold uppercase tracking-wider text-primary/60">Tool Timeout (seconds)</label>
+                    <input type="number" id="mcp-timeout" value="30" min="5" max="300" class="bg-black/60 border border-primary/30 focus:border-primary outline-none px-3 py-2 text-primary font-mono text-xs transition-all">
+                </div>
+                <div class="flex flex-col gap-1">
+                    <label class="text-[9px] font-bold uppercase tracking-wider text-primary/60">Env Vars (KEY=VALUE, one per line)</label>
+                    <textarea id="mcp-env" rows="2" placeholder="API_KEY=xxx" class="bg-black/60 border border-primary/30 focus:border-primary outline-none px-3 py-2 text-primary font-mono text-xs transition-all resize-none"></textarea>
+                </div>
+            </div>
+            <div class="flex justify-end gap-2 mt-4">
+                <button onclick="mcpTestUnsaved()" class="px-5 py-2.5 text-[10px] font-bold uppercase tracking-wider border border-yellow-400/40 text-yellow-400/70 hover:bg-yellow-400/10 rounded transition-all flex items-center gap-2">
+                    <span class="material-symbols-outlined text-[14px]">network_check</span>Test
+                </button>
+                <button onclick="mcpSubmitAdd()" class="px-5 py-2.5 text-[10px] font-bold uppercase tracking-wider border border-primary/50 text-primary hover:bg-primary/10 rounded transition-all flex items-center gap-2">
+                    <span class="material-symbols-outlined text-[14px]">add_circle</span>Add Server
+                </button>
+            </div>
+        </div>
+
+        <!-- Server Cards -->
+        {% if mcp_servers %}
+        <div class="flex flex-col gap-3">
+            {% for name, srv in mcp_servers.items() %}
+            <div class="matrix-card p-4" id="mcp-card-{{ name }}">
+                <div class="flex items-center gap-3 mb-2">
+                    <span id="mcp-dot-{{ name }}" class="w-2 h-2 rounded-full bg-primary/20 transition-all duration-500" title="Checking..."></span>
+                    <span class="text-sm font-bold uppercase tracking-widest text-primary">{{ name }}</span>
+                    <span class="text-[9px] font-mono px-2 py-0.5 border border-primary/20 text-primary/40">{{ srv.type }}</span>
+                    <span class="text-[8px] uppercase text-primary/30">{{ 'Bundle: ' ~ srv.owner if srv.owner else 'Manual' }}</span>
+                    <span id="mcp-tools-{{ name }}" class="text-[9px] font-mono text-primary/20 hidden"></span>
+                    <div class="ml-auto flex gap-2">
+                        <button onclick="mcpTestSaved('{{ name }}')" class="text-[9px] font-bold uppercase tracking-wider text-yellow-400/40 hover:text-yellow-400 transition-colors flex items-center gap-1">
+                            <span class="material-symbols-outlined text-[12px]">network_check</span>Test
+                        </button>
+                        <button onclick="mcpEdit('{{ name }}')" class="text-[9px] font-bold uppercase tracking-wider text-primary/40 hover:text-primary transition-colors flex items-center gap-1">
+                            <span class="material-symbols-outlined text-[12px]">edit</span>Edit
+                        </button>
+                        <button onclick="mcpDelete('{{ name }}')" class="text-[9px] font-bold uppercase tracking-wider text-red-400/40 hover:text-red-400 transition-colors flex items-center gap-1">
+                            <span class="material-symbols-outlined text-[12px]">delete</span>Delete
+                        </button>
+                    </div>
+                </div>
+                <div class="text-[11px] font-mono text-primary/60 leading-relaxed">
+                    {% if srv.command %}
+                    <code class="block whitespace-pre-wrap break-all">{{ srv.command }} {{ srv.args | join(' ') }}</code>
+                    {% else %}
+                    <code class="block whitespace-pre-wrap break-all">{{ srv.url }}</code>
+                    {% endif %}
+                </div>
+                <div class="flex gap-4 mt-2 text-[9px] font-mono text-primary/30">
+                    <span>Timeout: {{ srv.tool_timeout }}s</span>
+                    <span>Tools: {{ srv.enabled_tools | join(', ') }}</span>
+                    {% if srv.env %}<span>Env: {{ srv.env | length }} vars</span>{% endif %}
+                </div>
+            </div>
+
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="matrix-card p-10 flex flex-col items-center gap-4 text-center">
+            <span class="material-symbols-outlined text-5xl text-primary/15">hub</span>
+            <div>
+                <h3 class="text-xs font-bold uppercase tracking-widest text-primary/30 mb-1">No MCP Servers</h3>
+                <p class="text-[10px] text-primary/20 font-mono">Use presets above or add a custom MCP server</p>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="flex items-center gap-3">
+            <span class="text-[9px] text-yellow-400/50 font-mono flex items-center gap-1">
+                <span class="material-symbols-outlined text-[12px]">info</span>
+                Changes require gateway restart to take effect
+            </span>
+            <button onclick="mcpRestartGateway()" id="mcp-restart-btn"
+                class="px-4 py-1.5 text-[9px] font-bold uppercase tracking-wider border border-red-500/40 text-red-400/60 hover:bg-red-500/10 hover:border-red-500 hover:text-red-400 rounded transition-all flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[12px]">restart_alt</span>Restart Gateway
+            </button>
+        </div>
+    </div>
+
+    <!-- Terminal Footer -->
+    <div class="matrix-card p-4 font-mono text-[11px] leading-tight space-y-1 mt-auto">
+        <div class="flex gap-2">
+            <span class="text-primary/40">[SKL]</span>
+            <span class="text-primary">Skills scan complete... <span class="text-white">{{ total }} LOADED</span></span>
+        </div>
+        <div class="flex gap-2">
+            <span class="text-primary/40">[SKL]</span>
+            <span class="text-primary">Sources: workspace + builtin | Path: {{ workspace }}/skills/</span>
+        </div>
+        <div class="flex gap-2 pt-2 border-t border-primary/10 mt-2">
+            <span class="text-primary/60">$</span>
+            <span class="text-primary cursor-default">root@nanobot_os:/skills# <span
+                    class="bg-primary text-black ml-1 px-1"> </span></span>
+        </div>
+    </div>
+</div>
+
+<!-- Hub Confirm Modal -->
+<div id="hub-modal" class="hub-modal-overlay">
+    <div class="hub-modal-box rounded p-6 flex flex-col gap-4">
+        <div class="flex items-center gap-3">
+            <span id="hub-modal-icon" class="material-symbols-outlined text-2xl text-primary glow-text">help</span>
+            <h3 id="hub-modal-title" class="text-sm font-bold uppercase tracking-widest text-primary glow-text">Confirm</h3>
+        </div>
+        <p id="hub-modal-body" class="text-xs text-primary/70 font-mono leading-relaxed"></p>
+        <div class="flex gap-3 justify-end mt-1">
+            <button onclick="hubModalClose()"
+                class="px-4 py-2 text-[10px] font-bold uppercase tracking-wider border border-primary/30 text-primary/50 hover:text-primary hover:border-primary/60 rounded transition-all">
+                Cancel
+            </button>
+            <button id="hub-modal-btn" onclick="hubModalConfirm()"
+                class="px-4 py-2 text-[10px] font-bold uppercase tracking-wider border border-primary/60 text-primary hover:bg-primary/10 rounded transition-all">
+                Confirm
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- TradingView Help Modal -->
+<div id="tradingview-help-modal" class="hub-modal-overlay" onclick="if(event.target===this)tradingViewHelpClose()">
+    <div class="hub-modal-box rounded p-6 flex flex-col gap-4" style="min-width:420px;max-width:720px">
+        <div class="flex items-center gap-3">
+            <span class="material-symbols-outlined text-2xl text-yellow-400 glow-text">monitor_heart</span>
+            <h3 class="text-sm font-bold uppercase tracking-widest text-primary glow-text">TradingView Web MCP</h3>
+        </div>
+        <div class="text-[10px] text-primary/65 font-mono leading-relaxed space-y-2">
+            <p>Nanobot installs a pinned MCP backend from GitHub and connects it through MCP stdio after gateway restart.</p>
+            <p class="text-yellow-400/70">You must provide Node.js and a Chrome TradingView chart opened with CDP port 9222. Use only with a valid TradingView account/subscription and comply with TradingView Terms.</p>
+        </div>
+        <div class="flex flex-col gap-3">
+            <div class="flex flex-col gap-1">
+                <div class="flex items-center justify-between">
+                    <label class="text-[9px] uppercase tracking-wider text-primary/50">PowerShell</label>
+                    <button onclick="tradingViewCopyCommand('tradingview-command-powershell')" class="text-[9px] uppercase text-primary/50 hover:text-primary">Copy</button>
+                </div>
+                <textarea id="tradingview-command-powershell" readonly rows="3" class="bg-black/60 border border-primary/25 rounded px-3 py-2 text-primary/80 font-mono text-[10px] resize-none outline-none">&amp; 'C:\Program Files\Google\Chrome\Application\chrome.exe' --remote-debugging-port=9222 --user-data-dir=C:\tmp\nanobot-chrome-cdp https://www.tradingview.com/chart/</textarea>
+            </div>
+            <div class="flex flex-col gap-1">
+                <div class="flex items-center justify-between">
+                    <label class="text-[9px] uppercase tracking-wider text-primary/50">CMD</label>
+                    <button onclick="tradingViewCopyCommand('tradingview-command-cmd')" class="text-[9px] uppercase text-primary/50 hover:text-primary">Copy</button>
+                </div>
+                <textarea id="tradingview-command-cmd" readonly rows="3" class="bg-black/60 border border-primary/25 rounded px-3 py-2 text-primary/80 font-mono text-[10px] resize-none outline-none">"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir=C:\tmp\nanobot-chrome-cdp https://www.tradingview.com/chart/</textarea>
+            </div>
+        </div>
+        <div class="flex justify-end">
+            <button onclick="tradingViewHelpClose()" class="px-4 py-2 text-[10px] font-bold uppercase tracking-wider border border-primary/40 text-primary/70 hover:text-primary hover:bg-primary/10 rounded transition-all">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- MCP Edit Modal -->
+<div id="mcp-edit-modal" class="hub-modal-overlay" onclick="if(event.target===this)mcpEditClose()">
+    <div class="hub-modal-box rounded p-6 flex flex-col gap-4" style="min-width:400px;max-width:540px">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <span class="material-symbols-outlined text-2xl text-primary glow-text">settings</span>
+                <h3 id="mcp-edit-title" class="text-sm font-bold uppercase tracking-widest text-primary glow-text">Server</h3>
+            </div>
+            <div class="flex items-center gap-2">
+                <span id="mcp-edit-badge" class="text-[8px] font-bold uppercase tracking-wider px-2 py-0.5 border rounded"></span>
+                <button onclick="mcpEditClose()" class="text-primary/30 hover:text-primary transition-colors">
+                    <span class="material-symbols-outlined text-sm">close</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="flex flex-col gap-3">
+            <!-- Type -->
+            <div class="flex flex-col gap-1">
+                <label class="text-[8px] font-bold uppercase tracking-wider text-primary/40">Type</label>
+                <select id="mcp-edit-type" class="bg-black/60 border border-primary/20 px-3 py-2 text-primary/60 font-mono text-xs outline-none transition-all appearance-none" onchange="mcpEditTypeChanged()">
+                    <option value="stdio" style="background:#0a0a0a;color:#00FF41">stdio</option>
+                    <option value="sse" style="background:#0a0a0a;color:#00FF41">sse</option>
+                    <option value="streamableHttp" style="background:#0a0a0a;color:#00FF41">streamableHttp</option>
+                </select>
+            </div>
+
+            <!-- Command (stdio) -->
+            <div id="mcp-edit-cmd-row" class="flex flex-col gap-1">
+                <label class="text-[8px] font-bold uppercase tracking-wider text-primary/40">Command</label>
+                <input type="text" id="mcp-edit-command" class="bg-black/60 border border-primary/20 px-3 py-2 text-primary/60 font-mono text-xs outline-none transition-all">
+            </div>
+            <div id="mcp-edit-args-row" class="flex flex-col gap-1">
+                <label class="text-[8px] font-bold uppercase tracking-wider text-primary/40">Args (comma-separated)</label>
+                <input type="text" id="mcp-edit-args" class="bg-black/60 border border-primary/20 px-3 py-2 text-primary/60 font-mono text-xs outline-none transition-all">
+            </div>
+
+            <!-- URL (sse/http) -->
+            <div id="mcp-edit-url-row" class="flex flex-col gap-1 hidden">
+                <label class="text-[8px] font-bold uppercase tracking-wider text-primary/40">URL</label>
+                <input type="text" id="mcp-edit-url" class="bg-black/60 border border-primary/20 px-3 py-2 text-primary/60 font-mono text-xs outline-none transition-all">
+            </div>
+
+            <!-- Env -->
+            <div class="flex flex-col gap-1">
+                <label class="text-[8px] font-bold uppercase tracking-wider text-primary/40">Env Vars (KEY=VALUE, one per line)</label>
+                <textarea id="mcp-edit-env" rows="2" class="bg-black/60 border border-primary/20 px-3 py-2 text-primary/60 font-mono text-xs outline-none transition-all resize-none"></textarea>
+            </div>
+
+            <!-- Timeout -->
+            <div class="flex flex-col gap-1">
+                <label class="text-[8px] font-bold uppercase tracking-wider text-primary/40">Tool Timeout (seconds)</label>
+                <input type="number" id="mcp-edit-timeout" min="5" max="300"
+                    class="bg-black/60 border border-primary/20 px-3 py-2 text-primary font-mono text-xs outline-none transition-all w-32">
+            </div>
+        </div>
+
+        <div class="flex gap-3 justify-end mt-1">
+            <button onclick="mcpEditClose()"
+                class="px-4 py-2 text-[10px] font-bold uppercase tracking-wider border border-primary/30 text-primary/50 hover:text-primary hover:border-primary/60 rounded transition-all">
+                Cancel
+            </button>
+            <button id="mcp-edit-save-btn" onclick="mcpEditSave()"
+                class="px-4 py-2 text-[10px] font-bold uppercase tracking-wider border border-primary/60 text-primary hover:bg-primary/10 rounded transition-all">
+                Save
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+    .crt-overlay,
+    .crt-scanline {
+        display: none !important;
+    }
+
+    /* Tab styles */
+    .tab-active {
+        background: rgba(var(--color-primary-rgb, 0,255,65), 0.12);
+        color: var(--color-primary, #00FF41);
+        border: 1px solid rgba(var(--color-primary-rgb, 0,255,65), 0.3);
+    }
+    .tab-inactive {
+        background: transparent;
+        color: rgba(var(--color-primary-rgb, 0,255,65), 0.35);
+        border: 1px solid transparent;
+        cursor: pointer;
+    }
+    .tab-inactive:hover {
+        color: rgba(var(--color-primary-rgb, 0,255,65), 0.6);
+        background: rgba(var(--color-primary-rgb, 0,255,65), 0.04);
+    }
+
+    /* Collapsible disabled-skill details */
+    .skill-disable-details {
+        max-height: 0;
+        overflow: hidden;
+        transition: max-height 0.25s ease;
+    }
+    .expanded .skill-disable-details {
+        max-height: 120px;
+    }
+    .expanded .skill-chevron {
+        transform: rotate(180deg);
+    }
+    .skill-disable-toggle:hover {
+        background: rgba(239, 68, 68, 0.08);
+    }
+
+    /* Hub modal */
+    .hub-modal-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        background: rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(4px);
+        align-items: center;
+        justify-content: center;
+    }
+    .hub-modal-overlay.open {
+        display: flex;
+    }
+    .hub-modal-box {
+        border: 1px solid var(--color-primary, #00FF41);
+        box-shadow: 0 0 30px rgba(0,255,65,0.25);
+        background: #141414;
+        min-width: 320px;
+        max-width: 440px;
+        animation: hub-modal-in 0.15s ease;
+    }
+    @keyframes hub-modal-in {
+        from { opacity: 0; transform: scale(0.95) translateY(-8px); }
+        to   { opacity: 1; transform: scale(1) translateY(0); }
+    }
+</style>
+<script>
+// Tab switching
+function switchTab(tab) {
+    var tabs = ['installed', 'hub', 'mcp'];
+    tabs.forEach(function(t) {
+        var panel = document.getElementById('tab-' + t);
+        var btn = document.getElementById('tab-' + t + '-btn');
+        if (t === tab) {
+            panel.classList.remove('hidden');
+            btn.className = btn.className.replace('tab-inactive', 'tab-active');
+        } else {
+            panel.classList.add('hidden');
+            btn.className = btn.className.replace('tab-active', 'tab-inactive');
+        }
+    });
+    if (tab === 'hub') {
+        setTimeout(function() { var q = document.getElementById('hub-query'); if(q) q.focus(); }, 100);
+    }
+    if (tab === 'mcp') {
+        setTimeout(mcpPollStatus, 200);
+        setTimeout(tradingViewInitVisibility, 50);
+    }
+    // Remember active tab in URL hash
+    window.location.hash = tab;
+}
+// Auto-switch to tab from URL hash on page load
+(function() {
+    var hash = window.location.hash.replace('#', '');
+    if (['hub', 'mcp'].indexOf(hash) >= 0) switchTab(hash);
+})();
+
+// ── MCP Functions ──
+var MCP_CUSTOM_PRESETS = {{ mcp_custom_preset_data | tojson }};
+var TRADER_MODE_KEY = 'nanobot.traderMode.enabled';
+
+function tradingViewIsInstalled() {
+    var card = document.getElementById('tradingview-mcp-card');
+    return Boolean(card && card.dataset.installed === 'true');
+}
+
+function tradingViewIsVisible() {
+    var card = document.getElementById('tradingview-mcp-card');
+    return Boolean(card && !card.classList.contains('hidden'));
+}
+
+function tradingViewSetTraderMode(enabled) {
+    localStorage.setItem(TRADER_MODE_KEY, enabled ? '1' : '0');
+    tradingViewInitVisibility();
+}
+
+function toggleTraderMode() {
+    tradingViewSetTraderMode(!tradingViewIsVisible());
+}
+
+function tradingViewInitVisibility() {
+    var card = document.getElementById('tradingview-mcp-card');
+    if (!card) return;
+    var installed = tradingViewIsInstalled();
+    var enabled = installed || localStorage.getItem(TRADER_MODE_KEY) === '1';
+    card.classList.toggle('hidden', !enabled);
+
+    var toggle = document.getElementById('trader-mode-toggle');
+    var label = document.getElementById('trader-mode-toggle-label');
+    if (toggle) {
+        toggle.classList.toggle('hidden', installed);
+        toggle.classList.toggle('border-primary/60', enabled);
+        toggle.classList.toggle('text-primary', enabled);
+    }
+    if (label) label.textContent = enabled ? 'Hide Trader Mode' : 'Show Trader Mode';
+    if (enabled) tradingViewRefreshHealth();
+}
+
+var _tradingViewBusyButton = null;
+
+function tradingViewSetBusy(isBusy, activeId, label) {
+    ['tradingview-install-btn', 'tradingview-reinstall-btn', 'tradingview-uninstall-btn'].forEach(function(id) {
+        var btn = document.getElementById(id);
+        if (btn) btn.disabled = isBusy;
+    });
+    if (isBusy && activeId) {
+        var active = document.getElementById(activeId);
+        if (active) {
+            _tradingViewBusyButton = {id: activeId, html: active.innerHTML};
+            active.innerHTML = '<span class="material-symbols-outlined text-[13px] animate-spin">progress_activity</span>' + escHtml(label || 'Working...');
+        }
+    } else if (!isBusy && _tradingViewBusyButton) {
+        var previous = document.getElementById(_tradingViewBusyButton.id);
+        if (previous) previous.innerHTML = _tradingViewBusyButton.html;
+        _tradingViewBusyButton = null;
+    }
+}
+
+function tradingViewCheckLabel(name) {
+    return {
+        node: 'Node.js',
+        backend: 'Backend',
+        dependencies: 'Dependencies',
+        config: 'MCP Config',
+        chrome_cdp: 'Chrome CDP'
+    }[name] || name;
+}
+
+function tradingViewRenderHealth(data) {
+    var dot = document.getElementById('tradingview-health-dot');
+    var summary = document.getElementById('tradingview-health-summary');
+    var grid = document.getElementById('tradingview-health-grid');
+    if (!dot || !summary || !grid) return;
+
+    var checks = data.checks || [];
+    var configCheck = checks.find(function(item) { return item.name === 'config'; });
+    var installed = Boolean(configCheck && configCheck.ok);
+    var ok = Boolean(data.ok);
+    dot.className = ok
+        ? 'w-2.5 h-2.5 rounded-full bg-primary shadow-[0_0_8px_#00FF41] mt-1.5 transition-all duration-500'
+        : (installed
+            ? 'w-2.5 h-2.5 rounded-full bg-yellow-400 shadow-[0_0_8px_#facc15] mt-1.5 transition-all duration-500'
+            : 'w-2.5 h-2.5 rounded-full bg-primary/20 mt-1.5 transition-all duration-500');
+    dot.title = ok ? 'Ready' : (installed ? 'Needs attention' : 'Not installed');
+
+    var version = data.browser_version || {};
+    var browser = version.Browser ? ' · ' + version.Browser : '';
+    summary.textContent = ok
+        ? 'Ready. Restart gateway after install/update to connect tools.' + browser
+        : (installed ? 'Installed, but one or more checks need attention.' + browser : 'Not installed yet. Install backend, then restart gateway.');
+    summary.className = ok
+        ? 'inline-flex mt-2 px-2.5 py-1 border border-primary/35 bg-primary/[0.07] text-[9px] text-primary font-mono rounded shadow-[0_0_8px_rgba(0,255,65,0.14)]'
+        : (installed
+            ? 'inline-flex mt-2 px-2.5 py-1 border border-yellow-400/35 bg-yellow-400/[0.08] text-[9px] text-yellow-400 font-mono rounded shadow-[0_0_8px_rgba(250,204,21,0.12)]'
+            : 'inline-flex mt-2 px-2.5 py-1 border border-primary/25 bg-primary/[0.05] text-[9px] text-primary/80 font-mono rounded');
+
+    document.getElementById('tradingview-install-btn').classList.toggle('hidden', installed);
+    document.getElementById('tradingview-reinstall-btn').classList.toggle('hidden', !installed);
+    document.getElementById('tradingview-uninstall-btn').classList.toggle('hidden', !installed);
+
+    grid.innerHTML = checks.map(function(check) {
+        var cls = check.ok ? 'border-primary/25 bg-primary/[0.03]' : 'border-yellow-400/25 bg-yellow-400/[0.04]';
+        var icon = check.ok ? 'check_circle' : 'radio_button_unchecked';
+        var text = check.ok ? 'text-primary/65' : 'text-yellow-400/70';
+        return '<div class="border ' + cls + ' rounded p-2 flex flex-col gap-1">'
+            + '<div class="flex items-center gap-1.5">'
+            + '<span class="material-symbols-outlined text-[12px] ' + text + '">' + icon + '</span>'
+            + '<span class="text-[9px] font-bold uppercase tracking-wider ' + text + '">' + escHtml(tradingViewCheckLabel(check.name)) + '</span>'
+            + '</div>'
+            + '<div class="text-[8px] font-mono text-primary/35 leading-relaxed">' + escHtml(check.detail || '') + '</div>'
+            + '</div>';
+    }).join('');
+}
+
+async function tradingViewRefreshHealth() {
+    var summary = document.getElementById('tradingview-health-summary');
+    if (summary) summary.textContent = 'Checking health...';
+    try {
+        var resp = await fetch('/skills/mcp/presets/tradingview/health');
+        var data = await resp.json();
+        if (!resp.ok || !data.success) throw new Error(data.error || 'Health check failed');
+        tradingViewRenderHealth(data);
+    } catch (err) {
+        if (summary) {
+            summary.textContent = 'Health check failed: ' + err.message;
+            summary.className = 'inline-flex mt-2 px-2.5 py-1 border border-red-400/35 bg-red-400/[0.08] text-[9px] text-red-400 font-mono rounded shadow-[0_0_8px_rgba(248,113,113,0.12)]';
+        }
+    }
+}
+
+async function tradingViewPost(path, activeId, label) {
+    tradingViewSetBusy(true, activeId, label);
+    try {
+        var resp = await fetch(path, {method: 'POST', headers: {'Content-Type': 'application/json'}});
+        var text = await resp.text();
+        var data = {};
+        try { data = text ? JSON.parse(text) : {}; }
+        catch (err) { data = {success: false, error: text || ('HTTP ' + resp.status)}; }
+        if (!resp.ok || !data.success) throw new Error(data.error || 'Request failed');
+        return data;
+    } finally {
+        tradingViewSetBusy(false);
+    }
+}
+
+function tradingViewInstall() {
+    hubModal('download', 'Install TradingView MCP', 'Download pinned TradingView MCP backend, run npm ci, and write MCP config? Requires gateway restart after install.', async function() {
+        try {
+            await tradingViewPost('/skills/mcp/presets/tradingview/install', 'tradingview-install-btn', 'Installing...');
+            hubModal('check_circle', 'Installed', 'TradingView MCP config installed. Restart gateway to connect tools.', function() { window.location.reload(); });
+        } catch (err) { hubModal('error', 'Install Failed', err.message, function(){}); }
+    });
+}
+
+function tradingViewReinstall() {
+    hubModal('sync', 'Reinstall TradingView MCP', 'Re-download the pinned backend and run npm ci again? Existing backend cache will be replaced after verification succeeds.', async function() {
+        try {
+            await tradingViewPost('/skills/mcp/presets/tradingview/reinstall', 'tradingview-reinstall-btn', 'Reinstalling...');
+            hubModal('check_circle', 'Reinstalled', 'TradingView MCP backend verified and config refreshed. Restart gateway to apply.', function() { window.location.reload(); });
+        } catch (err) { hubModal('error', 'Reinstall Failed', err.message, function(){}); }
+    });
+}
+
+function tradingViewUninstall() {
+    hubModal('delete', 'Uninstall TradingView MCP', 'Remove TradingView from MCP config? Downloaded backend cache will be kept.', async function() {
+        try {
+            await tradingViewPost('/skills/mcp/presets/tradingview/uninstall', 'tradingview-uninstall-btn', 'Removing...');
+            localStorage.setItem(TRADER_MODE_KEY, '0');
+            hubModal('check_circle', 'Uninstalled', 'TradingView MCP config removed. Backend cache was kept.', function() { window.location.reload(); });
+        } catch (err) { hubModal('error', 'Uninstall Failed', err.message, function(){}); }
+    });
+}
+
+function tradingViewHelpOpen() {
+    document.getElementById('tradingview-help-modal').classList.add('open');
+}
+
+function tradingViewHelpClose() {
+    document.getElementById('tradingview-help-modal').classList.remove('open');
+}
+
+function tradingViewCopyCommand(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.select();
+    el.setSelectionRange(0, 99999);
+    navigator.clipboard?.writeText(el.value).catch(function() {
+        document.execCommand('copy');
+    });
+}
+
+async function mcpPresetRequest(url, body) {
+    var options = {method: 'POST', headers: {'Content-Type': 'application/json'}};
+    if (body !== undefined) options.body = JSON.stringify(body);
+    var resp = await fetch(url, options);
+    var data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error(data.error || 'Request failed');
+    return data;
+}
+
+function mcpPresetInstall(presetId) {
+    hubModal('download', 'Install MCP Bundle', 'Install "' + presetId + '"? Existing server names will not be overwritten.', async function() {
+        try {
+            await mcpPresetRequest('/skills/mcp/presets/' + encodeURIComponent(presetId) + '/install');
+            window.location.reload();
+        } catch (err) { hubModal('error', 'Install Failed', err.message, function(){}); }
+    });
+}
+
+async function mcpPresetTest(presetId) {
+    try {
+        var data = await mcpPresetRequest('/skills/mcp/presets/' + encodeURIComponent(presetId) + '/test');
+        var count = Object.keys(data.servers || {}).length;
+        hubModal('check_circle', 'Bundle Test Successful', count + ' server(s) connected successfully.', function(){});
+    } catch (err) { hubModal('error', 'Bundle Test Failed', err.message, function(){}); }
+}
+
+function mcpPresetAdopt(presetId) {
+    hubModal('link', 'Adopt Existing Server', 'Attach exact-matching server configuration to "' + presetId + '" without changing it?', async function() {
+        try {
+            await mcpPresetRequest('/skills/mcp/presets/' + encodeURIComponent(presetId) + '/adopt');
+            window.location.reload();
+        } catch (err) { hubModal('error', 'Adopt Failed', err.message, function(){}); }
+    });
+}
+
+async function mcpPresetToggle(presetId, enabled) {
+    try {
+        await mcpPresetRequest('/skills/mcp/presets/' + encodeURIComponent(presetId) + '/toggle', {enabled: enabled});
+        window.location.reload();
+    } catch (err) { hubModal('error', 'Update Failed', err.message, function(){}); }
+}
+
+function mcpPresetUninstall(presetId) {
+    hubModal('delete', 'Uninstall MCP Bundle', 'Remove all servers owned by "' + presetId + '"? Manual servers are not affected.', async function() {
+        try {
+            await mcpPresetRequest('/skills/mcp/presets/' + encodeURIComponent(presetId) + '/uninstall');
+            window.location.reload();
+        } catch (err) { hubModal('error', 'Uninstall Failed', err.message, function(){}); }
+    });
+}
+
+function mcpCustomPresetOpen(presetId) {
+    var idInput = document.getElementById('mcp-custom-preset-id');
+    var jsonInput = document.getElementById('mcp-custom-preset-json');
+    idInput.value = presetId || '';
+    idInput.readOnly = Boolean(presetId);
+    jsonInput.value = presetId && MCP_CUSTOM_PRESETS[presetId]
+        ? JSON.stringify(MCP_CUSTOM_PRESETS[presetId], null, 2)
+        : JSON.stringify({label: '', description: '', servers: {}}, null, 2);
+    document.getElementById('mcp-custom-preset-form').classList.remove('hidden');
+    idInput.focus();
+}
+
+function mcpCustomPresetClose() {
+    document.getElementById('mcp-custom-preset-form').classList.add('hidden');
+}
+
+async function mcpCustomPresetSave() {
+    var presetId = document.getElementById('mcp-custom-preset-id').value.trim();
+    var bundleJson = document.getElementById('mcp-custom-preset-json').value;
+    if (!presetId) { hubModal('error', 'Invalid Bundle', 'Preset ID is required.', function(){}); return; }
+    try {
+        JSON.parse(bundleJson);
+        await mcpPresetRequest('/skills/mcp/presets/custom/save', {preset_id: presetId, bundle: bundleJson});
+        window.location.reload();
+    } catch (err) { hubModal('error', 'Save Failed', err.message, function(){}); }
+}
+
+async function mcpCustomPresetTestAll() {
+    var presetId = document.getElementById('mcp-custom-preset-id').value.trim() || 'custom';
+    var bundle;
+    try { bundle = JSON.parse(document.getElementById('mcp-custom-preset-json').value); }
+    catch (err) { hubModal('error', 'Invalid JSON', err.message, function(){}); return; }
+    var servers = bundle.servers || {};
+    var names = Object.keys(servers);
+    if (!names.length) { hubModal('error', 'Invalid Bundle', 'At least one server is required.', function(){}); return; }
+    try {
+        for (var i = 0; i < names.length; i++) {
+            var resp = await fetch('/skills/mcp/test', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({name: names[i], server: servers[names[i]]})
+            });
+            var result = await resp.json();
+            if (!result.success) throw new Error(names[i] + ': ' + (result.error_message || result.error || 'connection failed'));
+        }
+        hubModal('check_circle', 'Bundle Test Successful', presetId + ': ' + names.length + ' server(s) connected.', function(){});
+    } catch (err) { hubModal('error', 'Bundle Test Failed', err.message, function(){}); }
+}
+
+function mcpCustomPresetDelete(presetId) {
+    hubModal('delete', 'Delete Custom Bundle', 'Delete custom definition "' + presetId + '"? Installed bundles must be uninstalled first.', async function() {
+        try {
+            await mcpPresetRequest('/skills/mcp/presets/custom/' + encodeURIComponent(presetId) + '/delete');
+            window.location.reload();
+        } catch (err) { hubModal('error', 'Delete Failed', err.message, function(){}); }
+    });
+}
+
+function mcpToggleAddForm() {
+    var form = document.getElementById('mcp-add-form');
+    form.classList.toggle('hidden');
+}
+
+function mcpTypeChanged() {
+    var type = document.getElementById('mcp-type').value;
+    var stdio = document.getElementById('mcp-stdio-fields');
+    var http = document.getElementById('mcp-http-fields');
+    if (type === 'stdio') {
+        stdio.classList.remove('hidden');
+        http.classList.add('hidden');
+    } else {
+        stdio.classList.add('hidden');
+        http.classList.remove('hidden');
+    }
+}
+
+function mcpBuildManualPayload() {
+    var type = document.getElementById('mcp-type').value;
+    var body = {
+        name: document.getElementById('mcp-name').value.trim(),
+        type: type,
+        tool_timeout: parseInt(document.getElementById('mcp-timeout').value) || 30
+    };
+    if (type === 'stdio') {
+        body.command = document.getElementById('mcp-command').value.trim();
+        var argsStr = document.getElementById('mcp-args').value.trim();
+        body.args = argsStr ? argsStr.split(',').map(function(s){ return s.trim(); }).filter(Boolean) : [];
+    } else {
+        body.url = document.getElementById('mcp-url').value.trim();
+    }
+    var envText = document.getElementById('mcp-env').value.trim();
+    if (envText) {
+        body.env = {};
+        envText.split('\n').forEach(function(line) {
+            var eq = line.indexOf('=');
+            if (eq > 0) body.env[line.substring(0, eq).trim()] = line.substring(eq + 1).trim();
+        });
+    }
+    return body;
+}
+
+async function mcpTestUnsaved() {
+    var body = mcpBuildManualPayload();
+    try {
+        var resp = await fetch('/skills/mcp/test', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({name: body.name || 'unsaved', server: body})
+        });
+        var data = await resp.json();
+        if (!data.success) throw new Error(data.error_message || data.error || 'Connection failed');
+        hubModal('check_circle', 'Connection Successful', data.tool_count + ' tool(s) via ' + data.transport, function(){});
+    } catch (err) { hubModal('error', 'Connection Failed', err.message, function(){}); }
+}
+
+async function mcpTestSaved(name) {
+    try {
+        var resp = await fetch('/skills/mcp/' + encodeURIComponent(name) + '/test', {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
+        });
+        var data = await resp.json();
+        if (!data.success) throw new Error(data.error_message || data.error || 'Connection failed');
+        hubModal('check_circle', 'Connection Successful', data.tool_count + ' tool(s) via ' + data.transport, function(){});
+    } catch (err) { hubModal('error', 'Connection Failed', err.message, function(){}); }
+}
+
+async function mcpSubmitAdd() {
+    var body = mcpBuildManualPayload();
+    var name = body.name;
+    if (!name) { hubModal('error', 'Error', 'Name is required', function(){}); return; }
+
+    try {
+        var resp = await fetch('/skills/mcp/add', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        });
+        var data = await resp.json();
+        if (data.success) {
+            hubModal('check_circle', 'Added!', data.message, function() { window.location.reload(); });
+        } else {
+            hubModal('error', 'Error', data.error, function(){});
+        }
+    } catch (err) {
+        hubModal('error', 'Error', 'Network error: ' + err.message, function(){});
+    }
+}
+
+// MCP server data from backend (for edit modal)
+var MCP_DATA = {{ mcp_servers | tojson }};
+var _mcpEditName = null;
+var _mcpEditIsPreset = false;
+
+function mcpEdit(name) {
+    var srv = MCP_DATA[name];
+    if (!srv) return;
+    _mcpEditName = name;
+    _mcpEditIsPreset = Boolean(srv.owner);
+
+    document.getElementById('mcp-edit-title').textContent = name;
+
+    // Badge
+    var badge = document.getElementById('mcp-edit-badge');
+    if (_mcpEditIsPreset) {
+        badge.textContent = 'PRESET';
+        badge.className = 'text-[8px] font-bold uppercase tracking-wider px-2 py-0.5 border border-primary/30 text-primary/40 rounded';
+    } else {
+        badge.textContent = 'CUSTOM';
+        badge.className = 'text-[8px] font-bold uppercase tracking-wider px-2 py-0.5 border border-yellow-400/30 text-yellow-400/60 rounded';
+    }
+
+    // Set field values
+    var typeEl = document.getElementById('mcp-edit-type');
+    typeEl.value = srv.type || 'stdio';
+    typeEl.disabled = _mcpEditIsPreset;
+
+    var cmdEl = document.getElementById('mcp-edit-command');
+    cmdEl.value = srv.command || '';
+    cmdEl.readOnly = _mcpEditIsPreset;
+
+    var argsEl = document.getElementById('mcp-edit-args');
+    argsEl.value = (srv.args || []).join(', ');
+    argsEl.readOnly = _mcpEditIsPreset;
+
+    var urlEl = document.getElementById('mcp-edit-url');
+    urlEl.value = srv.url || '';
+    urlEl.readOnly = _mcpEditIsPreset;
+
+    var envEl = document.getElementById('mcp-edit-env');
+    if (srv.env && Object.keys(srv.env).length > 0) {
+        envEl.value = Object.entries(srv.env).map(function(e) { return e[0] + '=' + e[1]; }).join('\n');
+    } else {
+        envEl.value = '';
+    }
+    envEl.readOnly = _mcpEditIsPreset;
+
+    document.getElementById('mcp-edit-timeout').value = srv.tool_timeout || 30;
+
+    // Style readonly fields
+    var readonlyStyle = 'bg-black/40 border border-primary/20 px-3 py-2 text-primary/50 font-mono text-xs outline-none cursor-default';
+    var editableStyle = 'bg-black/40 border border-primary/40 focus:border-primary px-3 py-2 text-primary font-mono text-xs outline-none transition-all';
+    [cmdEl, argsEl, urlEl, envEl].forEach(function(el) {
+        el.className = _mcpEditIsPreset ? readonlyStyle : editableStyle;
+    });
+    typeEl.className = _mcpEditIsPreset
+        ? readonlyStyle + ' appearance-none'
+        : 'bg-black/40 border border-primary/40 focus:border-primary px-3 py-2 text-primary font-mono text-xs outline-none transition-all appearance-none cursor-pointer';
+
+    mcpEditTypeChanged();
+    document.getElementById('mcp-edit-modal').classList.add('open');
+}
+
+function mcpEditTypeChanged() {
+    var type = document.getElementById('mcp-edit-type').value;
+    var cmdRow = document.getElementById('mcp-edit-cmd-row');
+    var argsRow = document.getElementById('mcp-edit-args-row');
+    var urlRow = document.getElementById('mcp-edit-url-row');
+    if (type === 'stdio') {
+        cmdRow.classList.remove('hidden'); argsRow.classList.remove('hidden');
+        urlRow.classList.add('hidden');
+    } else {
+        cmdRow.classList.add('hidden'); argsRow.classList.add('hidden');
+        urlRow.classList.remove('hidden');
+    }
+}
+
+function mcpEditClose() {
+    document.getElementById('mcp-edit-modal').classList.remove('open');
+    _mcpEditName = null;
+}
+
+async function mcpEditSave() {
+    if (!_mcpEditName) return;
+    var body = { tool_timeout: parseInt(document.getElementById('mcp-edit-timeout').value) || 30 };
+
+    if (!_mcpEditIsPreset) {
+        // Custom: send all fields
+        var type = document.getElementById('mcp-edit-type').value;
+        body.type = type;
+        if (type === 'stdio') {
+            body.command = document.getElementById('mcp-edit-command').value.trim();
+            var argsStr = document.getElementById('mcp-edit-args').value.trim();
+            body.args = argsStr ? argsStr.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+        } else {
+            body.url = document.getElementById('mcp-edit-url').value.trim();
+        }
+        var envText = document.getElementById('mcp-edit-env').value.trim();
+        body.env = {};
+        if (envText) {
+            envText.split('\n').forEach(function(line) {
+                var eq = line.indexOf('=');
+                if (eq > 0) body.env[line.substring(0, eq).trim()] = line.substring(eq + 1).trim();
+            });
+        }
+    }
+
+    try {
+        var resp = await fetch('/skills/mcp/' + _mcpEditName + '/edit', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        });
+        var data = await resp.json();
+        if (data.success) {
+            mcpEditClose();
+            hubModal('check_circle', 'Updated', data.message, function() { window.location.reload(); });
+        } else {
+            hubModal('error', 'Error', data.error, function(){});
+        }
+    } catch (err) {
+        hubModal('error', 'Error', 'Network error: ' + err.message, function(){});
+    }
+}
+
+function mcpDelete(name) {
+    hubModal('delete', 'Delete MCP Server', 'Remove "' + name + '" from config? Requires gateway restart.', async function() {
+        try {
+            var resp = await fetch('/skills/mcp/' + name + '/delete', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'}
+            });
+            var data = await resp.json();
+            if (data.success) {
+                hubModal('check_circle', 'Deleted', data.message, function() { window.location.reload(); });
+            } else {
+                hubModal('error', 'Error', data.error, function(){});
+            }
+        } catch (err) {
+            hubModal('error', 'Error', 'Network error: ' + err.message, function(){});
+        }
+    });
+}
+
+function mcpRestartGateway() {
+    hubModal('restart_alt', 'Restart Gateway', 'Restart gateway to apply MCP changes? Bot will be briefly unavailable.', async function() {
+        var btn = document.getElementById('mcp-restart-btn');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="material-symbols-outlined text-[12px] animate-spin">progress_activity</span>Opening restart screen...';
+        }
+        window.location.href = '/restarting?next=' + encodeURIComponent('/skills#mcp');
+    });
+}
+
+// Poll MCP connection status and update card dots
+async function mcpPollStatus() {
+    try {
+        var resp = await fetch('/skills/mcp/status');
+        if (!resp.ok) return;
+        var data = await resp.json();
+        Object.keys(data).forEach(function(name) {
+            var dot = document.getElementById('mcp-dot-' + name);
+            var toolsSpan = document.getElementById('mcp-tools-' + name);
+            var info = data[name];
+            if (!dot) return;
+
+            if (info.state === 'connected') {
+                dot.className = 'w-2 h-2 rounded-full bg-primary shadow-[0_0_6px_#00FF41] transition-all duration-500';
+                dot.title = info.tool_count + ' tools connected';
+                if (toolsSpan) { toolsSpan.textContent = info.tool_count + ' tools'; toolsSpan.className = 'text-[9px] font-mono text-primary/40'; }
+            } else if (info.state === 'pending' || info.state === 'unknown') {
+                dot.className = 'w-2 h-2 rounded-full bg-yellow-400 shadow-[0_0_6px_#facc15] transition-all duration-500';
+                dot.title = 'Pending — restart gateway to connect';
+                if (toolsSpan) { toolsSpan.textContent = 'restart required'; toolsSpan.className = 'text-[9px] font-mono text-yellow-400/60'; }
+            } else {
+                // failed
+                dot.className = 'w-2 h-2 rounded-full bg-red-500 shadow-[0_0_6px_#ef4444] transition-all duration-500';
+                dot.title = 'Failed to connect';
+                if (toolsSpan) { toolsSpan.textContent = 'connection failed'; toolsSpan.className = 'text-[9px] font-mono text-red-400/60'; }
+            }
+            if (toolsSpan) toolsSpan.classList.remove('hidden');
+        });
+    } catch (err) {}
+}
+
+// Toggle skill ON/OFF
+async function toggleSkill(name) {
+    try {
+        const resp = await fetch(`/skills/${name}/toggle`, { method: 'POST' });
+        const data = await resp.json();
+        if (data.success) window.location.reload();
+    } catch (err) {
+        console.error('Toggle failed:', err);
+    }
+}
+
+// Delete workspace skill
+function deleteSkill(name) {
+    hubModal('delete', 'Delete Skill', 'Permanently delete "' + name + '" from workspace? This cannot be undone.', async function() {
+        try {
+            var resp = await fetch('/skills/' + name + '/delete', { method: 'POST' });
+            var data = await resp.json();
+            if (data.success) {
+                window.location.reload();
+            } else {
+                hubModal('error', 'Error', data.error || 'Delete failed', function(){});
+            }
+        } catch (err) {
+            hubModal('error', 'Error', 'Network error: ' + err.message, function(){});
+        }
+    });
+}
+
+// Hub Search
+async function hubSearch() {
+    const q = document.getElementById('hub-query').value.trim();
+    if (!q) return;
+
+    const loading = document.getElementById('hub-loading');
+    const grid = document.getElementById('hub-results-grid');
+    const noResults = document.getElementById('hub-no-results');
+    const errorEl = document.getElementById('hub-error');
+    const placeholder = document.getElementById('hub-placeholder');
+
+    placeholder.classList.add('hidden');
+    loading.classList.remove('hidden');
+    grid.innerHTML = '';
+    noResults.classList.add('hidden');
+    errorEl.classList.add('hidden');
+
+    try {
+        const resp = await fetch(`/skills/hub/search?q=${encodeURIComponent(q)}`);
+        const data = await resp.json();
+        loading.classList.add('hidden');
+
+        if (!data.success) {
+            errorEl.classList.remove('hidden');
+            document.getElementById('hub-error-text').textContent = data.error;
+            return;
+        }
+
+        if (data.results.length === 0) {
+            noResults.classList.remove('hidden');
+            return;
+        }
+
+        grid.innerHTML = data.results.map(r => `
+            <div class="matrix-card p-4 flex flex-col gap-2" id="hub-card-${r.slug}">
+                <div class="flex items-center justify-between">
+                    <span class="text-sm font-bold uppercase tracking-widest text-primary">${escHtml(r.name)}</span>
+                    <span class="text-[9px] font-mono text-primary/30">${r.score}</span>
+                </div>
+                <div class="text-[10px] font-mono text-primary/40">${escHtml(r.slug)}</div>
+                ${r.summary ? `<p class="text-[10px] text-primary/50 leading-relaxed mt-1">${escHtml(r.summary)}</p>` : ''}
+                <div class="flex gap-2 mt-1">
+                    ${r.installed ? `
+                        <button onclick="hubUninstall('${r.slug}')"
+                            class="flex-1 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider border border-red-400/40 text-red-400 hover:bg-red-400/10 rounded transition-all flex items-center justify-center gap-1.5">
+                            <span class="material-symbols-outlined text-[12px]">delete</span>Uninstall
+                        </button>
+                    ` : `
+                        <button onclick="hubInstall('${r.slug}')"
+                            class="flex-1 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider border border-primary/50 text-primary hover:bg-primary/10 rounded transition-all flex items-center justify-center gap-1.5">
+                            <span class="material-symbols-outlined text-[12px]">download</span>Install
+                        </button>
+                    `}
+                </div>
+            </div>
+        `).join('');
+
+    } catch (err) {
+        loading.classList.add('hidden');
+        errorEl.classList.remove('hidden');
+        document.getElementById('hub-error-text').textContent = 'Network error: ' + err.message;
+    }
+}
+
+function escHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+}
+
+// Hub Modal
+let _hubModalCb = null;
+function hubModal(icon, title, body, onConfirm) {
+    document.getElementById('hub-modal-icon').textContent = icon;
+    document.getElementById('hub-modal-title').textContent = title;
+    document.getElementById('hub-modal-body').textContent = body;
+    _hubModalCb = onConfirm;
+    document.getElementById('hub-modal').classList.add('open');
+}
+function hubModalClose() {
+    document.getElementById('hub-modal').classList.remove('open');
+    _hubModalCb = null;
+}
+function hubModalConfirm() {
+    document.getElementById('hub-modal').classList.remove('open');
+    if (_hubModalCb) _hubModalCb();
+    _hubModalCb = null;
+}
+document.getElementById('hub-modal').addEventListener('click', e => {
+    if (e.target === document.getElementById('hub-modal')) hubModalClose();
+});
+
+// Install
+async function hubInstall(slug) {
+    hubModal('download', 'Install Skill', `Install "${slug}" from ClawHub to workspace?`, async () => {
+        const card = document.getElementById(`hub-card-${slug}`);
+        const btn = card?.querySelector('button');
+        if (btn) {
+            btn.innerHTML = '<span class="material-symbols-outlined text-[12px] animate-spin">progress_activity</span>Installing...';
+            btn.disabled = true;
+        }
+        try {
+            const resp = await fetch('/skills/hub/install', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ slug })
+            });
+            const data = await resp.json();
+            if (data.success) {
+                if (btn) btn.innerHTML = '<span class="material-symbols-outlined text-[12px]">check</span>Installed!';
+                setTimeout(() => window.location.reload(), 1200);
+            } else {
+                if (btn) { btn.innerHTML = '<span class="material-symbols-outlined text-[12px]">error</span>Failed'; btn.disabled = false; }
+                hubModal('error', 'Error', data.error || 'Install failed', () => {});
+            }
+        } catch (err) {
+            if (btn) { btn.innerHTML = 'Error'; btn.disabled = false; }
+        }
+    });
+}
+
+// Uninstall
+async function hubUninstall(slug) {
+    hubModal('delete', 'Uninstall Skill', `Remove "${slug}" from workspace? This cannot be undone.`, async () => {
+        const card = document.getElementById(`hub-card-${slug}`);
+        const btn = card?.querySelector('button');
+        if (btn) {
+            btn.innerHTML = '<span class="material-symbols-outlined text-[12px] animate-spin">progress_activity</span>Removing...';
+            btn.disabled = true;
+        }
+        try {
+            const resp = await fetch('/skills/hub/uninstall', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ slug })
+            });
+            const data = await resp.json();
+            if (data.success) {
+                if (btn) btn.innerHTML = '<span class="material-symbols-outlined text-[12px]">check</span>Removed!';
+                setTimeout(() => window.location.reload(), 1200);
+            } else {
+                if (btn) { btn.innerHTML = 'Failed'; btn.disabled = false; }
+                hubModal('error', 'Error', data.error || 'Uninstall failed', () => {});
+            }
+        } catch (err) {
+            if (btn) { btn.innerHTML = 'Error'; btn.disabled = false; }
+        }
+    });
+}
+
+// Upload Zip
+async function hubUploadZip(input) {
+    const file = input.files[0];
+    input.value = '';
+    if (!file) return;
+
+    if (!file.name.endsWith('.zip')) {
+        hubModal('error', 'Invalid File', 'Only .zip files are accepted.', function(){});
+        return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+        hubModal('error', 'File Too Large', 'Maximum file size is 10MB.', function(){});
+        return;
+    }
+
+    var fileName = file.name;
+    hubModal('upload_file', 'Install from ZIP', 'Upload and install skill from "' + fileName + '"?', async function() {
+        var placeholder = document.getElementById('hub-placeholder');
+        var loading = document.getElementById('hub-loading');
+        if (placeholder) placeholder.classList.add('hidden');
+        if (loading) { loading.classList.remove('hidden'); loading.querySelector('p').textContent = 'Installing ' + fileName + '...'; }
+
+        var formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            var resp = await fetch('/skills/hub/upload', {
+                method: 'POST',
+                body: formData
+            });
+            var data = await resp.json();
+            if (loading) loading.classList.add('hidden');
+
+            if (data.success) {
+                hubModal('check_circle', 'Installed!', data.message || 'Skill installed successfully.', function() { window.location.reload(); });
+            } else {
+                hubModal('error', 'Upload Failed', data.error || 'Unknown error', function(){});
+            }
+        } catch (err) {
+            if (loading) loading.classList.add('hidden');
+            hubModal('error', 'Upload Error', 'Network error: ' + err.message, function(){});
+        }
+    });
+}
+</script>
+{% endblock %}

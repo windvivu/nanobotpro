@@ -1,0 +1,798 @@
+{% extends "base.html" %}
+
+{% block title %}Zalo Setup — Nanobot OS{% endblock %}
+
+{% block head_extra %}
+<style>
+    /* Hide CRT scanline effect on this page for QR readability */
+    .crt-overlay,
+    .crt-scanline {
+        display: none !important;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Sidebar -->
+<aside class="w-full lg:w-72 flex flex-col gap-6">
+    <div class="matrix-card p-6 flex flex-col items-center text-center gap-4">
+        <div
+            class="w-20 h-20 flex items-center justify-center text-primary glow-text border-2 border-primary/30 rounded-full relative">
+            <div class="absolute inset-0 border border-primary animate-pulse rounded-full opacity-20"></div>
+            <svg class="w-12 h-12" fill="none" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+                <rect height="20" stroke="currentColor" stroke-width="2" width="20" x="10" y="10"></rect>
+                <rect class="animate-pulse" fill="currentColor" height="6" width="6" x="17" y="17"></rect>
+                <path d="M10 15H4M10 25H4M30 15H36M30 25H36M15 10V4M25 10V4M15 30V36M25 30V36" stroke="currentColor"
+                    stroke-linecap="round" stroke-width="1.5"></path>
+                <circle cx="4" cy="15" fill="currentColor" r="1"></circle>
+                <circle cx="4" cy="25" fill="currentColor" r="1"></circle>
+                <circle cx="36" cy="15" fill="currentColor" r="1"></circle>
+                <circle cx="36" cy="25" fill="currentColor" r="1"></circle>
+                <circle cx="15" cy="4" fill="currentColor" r="1"></circle>
+                <circle cx="25" cy="4" fill="currentColor" r="1"></circle>
+                <circle cx="15" cy="36" fill="currentColor" r="1"></circle>
+                <circle cx="25" cy="36" fill="currentColor" r="1"></circle>
+            </svg>
+        </div>
+        <div>
+            <h2 class="text-lg font-bold glow-text tracking-widest uppercase">Nanobot_Admin</h2>
+            <p class="text-[10px] text-primary/50 font-mono">UID: 00-FF-41-X9</p>
+        </div>
+    </div>
+
+    {% set active_page = "zalo" %}
+
+
+    {% include "_sidebar_nav.html" %}
+</aside>
+
+<!-- Main Content -->
+<div class="flex-1 flex flex-col gap-8">
+    <!-- Header -->
+    <div class="matrix-card p-6 relative overflow-hidden">
+        <div class="absolute top-0 right-0 p-2 opacity-10">
+            <span class="material-symbols-outlined text-6xl">qr_code_2</span>
+        </div>
+        <div class="flex items-center gap-3 mb-2">
+            <span class="w-2 h-2 rounded-full" id="header-dot"
+                style="background: var(--matrix-green); box-shadow: 0 0 5px var(--matrix-green);"></span>
+            <h3 class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/60">Zalo Channel</h3>
+        </div>
+        <h1 class="text-2xl font-bold glow-text tracking-wider uppercase">Zalo Personal Setup</h1>
+        <p class="text-xs text-primary/40 mt-2">Connect your personal Zalo account via QR code scan</p>
+        <p class="text-xs text-yellow-400/70 mt-1 tracking-wider">✨ Biến nick Zalo thành botchat</p>
+    </div>
+
+    <!-- Status + QR Area -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- Connection Status -->
+        <div class="matrix-card p-6">
+            <div class="flex items-center gap-3 mb-6 border-b border-primary/20 pb-4">
+                <span class="material-symbols-outlined glow-text">monitoring</span>
+                <h3 class="text-xs font-bold uppercase tracking-widest glow-text">Connection Status</h3>
+            </div>
+
+            <div class="space-y-4">
+                <div class="flex justify-between items-center p-2">
+                    <span class="text-sm uppercase tracking-wider text-primary/60">Status</span>
+                    <div class="flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full" id="status-dot"></span>
+                        <span class="text-sm font-bold uppercase" id="status-text">--</span>
+                    </div>
+                </div>
+
+                <div class="flex justify-between items-center p-2">
+                    <span class="text-sm uppercase tracking-wider text-primary/60">User_ID</span>
+                    <span class="text-sm font-bold glow-text font-mono" id="user-id">--</span>
+                </div>
+
+                <div class="flex justify-between items-center p-2">
+                    <span class="text-sm uppercase tracking-wider text-primary/60">Protocol</span>
+                    <span class="text-sm font-bold text-primary/60">zca-js / WebSocket</span>
+                </div>
+
+                <div class="flex justify-between items-center p-2">
+                    <span class="text-sm uppercase tracking-wider text-primary/60">Session</span>
+                    <span class="text-sm font-bold" id="session-status"
+                        style="color: var(--session-color, rgba(0,255,65,0.6));">--</span>
+                </div>
+
+                <div class="flex justify-between items-center p-2">
+                    <span class="text-sm uppercase tracking-wider text-primary/60">Bridge</span>
+                    {% if bridge_status.installed == True %}
+                        <span class="text-sm font-bold font-mono bridge-status-span" style="color: rgba(0,255,65,0.7);">zca-js v{{ bridge_status.version }} ✓</span>
+                    {% elif bridge_status.installed == False %}
+                        <span class="text-sm font-bold font-mono bridge-status-span text-orange-400/80">Not installed ⚠</span>
+                    {% else %}
+                        <span class="text-sm font-bold font-mono bridge-status-span text-primary/30">--</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="mt-6 flex gap-3 flex-wrap">
+                <button id="btn-connect" onclick="zaloConnect()"
+                    class="flex-1 px-4 py-3 border border-primary text-primary font-bold text-xs uppercase tracking-widest hover:bg-primary hover:text-black transition-all duration-300 flex items-center justify-center gap-2">
+                    <span class="material-symbols-outlined text-sm">link</span>
+                    Connect
+                </button>
+                <button id="btn-disconnect" onclick="zaloDisconnect()"
+                    class="flex-1 px-4 py-3 border border-red-500/60 text-red-400 font-bold text-xs uppercase tracking-widest hover:bg-red-500/20 transition-all duration-300 flex items-center justify-center gap-2"
+                    style="display: none;">
+                    <span class="material-symbols-outlined text-sm">link_off</span>
+                    Disconnect
+                </button>
+            </div>
+            <div class="mt-2">
+                <button id="btn-clear-session" onclick="zaloClearSession()"
+                    class="w-full px-4 py-2 border border-yellow-500/40 text-yellow-400/70 font-bold text-[10px] uppercase tracking-widest hover:bg-yellow-500/10 transition-all duration-300 flex items-center justify-center gap-2"
+                    style="display: none;">
+                    <span class="material-symbols-outlined text-xs">delete_forever</span>
+                    Clear Session (Force QR Re-login)
+                </button>
+            </div>
+            <div class="mt-2">
+                <button id="btn-reinstall-bridge" onclick="zaloReinstallBridge()"
+                    class="w-full px-4 py-2 border border-orange-500/30 text-orange-400/50 font-bold text-[10px] uppercase tracking-widest hover:bg-orange-500/10 hover:text-orange-400/80 transition-all duration-300 flex items-center justify-center gap-2">
+                    <span class="material-symbols-outlined text-xs">refresh</span>
+                    Reinstall Bridge (Fix Login Issues)
+                </button>
+                {% if bridge_status.installed == False %}
+                <p class="text-[9px] text-orange-400/70 font-mono mt-1 text-center animate-pulse">
+                    ⚠ Bridge not installed — press Connect or Reinstall to fix.
+                </p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- QR Code Display -->
+        <div class="matrix-card p-6 flex flex-col items-center justify-center min-h-[320px]" id="qr-container">
+            <!-- Disconnected state -->
+            <div id="qr-placeholder" class="text-center">
+                <span class="material-symbols-outlined text-6xl text-primary/20 mb-4">qr_code_2</span>
+                <p class="text-sm text-primary/40 uppercase tracking-wider" id="placeholder-text">Press Connect to
+                    generate QR</p>
+                <p class="text-[10px] text-primary/20 mt-2" id="placeholder-hint">Scan with Zalo app to login</p>
+            </div>
+
+            <!-- Loading state -->
+            <div id="qr-loading" class="text-center" style="display: none;">
+                <div
+                    class="w-16 h-16 border-2 border-primary/20 border-t-primary rounded-full animate-spin mx-auto mb-4">
+                </div>
+                <p class="text-sm text-primary/60 uppercase tracking-wider animate-pulse" id="loading-text">
+                    Connecting...</p>
+                <p class="text-[10px] text-primary/30 mt-2" id="loading-hint">Please wait</p>
+            </div>
+
+            <!-- QR Code display -->
+            <div id="qr-display" class="text-center" style="display: none;">
+                <div class="relative inline-block">
+                    <div class="absolute -inset-2 border border-primary/30 animate-pulse"></div>
+                    <img id="qr-image" src="" alt="Zalo QR Code" class="w-64 h-64 bg-white p-2"
+                        style="image-rendering: pixelated;">
+                </div>
+                <p class="text-sm text-primary glow-text mt-4 uppercase tracking-wider animate-pulse">
+                    Scan with Zalo app
+                </p>
+                <p class="text-[10px] text-primary/40 mt-1">QR expires in ~60 seconds</p>
+            </div>
+
+            <!-- Connected state -->
+            <div id="qr-connected" class="text-center" style="display: none;">
+                <span class="material-symbols-outlined text-6xl text-green-400 mb-4"
+                    style="text-shadow: 0 0 15px rgba(74, 222, 128, 0.5);">check_circle</span>
+                <p class="text-lg font-bold uppercase tracking-wider"
+                    style="color: #4ade80; text-shadow: 0 0 10px rgba(74, 222, 128, 0.3);">Connected</p>
+                <p class="text-[10px] text-primary/40 mt-2" id="connected-user">User: --</p>
+            </div>
+
+            <!-- Disconnecting state -->
+            <div id="qr-disconnecting" class="text-center" style="display: none;">
+                <div
+                    class="w-16 h-16 border-2 border-red-500/30 border-t-red-400 rounded-full animate-spin mx-auto mb-4">
+                </div>
+                <p class="text-sm text-red-400/80 uppercase tracking-wider animate-pulse">Disconnecting...</p>
+                <p class="text-[10px] text-primary/30 mt-2">Terminating bridge process</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Warning Banner -->
+    <div class="matrix-card p-4 border-l-4 border-l-yellow-500/60">
+        <div class="flex items-start gap-3">
+            <span class="material-symbols-outlined text-yellow-500/80 mt-0.5">warning</span>
+            <div>
+                <p class="text-xs font-bold uppercase tracking-wider text-yellow-500/80 mb-1">Unofficial API Warning</p>
+                <p class="text-[11px] text-primary/50 leading-relaxed">
+                    This uses an <strong class="text-primary/70">unofficial Zalo API</strong> via zca-js.
+                    Use a secondary account to avoid risk of account suspension.
+                    Only <strong class="text-primary/70">one active listener</strong> per account — do not open Zalo Web
+                    simultaneously.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Channel Configuration -->
+    <div class="matrix-card p-6" id="config-card">
+        <div class="flex items-center gap-3 mb-6 border-b border-primary/20 pb-4">
+            <span class="material-symbols-outlined glow-text">settings</span>
+            <h3 class="text-xs font-bold uppercase tracking-widest glow-text">Channel Configuration</h3>
+            <span class="ml-auto text-[9px] text-primary/30 font-mono uppercase">channels.zalo</span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- allow_from -->
+            <div class="flex flex-col gap-2">
+                <label class="text-[10px] font-bold uppercase tracking-wider text-primary/60">allow_from</label>
+                <input id="cfg-allow-from" type="text"
+                    value="{{ zalo_config.allow_from }}"
+                    placeholder="* or user IDs space-separated"
+                    class="bg-black/60 border border-primary/30 text-primary font-mono text-sm px-3 py-2 focus:outline-none focus:border-primary/80 w-full placeholder:text-primary/20">
+                <p class="text-[10px] text-primary/30">
+                    <code class="text-primary/50">*</code> = allow all &nbsp;|&nbsp;
+                    Space-separated Zalo user IDs to whitelist
+                </p>
+            </div>
+
+            <!-- node_path -->
+            <div class="flex flex-col gap-2">
+                <label class="text-[10px] font-bold uppercase tracking-wider text-primary/40">node_path
+                    <span class="ml-1 text-[9px] normal-case text-primary/25">(advanced)</span>
+                </label>
+                <input id="cfg-node-path" type="text"
+                    value="{{ zalo_config.node_path }}"
+                    readonly
+                    title="Advanced setting — edit config.json directly if needed"
+                    class="bg-black/30 border border-primary/15 text-primary/30 font-mono text-sm px-3 py-2 w-full cursor-not-allowed select-none">
+                <p class="text-[10px] text-primary/20">
+                    Path to Node.js binary. Default: <code class="text-primary/30">node</code>
+                    — edit <code class="text-primary/30">config.json</code> to change.
+                </p>
+            </div>
+
+            <div class="md:col-span-2 flex flex-col gap-3 border border-primary/15 bg-black/20 p-4">
+                <div class="flex items-center justify-between gap-3">
+                    <label class="text-[10px] font-bold uppercase tracking-wider text-primary/60">group_reply_mode</label>
+                    <span class="text-[9px] text-primary/25 font-mono">groupReplyMode</span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <label class="cursor-pointer border border-primary/20 bg-black/30 p-3 hover:border-primary/50 transition-colors">
+                        <div class="flex items-center gap-3">
+                            <span class="relative inline-flex w-10 h-5 shrink-0">
+                                <input type="radio" name="cfg-group-reply-mode" value="mention"
+                                    {% if zalo_config.group_reply_mode == "mention" %}checked{% endif %}
+                                    class="sr-only peer">
+                                <span class="w-10 h-5 bg-black/60 border border-primary/30 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300"></span>
+                                <span class="absolute top-[2px] left-[2px] w-4 h-4 bg-primary/30 peer-checked:bg-primary peer-checked:shadow-[0_0_8px_#00FF41] peer-checked:translate-x-5 transition-all duration-300"></span>
+                            </span>
+                            <span class="text-xs font-bold uppercase tracking-wider text-primary/80">Mentions only</span>
+                        </div>
+                        <p class="mt-2 text-[10px] leading-relaxed text-primary/35">
+                            Ignore unmentioned group chat before LLM. No token cost.
+                        </p>
+                    </label>
+                    <label class="cursor-pointer border border-primary/20 bg-black/30 p-3 hover:border-primary/50 transition-colors">
+                        <div class="flex items-center gap-3">
+                            <span class="relative inline-flex w-10 h-5 shrink-0">
+                                <input type="radio" name="cfg-group-reply-mode" value="ambient"
+                                    {% if zalo_config.group_reply_mode == "ambient" %}checked{% endif %}
+                                    class="sr-only peer">
+                                <span class="w-10 h-5 bg-black/60 border border-primary/30 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300"></span>
+                                <span class="absolute top-[2px] left-[2px] w-4 h-4 bg-primary/30 peer-checked:bg-primary peer-checked:shadow-[0_0_8px_#00FF41] peer-checked:translate-x-5 transition-all duration-300"></span>
+                            </span>
+                            <span class="text-xs font-bold uppercase tracking-wider text-primary/80">Smart ambient</span>
+                        </div>
+                        <p class="mt-2 text-[10px] leading-relaxed text-primary/35">
+                            Let LLM decide whether to answer unmentioned group chat.
+                        </p>
+                    </label>
+                    <label class="cursor-pointer border border-primary/20 bg-black/30 p-3 hover:border-primary/50 transition-colors">
+                        <div class="flex items-center gap-3">
+                            <span class="relative inline-flex w-10 h-5 shrink-0">
+                                <input type="radio" name="cfg-group-reply-mode" value="open"
+                                    {% if zalo_config.group_reply_mode == "open" %}checked{% endif %}
+                                    class="sr-only peer">
+                                <span class="w-10 h-5 bg-black/60 border border-primary/30 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300"></span>
+                                <span class="absolute top-[2px] left-[2px] w-4 h-4 bg-primary/30 peer-checked:bg-primary peer-checked:shadow-[0_0_8px_#00FF41] peer-checked:translate-x-5 transition-all duration-300"></span>
+                            </span>
+                            <span class="text-xs font-bold uppercase tracking-wider text-primary/80">Open</span>
+                        </div>
+                        <p class="mt-2 text-[10px] leading-relaxed text-primary/35">
+                            Treat every group message like normal chat. Debug/private groups only.
+                        </p>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-5 flex items-center gap-4">
+            <button onclick="saveZaloConfig()"
+                id="btn-save-config"
+                class="px-5 py-2 border border-primary text-primary font-bold text-xs uppercase tracking-widest hover:bg-primary hover:text-black transition-all duration-300 flex items-center gap-2">
+                <span class="material-symbols-outlined text-sm">save</span>
+                Save Configuration
+            </button>
+            <span id="config-save-msg" class="text-[11px] font-mono hidden"></span>
+        </div>
+
+        <p class="mt-3 text-[10px] text-primary/20 font-mono">
+            Changes apply to the next Zalo message
+        </p>
+    </div>
+
+    <!-- Terminal Log -->
+    <div class="matrix-card p-4 font-mono text-[11px] leading-tight space-y-1" id="terminal-log">
+        <div class="flex gap-2">
+            <span class="text-primary/40">[ZALO]</span>
+            <span class="text-primary">Module initialized. Awaiting connection...</span>
+        </div>
+        <div class="flex gap-2 pt-2 border-t border-primary/10 mt-2">
+            <span class="text-primary/60">$</span>
+            <span class="text-primary cursor-default">root@nanobot_os:~# <span
+                    class="bg-primary text-black ml-1 px-1 blinking"> </span></span>
+        </div>
+    </div>
+</div>
+
+<!-- Clear Session Confirmation Modal -->
+<div id="clearSessionModal" class="fixed inset-0 z-50 bg-black/80 items-center justify-center" style="display: none;">
+    <div class="matrix-card p-6 w-full max-w-sm flex flex-col gap-5 border-yellow-500/40 shadow-[0_0_30px_rgba(250,204,21,0.15)] relative">
+        <div class="flex items-center gap-3">
+            <span class="material-symbols-outlined text-yellow-400">delete_forever</span>
+            <h3 class="text-sm font-bold uppercase tracking-widest text-yellow-400">Clear Session Data</h3>
+        </div>
+        <p class="text-xs text-primary/70 leading-relaxed">
+            This will delete the saved Zalo credentials.
+        </p>
+        <p class="text-[10px] text-primary/40 leading-relaxed font-mono">
+            &gt; credentials.json will be removed.<br>
+            &gt; Next connect will require QR scan.<br>
+            &gt; Use this to switch to a different account.
+        </p>
+        <div class="flex gap-3 mt-2">
+            <button onclick="confirmClearSession()"
+                class="flex-1 px-4 py-3 border border-yellow-500/50 bg-yellow-500/10 text-yellow-400 font-bold uppercase tracking-widest text-sm hover:bg-yellow-500/20 text-center transition-all duration-300 flex items-center justify-center gap-2">
+                <span class="material-symbols-outlined text-sm">delete_forever</span>
+                Clear Session
+            </button>
+            <button type="button" onclick="document.getElementById('clearSessionModal').style.display='none'"
+                class="px-4 py-3 border border-primary/20 text-primary/40 font-bold uppercase tracking-widest text-sm hover:text-primary transition-colors">
+                Cancel
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Reinstall Bridge Confirmation Modal -->
+<div id="reinstallModal" class="fixed inset-0 z-50 bg-black/80 items-center justify-center" style="display: none;">
+    <div class="matrix-card p-6 w-full max-w-sm flex flex-col gap-5 border-orange-500/40 shadow-[0_0_30px_rgba(251,146,60,0.15)] relative">
+        <div class="flex items-center gap-3">
+            <span class="material-symbols-outlined text-orange-400">refresh</span>
+            <h3 class="text-sm font-bold uppercase tracking-widest text-orange-400">Reinstall Bridge</h3>
+        </div>
+        <p class="text-xs text-primary/70 leading-relaxed">
+            Xoá <code class="text-orange-400/80">node_modules</code> và cài lại zca-js phiên bản mới nhất.
+        </p>
+        <p class="text-[10px] text-primary/40 leading-relaxed font-mono">
+            &gt; Dùng khi: login failed, listener error.<br>
+            &gt; Requires: Disconnected trước.<br>
+            &gt; Sau đó: nhấn Connect để cài lại tự động.
+        </p>
+        <div class="flex gap-3 mt-2">
+            <button onclick="confirmReinstallBridge()"
+                class="flex-1 px-4 py-3 border border-orange-500/50 bg-orange-500/10 text-orange-400 font-bold uppercase tracking-widest text-sm hover:bg-orange-500/20 text-center transition-all duration-300 flex items-center justify-center gap-2">
+                <span class="material-symbols-outlined text-sm">refresh</span>
+                Reinstall
+            </button>
+            <button type="button" onclick="document.getElementById('reinstallModal').style.display='none'"
+                class="px-4 py-3 border border-primary/20 text-primary/40 font-bold uppercase tracking-widest text-sm hover:text-primary transition-colors">
+                Cancel
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+    let pollInterval = null;
+    let currentStatus = '{{ zalo_status.status }}';
+    let isDisconnecting = false;
+
+    function updateUI(data) {
+        if (isDisconnecting && data.status !== 'disconnected' && data.status !== 'error') {
+            return;
+        }
+        const statusDot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status-text');
+        const headerDot = document.getElementById('header-dot');
+        const userId = document.getElementById('user-id');
+        const btnConnect = document.getElementById('btn-connect');
+        const btnDisconnect = document.getElementById('btn-disconnect');
+        const qrPlaceholder = document.getElementById('qr-placeholder');
+        const qrLoading = document.getElementById('qr-loading');
+        const qrDisplay = document.getElementById('qr-display');
+        const qrConnected = document.getElementById('qr-connected');
+        const qrDisconnecting = document.getElementById('qr-disconnecting');
+        const connectedUser = document.getElementById('connected-user');
+
+        // Hide all QR states
+        qrPlaceholder.style.display = 'none';
+        qrLoading.style.display = 'none';
+        qrDisplay.style.display = 'none';
+        qrConnected.style.display = 'none';
+        qrDisconnecting.style.display = 'none';
+
+        currentStatus = data.status;
+
+        // Update session status indicator
+        const sessionStatus = document.getElementById('session-status');
+        const btnClearSession = document.getElementById('btn-clear-session');
+        const placeholderText = document.getElementById('placeholder-text');
+        const placeholderHint = document.getElementById('placeholder-hint');
+        const loadingText = document.getElementById('loading-text');
+        const loadingHint = document.getElementById('loading-hint');
+
+        if (data.hasSavedSession) {
+            sessionStatus.textContent = 'SAVED ✓';
+            sessionStatus.style.color = '#4ade80';
+            placeholderText.textContent = 'Press Connect (auto-login)';
+            placeholderHint.textContent = 'Saved session found — no QR needed';
+            loadingText.textContent = 'Auto-login with saved session...';
+            loadingHint.textContent = 'Using saved credentials';
+        } else {
+            sessionStatus.textContent = 'NOT SAVED';
+            sessionStatus.style.color = '#ef4444';
+            placeholderText.textContent = 'Press Connect to generate QR';
+            placeholderHint.textContent = 'Scan with Zalo app to login';
+            loadingText.textContent = 'Generating QR code...';
+            loadingHint.textContent = 'Waiting for Zalo server';
+        }
+
+        // Show "Clear Session" only when disconnected + has saved session
+        if (btnClearSession) {
+            btnClearSession.style.display =
+                (data.status === 'disconnected' && data.hasSavedSession) ? 'flex' : 'none';
+        }
+
+        // Disable "Reinstall Bridge" when connecting or connected (backend also guards this)
+        const btnReinstall = document.getElementById('btn-reinstall-bridge');
+        if (btnReinstall) {
+            const isDisconnected = data.status === 'disconnected' || data.status === 'not_enabled';
+            btnReinstall.disabled = !isDisconnected;
+            btnReinstall.style.opacity = isDisconnected ? '1' : '0.3';
+            btnReinstall.style.cursor = isDisconnected ? 'pointer' : 'not-allowed';
+            btnReinstall.title = isDisconnected ? '' : 'Disconnect first before reinstalling.';
+        }
+
+        if (data.status === 'connected') {
+            statusDot.style.background = '#4ade80';
+            statusDot.style.boxShadow = '0 0 8px #4ade80';
+            statusText.textContent = 'CONNECTED';
+            statusText.style.color = '#4ade80';
+            headerDot.style.background = '#4ade80';
+            headerDot.style.boxShadow = '0 0 5px #4ade80';
+            userId.textContent = data.userId || '--';
+
+            btnConnect.style.display = 'none';
+
+            // Restore disconnect button to normal state
+            btnDisconnect.style.display = 'flex';
+            btnDisconnect.disabled = false;
+            btnDisconnect.innerHTML = '<span class="material-symbols-outlined text-sm">link_off</span>Disconnect';
+            btnDisconnect.style.opacity = '1';
+            btnDisconnect.style.cursor = 'pointer';
+
+            qrConnected.style.display = 'block';
+            connectedUser.textContent = 'User ID: ' + (data.userId || '--');
+            stopPolling();
+
+            // Refresh bridge status indicator (npm install just completed)
+            refreshBridgeStatus();
+
+        } else if (data.status === 'connecting') {
+            statusDot.style.background = '#facc15';
+            statusDot.style.boxShadow = '0 0 8px #facc15';
+            statusText.textContent = 'CONNECTING';
+            statusText.style.color = '#facc15';
+            headerDot.style.background = '#facc15';
+            headerDot.style.boxShadow = '0 0 5px #facc15';
+            userId.textContent = '--';
+
+            if (data.hasQr) {
+                // QR is ready, hide connect and show disconnect
+                btnConnect.style.display = 'none';
+
+                // Restore disconnect button to normal state
+                btnDisconnect.style.display = 'flex';
+                btnDisconnect.disabled = false;
+                btnDisconnect.innerHTML = '<span class="material-symbols-outlined text-sm">link_off</span>Disconnect';
+                btnDisconnect.style.opacity = '1';
+                btnDisconnect.style.cursor = 'pointer';
+
+                qrDisplay.style.display = 'block';
+                const img = document.getElementById('qr-image');
+                img.src = '/zalo/qr?t=' + Date.now();
+            } else {
+                // Generating QR code, keep connect button visible but disabled and spinning
+                btnConnect.style.display = 'flex';
+                btnConnect.disabled = true;
+                btnConnect.innerHTML = '<div class="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin"></div><span>Generating...</span>';
+                btnConnect.style.opacity = '0.6';
+                btnConnect.style.cursor = 'not-allowed';
+
+                btnDisconnect.style.display = 'none';
+                qrLoading.style.display = 'block';
+            }
+        } else {
+            // disconnected
+            statusDot.style.background = '#ef4444';
+            statusDot.style.boxShadow = '0 0 8px #ef4444';
+            statusText.textContent = 'DISCONNECTED';
+            statusText.style.color = '#ef4444';
+            headerDot.style.background = 'var(--matrix-green)';
+            headerDot.style.boxShadow = '0 0 5px var(--matrix-green)';
+            userId.textContent = '--';
+            // Restore connect button to normal state
+            btnConnect.style.display = 'flex';
+            btnConnect.disabled = false;
+            btnConnect.innerHTML = '<span class="material-symbols-outlined text-sm">link</span>Connect';
+            btnConnect.style.opacity = '1';
+            btnConnect.style.cursor = 'pointer';
+
+            btnDisconnect.style.display = 'none';
+            qrPlaceholder.style.display = 'block';
+            stopPolling();
+        }
+    }
+
+    function addLog(msg) {
+        const log = document.getElementById('terminal-log');
+        const entry = document.createElement('div');
+        entry.className = 'flex gap-2';
+        entry.innerHTML = '<span class="text-primary/40">[ZALO]</span><span class="text-primary">' + msg + '</span>';
+        // Insert before the last child (the prompt line)
+        log.insertBefore(entry, log.lastElementChild);
+        log.scrollTop = log.scrollHeight;
+    }
+
+    async function zaloConnect() {
+        const btnConnect = document.getElementById('btn-connect');
+
+        // Disable and show spinner on button
+        btnConnect.disabled = true;
+        btnConnect.innerHTML = '<div class="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin"></div><span>Connecting...</span>';
+        btnConnect.style.opacity = '0.6';
+        btnConnect.style.cursor = 'not-allowed';
+
+        addLog('Initiating connection sequence...');
+        try {
+            const res = await fetch('/zalo/connect', { method: 'POST' });
+            const data = await res.json();
+
+            if (data.status === 'connecting') {
+                addLog('Bridge spawned. Generating QR code...');
+                startPolling();
+            } else if (data.status === 'already_connected') {
+                addLog('Already connected as ' + data.userId);
+            } else if (data.status === 'already_connecting') {
+                addLog('Connection already in progress...');
+                startPolling();
+            } else if (data.status === 'error') {
+                addLog('<span class="text-red-400">ERROR: ' + data.message + '</span>');
+                // Restore button on error
+                btnConnect.disabled = false;
+                btnConnect.innerHTML = '<span class="material-symbols-outlined text-sm">link</span>Connect';
+                btnConnect.style.opacity = '1';
+                btnConnect.style.cursor = 'pointer';
+            }
+
+            updateUI(data);
+        } catch (err) {
+            addLog('<span class="text-red-400">Network error: ' + err.message + '</span>');
+            // Restore button on error
+            btnConnect.disabled = false;
+            btnConnect.innerHTML = '<span class="material-symbols-outlined text-sm">link</span>Connect';
+            btnConnect.style.opacity = '1';
+            btnConnect.style.cursor = 'pointer';
+        }
+    }
+
+    async function refreshBridgeStatus() {
+        try {
+            const res = await fetch('/zalo/bridge-info');
+            const data = await res.json();
+            // Find bridge status span and update it
+            const spans = document.querySelectorAll('.bridge-status-span');
+            spans.forEach(el => {
+                if (data.installed === true) {
+                    el.textContent = 'zca-js v' + data.version + ' ✓';
+                    el.style.color = 'rgba(0,255,65,0.7)';
+                } else if (data.installed === false) {
+                    el.textContent = 'Not installed ⚠';
+                    el.style.color = 'rgba(251,146,60,0.8)';
+                }
+            });
+        } catch (e) { /* silent */ }
+    }
+
+    async function zaloDisconnect() {
+        isDisconnecting = true;
+        stopPolling();
+
+        const btnDisconnect = document.getElementById('btn-disconnect');
+        const qrPlaceholder = document.getElementById('qr-placeholder');
+        const qrDisplay = document.getElementById('qr-display');
+        const qrConnected = document.getElementById('qr-connected');
+        const qrDisconnecting = document.getElementById('qr-disconnecting');
+
+        // Immediately show disconnecting state for UI
+        qrPlaceholder.style.display = 'none';
+        qrDisplay.style.display = 'none';
+        qrConnected.style.display = 'none';
+        qrDisconnecting.style.display = 'block';
+
+        // Show spinner on button
+        btnDisconnect.disabled = true;
+        btnDisconnect.innerHTML = '<div class="w-4 h-4 border-2 border-red-500/30 border-t-red-400 rounded-full animate-spin"></div><span>Disconnecting...</span>';
+        btnDisconnect.style.opacity = '0.5';
+        btnDisconnect.style.cursor = 'not-allowed';
+
+        addLog('Disconnecting...');
+
+        try {
+            const res = await fetch('/zalo/disconnect', { method: 'POST' });
+            const data = await res.json();
+            addLog('Connection terminated.');
+            isDisconnecting = false;
+            updateUI(data);
+        } catch (err) {
+            addLog('<span class="text-red-400">Error: ' + err.message + '</span>');
+            isDisconnecting = false;
+            // Restore button on error
+            btnDisconnect.disabled = false;
+            btnDisconnect.innerHTML = '<span class="material-symbols-outlined text-sm">link_off</span>Disconnect';
+            btnDisconnect.style.opacity = '1';
+            btnDisconnect.style.cursor = 'pointer';
+        }
+    }
+
+    function startPolling() {
+        if (pollInterval) return;
+        pollInterval = setInterval(async () => {
+            try {
+                const res = await fetch('/zalo/status');
+                const data = await res.json();
+
+                if (data.status !== currentStatus || (data.status === 'connecting' && data.hasQr)) {
+                    updateUI(data);
+                    if (data.status === 'connected') {
+                        addLog('<span style="color:#4ade80">Successfully connected!</span>');
+                    }
+                }
+            } catch (err) {
+                // silent retry
+            }
+        }, 2000);
+    }
+
+    function stopPolling() {
+        if (pollInterval) {
+            clearInterval(pollInterval);
+            pollInterval = null;
+        }
+    }
+
+    function zaloClearSession() {
+        document.getElementById('clearSessionModal').style.display = 'flex';
+    }
+
+    async function confirmClearSession() {
+        document.getElementById('clearSessionModal').style.display = 'none';
+
+        const btn = document.getElementById('btn-clear-session');
+        btn.disabled = true;
+        btn.style.opacity = '0.5';
+        addLog('Clearing saved session...');
+
+        try {
+            const res = await fetch('/zalo/clear-session', { method: 'POST' });
+            const data = await res.json();
+            if (data.cleared) {
+                addLog('<span style="color:#facc15">Session cleared — next connect requires QR scan.</span>');
+            } else if (data.status === 'error') {
+                addLog('<span class="text-red-400">Error: ' + data.message + '</span>');
+            } else {
+                addLog('No saved session found.');
+            }
+            updateUI(data);
+        } catch (err) {
+            addLog('<span class="text-red-400">Network error: ' + err.message + '</span>');
+            btn.disabled = false;
+            btn.style.opacity = '1';
+        }
+    }
+
+    function zaloReinstallBridge() {
+        document.getElementById('reinstallModal').style.display = 'flex';
+    }
+
+    async function confirmReinstallBridge() {
+        document.getElementById('reinstallModal').style.display = 'none';
+
+        const btn = document.getElementById('btn-reinstall-bridge');
+        btn.disabled = true;
+        btn.style.opacity = '0.5';
+        btn.innerHTML = '<div class="w-3 h-3 border-2 border-orange-400/30 border-t-orange-400 rounded-full animate-spin"></div><span>Reinstalling...</span>';
+        addLog('Removing bridge node_modules...');
+
+        try {
+            const res = await fetch('/zalo/reinstall-bridge', { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                addLog('<span style="color:#fb923c">' + data.message + '</span>');
+                addLog('<span style="color:#fb923c">Press Connect to install latest zca-js.</span>');
+                addLog('<span style="color:#fb923c/60">↻ Refresh page to see updated Bridge status.</span>');
+            } else {
+                addLog('<span class="text-red-400">Error: ' + (data.error || 'Reinstall failed') + '</span>');
+            }
+        } catch (err) {
+            addLog('<span class="text-red-400">Network error: ' + err.message + '</span>');
+        } finally {
+            btn.disabled = false;
+            btn.style.opacity = '1';
+            btn.innerHTML = '<span class="material-symbols-outlined text-xs">refresh</span>Reinstall Bridge (Fix Login Issues)';
+        }
+    }
+
+    async function saveZaloConfig() {
+        const btn = document.getElementById('btn-save-config');
+        const msg = document.getElementById('config-save-msg');
+
+        btn.disabled = true;
+        btn.style.opacity = '0.6';
+        msg.textContent = 'Saving...';
+        msg.className = 'text-[11px] font-mono text-primary/50';
+        msg.classList.remove('hidden');
+
+        try {
+            const res = await fetch('/zalo/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    allow_from: document.getElementById('cfg-allow-from').value,
+                    node_path: document.getElementById('cfg-node-path').value,
+                    group_reply_mode: document.querySelector('input[name="cfg-group-reply-mode"]:checked').value,
+                }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                msg.textContent = '✓ ' + data.message;
+                msg.style.color = '#4ade80';
+                addLog('<span style="color:#4ade80">Config saved. Next Zalo message uses the new mode.</span>');
+            } else {
+                msg.textContent = '✗ ' + (data.error || 'Save failed');
+                msg.style.color = '#ef4444';
+            }
+        } catch (err) {
+            msg.textContent = '✗ Network error: ' + err.message;
+            msg.style.color = '#ef4444';
+        } finally {
+            btn.disabled = false;
+            btn.style.opacity = '1';
+            setTimeout(() => { msg.classList.add('hidden'); }, 4000);
+        }
+    }
+
+    // Initialize UI on load
+    updateUI({{ zalo_status | tojson }});
+
+    // If connecting, start polling
+    if (currentStatus === 'connecting') {
+        startPolling();
+    }
+</script>
+{% endblock %}

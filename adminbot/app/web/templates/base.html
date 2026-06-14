@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>{% block title %}Adminbot{% endblock %}</title>
+    <link rel="stylesheet" href="/static/adminbot.css" />
+</head>
+<body>
+    <div class="shell">
+        <aside class="sidebar">
+            <div class="brand">
+                <div class="brand-mark">AB</div>
+                <div>
+                    <div class="brand-title">Adminbot</div>
+                    <div class="brand-subtitle">Local Multi-Bot Manager</div>
+                </div>
+            </div>
+            <nav class="nav">
+                <a class="nav-link {% if request.url.path == '/' %}active{% endif %}" href="/">Dashboard</a>
+                <a class="nav-link {% if request.url.path == '/bots/new' %}active{% endif %}" href="/bots/new">Create Bot</a>
+            </nav>
+            <div class="sidebar-note">
+                Adminbot controls local bot processes. Keep this UI protected.
+            </div>
+            {% if request.state.default_password_active %}
+            <div class="sidebar-note sidebar-warning">
+                Default password is active. Change it before managing bots.
+            </div>
+            {% endif %}
+            {% if request.state.authenticated %}
+            <form class="sidebar-logout" method="post" action="/logout">
+                <button class="button button-small" type="submit">Logout</button>
+            </form>
+            {% endif %}
+        </aside>
+        <main class="content">
+            <header class="page-header">
+                <div>
+                    <h1>{% block page_title %}Adminbot{% endblock %}</h1>
+                    <p>{% block page_subtitle %}Operate local Nanobot instances from one place.{% endblock %}</p>
+                </div>
+            </header>
+            {% if message %}
+            <div class="flash flash-success">{{ message }}</div>
+            {% endif %}
+            {% if error %}
+            <div class="flash flash-error">{{ error }}</div>
+            {% endif %}
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+    <script src="/static/adminbot.js"></script>
+</body>
+</html>

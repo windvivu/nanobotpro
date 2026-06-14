@@ -1,0 +1,258 @@
+{% extends "base.html" %}
+
+{% block title %}Access Terminal — Nanobot OS{% endblock %}
+
+{% block content %}
+<div class="flex-1 flex items-center justify-center w-full min-h-[calc(100vh-140px)]">
+    <div class="w-full max-w-md">
+
+        <!-- Login Container with Matrix border -->
+        <div class="matrix-card p-10 relative overflow-hidden">
+
+            <!-- Corner decorations -->
+            <div class="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-primary shadow-[0_0_10px_#00FF41]">
+            </div>
+            <div class="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-primary shadow-[0_0_10px_#00FF41]">
+            </div>
+            <div
+                class="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-primary shadow-[0_0_10px_#00FF41]">
+            </div>
+            <div
+                class="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-primary shadow-[0_0_10px_#00FF41]">
+            </div>
+
+            <!-- Header -->
+            <div class="text-center mb-8">
+                <style>
+                    @keyframes neo-glow-pulse {
+                        0%, 100% { box-shadow: 0 0 15px rgba(0,255,65,0.3), 0 0 30px rgba(0,255,65,0.1); }
+                        50% { box-shadow: 0 0 25px rgba(0,255,65,0.6), 0 0 50px rgba(0,255,65,0.2), 0 0 80px rgba(0,255,65,0.1); }
+                    }
+                    @keyframes neo-glitch {
+                        0%, 90%, 100% { transform: translate(0); filter: brightness(0.85) sepia(1) hue-rotate(80deg) saturate(4); }
+                        92% { transform: translate(2px, -1px); filter: brightness(1.2) sepia(1) hue-rotate(80deg) saturate(6); }
+                        94% { transform: translate(-2px, 1px); filter: brightness(0.6) sepia(1) hue-rotate(80deg) saturate(3); }
+                        96% { transform: translate(1px, 0); filter: brightness(0.85) sepia(1) hue-rotate(80deg) saturate(4); }
+                    }
+                    .neo-avatar-container {
+                        position: relative;
+                        display: inline-block;
+                        margin-bottom: 1rem;
+                    }
+                    .neo-avatar-container::before {
+                        content: '';
+                        position: absolute;
+                        inset: -4px;
+                        border-radius: 50%;
+                        border: 2px solid rgba(0,255,65,0.5);
+                        animation: neo-glow-pulse 2.5s ease-in-out infinite;
+                    }
+                    .neo-avatar-container::after {
+                        content: '';
+                        position: absolute;
+                        inset: 0;
+                        border-radius: 50%;
+                        background: repeating-linear-gradient(
+                            0deg,
+                            transparent,
+                            transparent 2px,
+                            rgba(0,255,65,0.05) 2px,
+                            rgba(0,255,65,0.05) 4px
+                        );
+                        pointer-events: none;
+                        z-index: 1;
+                    }
+                    .neo-avatar-img {
+                        animation: neo-glitch 8s step-end infinite;
+                    }
+                </style>
+                <div class="neo-avatar-container">
+                    <img src="/static/neo.jpg" alt="Neo"
+                        class="neo-avatar-img w-20 h-20 rounded-full object-cover"
+                        style="filter: brightness(0.85) sepia(1) hue-rotate(80deg) saturate(4);">
+                </div>
+
+                <h2 class="text-2xl font-bold glow-text tracking-[0.3em] uppercase mb-2">NANOBOT_OS</h2>
+                <div
+                    class="flex items-center justify-center gap-2 text-[10px] text-primary/50 uppercase tracking-widest">
+                    <span class="blinking">▶</span>
+                    <span>Authentication Required</span>
+                    <span class="blinking" style="animation-delay: 0.75s;">◀</span>
+                </div>
+            </div>
+
+            <!-- Error message -->
+            {% if error %}
+            <div
+                class="border border-red-500/50 bg-red-950/30 px-4 py-3 mb-6 text-[12px] text-red-400 uppercase tracking-wider flex items-center gap-3">
+                <span class="text-red-500 blinking">⚠</span>
+                <span>ACCESS_DENIED: {{ error }}</span>
+            </div>
+            {% endif %}
+
+            <!-- Login Form -->
+            <form id="loginForm" class="space-y-6">
+                <div>
+                    <label for="password"
+                        class="block text-[10px] font-bold uppercase tracking-[0.3em] text-primary/60 mb-3">
+                        &gt; Enter Passkey
+                    </label>
+                    <div class="relative">
+                        <input type="password" id="password" name="password" placeholder="••••••••••••" autofocus
+                            required
+                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm text-center placeholder-primary/20 transition-all duration-300" />
+                        <span class="absolute right-3 top-1/2 -translate-y-1/2 text-primary/30 text-xs">_</span>
+                    </div>
+                </div>
+
+                <button type="submit" id="loginBtn"
+                    class="w-full py-3 border border-primary bg-primary/10 text-primary font-bold uppercase tracking-[0.3em] text-sm hover:bg-primary hover:text-black transition-all duration-300 glow-text flex items-center justify-center gap-3 group">
+                    <span class="material-symbols-outlined text-sm group-hover:text-black transition-colors"
+                        id="loginIcon">login</span>
+                    <span id="loginText">Authenticate</span>
+                    <span class="blinking">_</span>
+                </button>
+            </form>
+
+            <!-- Footer hint -->
+            <div class="mt-8 border-t border-primary/10 pt-4 text-center">
+                <p class="text-[9px] text-primary/20 uppercase tracking-[0.5em] font-mono">
+                    SECURE_CONNECTION :: NANOBOT_OS v{{ nanobot_version }}
+                </p>
+            </div>
+        </div>
+
+        <!-- Bottom tagline -->
+        <p class="text-center text-[10px] text-primary/20 uppercase tracking-[0.5em] mt-6 glow-text">
+            Follow the white rabbit.
+        </p>
+    </div>
+</div>
+
+<!-- Fullscreen Matrix Takeover Overlay -->
+<div id="matrixOverlay"
+    style="display:none; position:fixed; inset:0; z-index:9999; background:#000; flex-direction:column; align-items:center; justify-content:center;">
+    <canvas id="matrixCanvas" style="position:absolute; inset:0;"></canvas>
+    <div
+        style="position:relative; z-index:10; text-align:center; font-family:'JetBrains Mono',monospace; padding: 0 24px;">
+        <div id="overlayMsg"
+            style="color:#00FF41; font-size:1.2rem; font-weight:700; letter-spacing:0.3em; text-transform:uppercase; text-shadow:0 0 20px #00FF41, 0 0 40px #00FF41; margin-bottom:24px; transition: all 0.3s ease;">
+            INITIATING NEURAL LINK...</div>
+        <div style="width:300px; height:3px; background:rgba(0,255,65,0.15); margin:0 auto 16px;">
+            <div id="progressBar"
+                style="height:100%; width:0%; background:#00FF41; box-shadow:0 0 10px #00FF41; transition:width 1.6s linear;">
+            </div>
+        </div>
+        <div id="overlaySubMsg"
+            style="color:rgba(0,255,65,0.45); font-size:0.65rem; letter-spacing:0.4em; text-transform:uppercase;">
+            ESTABLISHING SECURE CHANNEL</div>
+    </div>
+</div>
+
+<script>
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        // Reset any previous error message immediately
+        const errorDiv = document.querySelector('[class*="border-red-500"]');
+        if (errorDiv) errorDiv.style.display = 'none';
+
+        const form = e.target;
+        const btnText = document.getElementById('loginText');
+        const btnIcon = document.getElementById('loginIcon');
+        const originalText = btnText.innerText;
+
+        // Hide password field immediately
+        document.getElementById('password').parentElement.parentElement.style.display = 'none';
+
+        btnText.innerText = 'AUTHENTICATING...';
+        btnIcon.innerText = 'sync';
+        btnIcon.classList.add('animate-spin');
+
+        try {
+            const res = await fetch('/login', {
+                method: 'POST',
+                body: new FormData(form)
+            });
+
+            if (res.url.endsWith('/login')) {
+                // Wrong password — reload login page with error shown
+                const html = await res.text();
+                document.open(); document.write(html); document.close();
+            } else {
+                // ===== SUCCESS: FULLSCREEN MATRIX TAKEOVER =====
+                const overlay = document.getElementById('matrixOverlay');
+                const canvas = document.getElementById('matrixCanvas');
+                const msg = document.getElementById('overlayMsg');
+                const subMsg = document.getElementById('overlaySubMsg');
+                const bar = document.getElementById('progressBar');
+                const ctx = canvas.getContext('2d');
+
+                overlay.style.display = 'flex';
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+
+                // === Canvas Matrix Rain ===
+                const CHARS = 'ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿ0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZｦｧｨｩｪ@#$%';
+                const FS = 15;
+                const cols = Math.floor(canvas.width / FS);
+                const drops = Array.from({ length: cols }, () => Math.random() * -60);
+
+                function drawRain() {
+                    ctx.fillStyle = 'rgba(0,0,0,0.06)';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.font = FS + 'px "JetBrains Mono", monospace';
+                    for (let i = 0; i < drops.length; i++) {
+                        const ch = CHARS[Math.floor(Math.random() * CHARS.length)];
+                        if (Math.random() > 0.96) {
+                            ctx.fillStyle = '#ffffff';
+                            ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 6;
+                        } else {
+                            ctx.fillStyle = '#00FF41';
+                            ctx.shadowColor = '#00FF41'; ctx.shadowBlur = 4;
+                        }
+                        ctx.fillText(ch, i * FS, drops[i] * FS);
+                        ctx.shadowBlur = 0;
+                        if (drops[i] * FS > canvas.height && Math.random() > 0.975) drops[i] = 0;
+                        drops[i]++;
+                    }
+                }
+
+                const rain = setInterval(drawRain, 30); // ~33 FPS
+
+                // === Progress bar ===
+                setTimeout(() => { bar.style.width = '100%'; }, 50);
+
+                // === Phase messages ===
+                const phases = [
+                    { t: 550, m: 'DECRYPTING NEURAL PATHWAYS...', s: 'AES-256 VERIFIED', big: false },
+                    { t: 1100, m: 'LOADING MATRIX PROFILE...', s: 'IDENTITY: NANOBOT_ADMIN', big: false },
+                    { t: 1700, m: '✓  ACCESS GRANTED', s: 'WELCOME BACK, NEO', big: true },
+                ];
+                phases.forEach(p => setTimeout(() => {
+                    msg.textContent = p.m;
+                    subMsg.textContent = p.s;
+                    if (p.big) {
+                        msg.style.fontSize = '1.9rem';
+                        msg.style.letterSpacing = '0.6em';
+                        msg.style.textShadow = '0 0 30px #00FF41, 0 0 60px #00FF41, 0 0 90px #00FF41';
+                    }
+                }, p.t));
+
+                // === Fade out → redirect ===
+                setTimeout(() => {
+                    overlay.style.transition = 'opacity 0.6s ease';
+                    overlay.style.opacity = '0';
+                    setTimeout(() => { clearInterval(rain); window.location.href = '/'; }, 600);
+                }, 2500);
+            }
+        } catch (err) {
+            console.error(err);
+            btnText.innerText = originalText;
+            btnIcon.innerText = 'login';
+            btnIcon.classList.remove('animate-spin');
+            form.submit();
+        }
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}{{ bot.name }}{% endblock %}
+{% block page_title %}{{ bot.name }}{% endblock %}
+{% block page_subtitle %}Runtime detail, quick actions, and links for this managed bot.{% endblock %}
+
+{% block content %}
+<section class="summary-grid">
+    <div class="summary-card">
+        <div class="summary-label">Status</div>
+        <div class="summary-value summary-value-small">{{ bot.status }}</div>
+        <div class="summary-note">{{ bot.status_detail }}</div>
+    </div>
+    <div class="summary-card">
+        <div class="summary-label">Last Run</div>
+        <div class="summary-value summary-value-small">{{ bot.last_run_label }}</div>
+        <div class="summary-note mono">{{ bot.last_run_at }}</div>
+    </div>
+    <div class="summary-card {% if bot.attention %}summary-card-warning{% endif %}">
+        <div class="summary-label">Last Stop / Exit</div>
+        <div class="summary-value summary-value-small">{{ bot.last_stopped_label }}</div>
+        <div class="summary-note mono">exit {{ bot.exit_code }}</div>
+    </div>
+</section>
+
+<section class="detail-grid">
+    <div class="panel">
+        <div class="panel-header">
+            <h2>Overview</h2>
+            <span class="status status-{{ bot.status_tone }}">{{ bot.status }}</span>
+        </div>
+        <dl class="meta-list">
+            <div><dt>ID</dt><dd class="mono">{{ bot.id }}</dd></div>
+            <div><dt>Workspace</dt><dd class="mono">{{ bot.workspace }}</dd></div>
+            <div><dt>Config</dt><dd class="mono">{{ bot.config_path }}</dd></div>
+            <div><dt>Web Port</dt><dd>{{ bot.web_port }}</dd></div>
+            <div><dt>PID</dt><dd class="mono">{{ bot.pid }}</dd></div>
+            <div><dt>Last Run</dt><dd class="mono">{{ bot.last_run_at }}</dd></div>
+            <div><dt>Last Stop</dt><dd class="mono">{{ bot.last_stopped_at }}</dd></div>
+            <div><dt>Exit Code</dt><dd class="mono">{{ bot.exit_code }}</dd></div>
+            <div><dt>Updated</dt><dd class="mono">{{ bot.updated_at }}</dd></div>
+        </dl>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <h2>Actions</h2>
+        </div>
+        {% if bot.attention %}
+        <div class="detail-alert">
+            This bot stopped with a non-zero exit. Review logs before restarting if the failure repeats.
+        </div>
+        {% endif %}
+        <div class="stack-actions">
+            <form method="post" action="/bots/{{ bot.id }}/start">
+                <button class="button button-primary" type="submit">Start Bot</button>
+            </form>
+            <form method="post" action="/bots/{{ bot.id }}/stop">
+                <button class="button" type="submit">Stop Bot</button>
+            </form>
+            <form method="post" action="/bots/{{ bot.id }}/restart">
+                <button class="button" type="submit">Restart Bot</button>
+            </form>
+            <form method="post" action="/bots/{{ bot.id }}/shell">
+                <button class="button" type="submit">Open Shell</button>
+            </form>
+            <a class="button button-link" href="/bots/{{ bot.id }}/logs">View Logs</a>
+            <a class="button button-link" href="{{ bot.dashboard_url }}" target="_blank" rel="noreferrer">Open Bot Dashboard</a>
+            <form method="post" action="/bots/{{ bot.id }}/delete" onsubmit="return confirm('Delete bot {{ bot.name }}? This removes the registration but does not delete workspace files.')">
+                <button class="button button-danger" type="submit">Delete Bot</button>
+            </form>
+        </div>
+    </div>
+</section>
+{% endblock %}
