@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import os
+import threading
+
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
 from adminbot.app.web.viewmodels import build_bot_summary
 
 router = APIRouter()
+
+
+def _schedule_process_shutdown() -> None:
+    threading.Timer(0.25, lambda: os._exit(0)).start()
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -29,3 +36,25 @@ def dashboard(request: Request):
         "error": request.query_params.get("error", ""),
     }
     return templates.TemplateResponse(request, "dashboard.html", context)
+
+
+@router.post("/shutdown", response_class=HTMLResponse)
+def shutdown_adminbot(request: Request):
+    shutdown_callback = getattr(request.app.state, "shutdown_callback", _schedule_process_shutdown)
+    shutdown_callback()
+    return HTMLResponse(
+        """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Adminbot Shutting Down</title>
+</head>
+<body>
+    <h1>Adminbot is shutting down</h1>
+    <p>Managed bot processes are not stopped. Start Adminbot again from the terminal when needed.</p>
+</body>
+</html>
+""".strip()
+    )

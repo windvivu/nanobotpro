@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import socket
 import uuid
 from dataclasses import asdict
@@ -128,7 +129,36 @@ class AdminbotManager:
         self.stop_bot(bot_id_or_name)
         return self.start_bot(bot_id_or_name)
 
-    def delete_bot(self, bot_id_or_name: str) -> BotRecord:
+    def suggest_web_port(self, *, start: int = 8901, stop: int = 8999) -> int:
+        used_ports = {bot.web_port for bot in self.registry.list_bots()}
+        for port in range(start, stop + 1):
+            if port in used_ports:
+                continue
+            if self._is_port_free(port):
+                return port
+        raise RuntimeError(f"No free web port found in range {start}-{stop}.")
+
+    def _validate_workspace_delete_path(self, workspace: str) -> Path:
+        workspace_path = Path(workspace).expanduser().resolve()
+        repo_root = self.paths.repo_root.resolve()
+        runtime_root = self.paths.runtime_root.resolve()
+        home = Path.home().resolve()
+
+        if not workspace_path.exists():
+            return workspace_path
+        if workspace_path.is_symlink():
+            raise RuntimeError(f"Refusing to delete symlink workspace: {workspace_path}")
+        if not workspace_path.is_dir():
+            raise RuntimeError(f"Workspace is not a directory: {workspace_path}")
+        if workspace_path == Path(workspace_path.anchor).resolve():
+            raise RuntimeError(f"Refusing to delete filesystem root: {workspace_path}")
+        if workspace_path in {repo_root, runtime_root, home}:
+            raise RuntimeError(f"Refusing to delete protected directory: {workspace_path}")
+        if runtime_root.is_relative_to(workspace_path):
+            raise RuntimeError(f"Refusing to delete workspace that contains Adminbot state: {workspace_path}")
+        return workspace_path
+
+    def delete_bot(self, bot_id_or_name: str, *, delete_workspace: bool = False) -> BotRecord:
         # Read saved state directly — do not refresh, so identity-lookup failures
         # cannot silently downgrade a running bot to stopped and bypass the guard.
         bot = None
@@ -142,7 +172,12 @@ class AdminbotManager:
             raise RuntimeError(
                 f"Bot '{bot.name}' may still be running (pid={bot.process.pid}). Stop it before deleting."
             )
+        workspace_path = None
+        if delete_workspace:
+            workspace_path = self._validate_workspace_delete_path(bot.workspace)
         self.registry.remove_bot(bot.id)
+        if workspace_path and workspace_path.exists():
+            shutil.rmtree(workspace_path)
         return bot
 
     def open_shell_for_bot(self, bot_id_or_name: str) -> BotRecord:

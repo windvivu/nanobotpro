@@ -85,15 +85,19 @@
                     </td>
                     <td>
                         <div class="action-row">
-                            <form method="post" action="/bots/{{ bot.id }}/start">
-                                <button class="button button-small" type="submit">Start</button>
+                            {% if bot.status == "running" %}
+                            <form method="post" action="/bots/{{ bot.id }}/stop" data-bot-action-form>
+                                <button class="button button-small" type="submit" data-action-label="Stop"><span data-label>Stop</span></button>
                             </form>
-                            <form method="post" action="/bots/{{ bot.id }}/stop">
-                                <button class="button button-small" type="submit">Stop</button>
+                            <form method="post" action="/bots/{{ bot.id }}/restart" data-bot-action-form>
+                                <button class="button button-small" type="submit" data-action-label="Restart"><span data-label>Restart</span></button>
                             </form>
-                            <form method="post" action="/bots/{{ bot.id }}/restart">
-                                <button class="button button-small" type="submit">Restart</button>
+                            {% else %}
+                            <form method="post" action="/bots/{{ bot.id }}/start" data-bot-action-form>
+                                <button class="button button-small" type="submit" data-action-label="Start"><span data-label>Start</span></button>
                             </form>
+                            {% endif %}
+                            <a class="button button-small button-link" href="/bots/{{ bot.id }}">Details</a>
                             <a class="button button-small button-link" href="/bots/{{ bot.id }}/logs">Logs</a>
                         </div>
                     </td>

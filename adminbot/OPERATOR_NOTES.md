@@ -43,16 +43,22 @@ Linux shell equivalent:
 
 First login uses `abc123`. Adminbot requires changing that password before bot operations are enabled.
 
-Direct module command:
+Direct command:
+
+```powershell
+adminbot web --port 8900
+```
+
+On Ubuntu/macOS, the direct command is:
+
+```bash
+adminbot web --port 8900
+```
+
+If the `adminbot` command is not available, reinstall the local package or use the module fallback:
 
 ```powershell
 .\venv\Scripts\python.exe -m adminbot.app.main web --port 8900
-```
-
-On Ubuntu/macOS, the direct module command is:
-
-```bash
-./venv/bin/python -m adminbot.app.main web --port 8900
 ```
 
 On Ubuntu, Adminbot starts child gateways in a separate process group and stops that group with `SIGTERM`. This is safer than killing only the parent PID when a child gateway starts subprocesses.
@@ -121,37 +127,37 @@ Why this matters:
 List bots:
 
 ```powershell
-.\venv\Scripts\python.exe -m adminbot.app.main list
+adminbot list
 ```
 
 Create a bot:
 
 ```powershell
-.\venv\Scripts\python.exe -m adminbot.app.main create --workspace .\bots\alpha --name alpha --web-port 8901
+adminbot create --workspace .\bots\alpha --name alpha --web-port 8901
 ```
 
 Start a bot:
 
 ```powershell
-.\venv\Scripts\python.exe -m adminbot.app.main start alpha
+adminbot start alpha
 ```
 
 Stop a bot:
 
 ```powershell
-.\venv\Scripts\python.exe -m adminbot.app.main stop alpha
+adminbot stop alpha
 ```
 
 Restart a bot:
 
 ```powershell
-.\venv\Scripts\python.exe -m adminbot.app.main restart alpha
+adminbot restart alpha
 ```
 
 Check status:
 
 ```powershell
-.\venv\Scripts\python.exe -m adminbot.app.main status alpha
+adminbot status alpha
 ```
 
 ## Troubleshooting

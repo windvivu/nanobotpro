@@ -5,13 +5,15 @@
 {% block page_subtitle %}Tail view for {{ stream }} output.{% endblock %}
 
 {% block content %}
+<div class="page-actions">
+    <a class="button button-small button-link" href="/bots/{{ bot.id }}">Back to Bot</a>
+</div>
 <section class="panel">
     <div class="panel-header">
         <h2>Log Viewer</h2>
         <div class="action-row">
             <a class="button button-small {% if stream == 'stdout' %}button-primary{% endif %}" href="/bots/{{ bot.id }}/logs?stream=stdout&tail={{ tail }}">stdout</a>
             <a class="button button-small {% if stream == 'stderr' %}button-primary{% endif %}" href="/bots/{{ bot.id }}/logs?stream=stderr&tail={{ tail }}">stderr</a>
-            <a class="button button-small button-link" href="/bots/{{ bot.id }}">Back to Bot</a>
         </div>
     </div>
     <div class="log-toolbar">

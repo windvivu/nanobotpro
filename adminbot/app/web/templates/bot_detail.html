@@ -52,24 +52,58 @@
         </div>
         {% endif %}
         <div class="stack-actions">
-            <form method="post" action="/bots/{{ bot.id }}/start">
-                <button class="button button-primary" type="submit">Start Bot</button>
+            {% if bot.status == "running" %}
+            <form method="post" action="/bots/{{ bot.id }}/stop" data-bot-action-form>
+                <button class="button" type="submit" data-action-label="Stop Bot"><span data-label>Stop Bot</span></button>
             </form>
-            <form method="post" action="/bots/{{ bot.id }}/stop">
-                <button class="button" type="submit">Stop Bot</button>
+            <form method="post" action="/bots/{{ bot.id }}/restart" data-bot-action-form>
+                <button class="button" type="submit" data-action-label="Restart Bot"><span data-label>Restart Bot</span></button>
             </form>
-            <form method="post" action="/bots/{{ bot.id }}/restart">
-                <button class="button" type="submit">Restart Bot</button>
+            {% else %}
+            <form method="post" action="/bots/{{ bot.id }}/start" data-bot-action-form>
+                <button class="button button-primary" type="submit" data-action-label="Start Bot"><span data-label>Start Bot</span></button>
             </form>
+            {% endif %}
             <form method="post" action="/bots/{{ bot.id }}/shell">
-                <button class="button" type="submit">Open Shell</button>
+                <button class="button" type="submit">Open Workspace Shell</button>
             </form>
             <a class="button button-link" href="/bots/{{ bot.id }}/logs">View Logs</a>
-            <a class="button button-link" href="{{ bot.dashboard_url }}" target="_blank" rel="noreferrer">Open Bot Dashboard</a>
-            <form method="post" action="/bots/{{ bot.id }}/delete" onsubmit="return confirm('Delete bot {{ bot.name }}? This removes the registration but does not delete workspace files.')">
-                <button class="button button-danger" type="submit">Delete Bot</button>
+            {% if bot.status == "running" %}
+            <a class="button button-link" href="{{ bot.dashboard_url }}" target="_blank" rel="noreferrer">Open Nanobot Dashboard</a>
+            {% else %}
+            <span class="button button-disabled" aria-disabled="true">Open Nanobot Dashboard</span>
+            {% endif %}
+            <form id="delete-bot-form" method="post" action="/bots/{{ bot.id }}/delete">
+                {% if bot.status == "running" %}
+                <button class="button button-danger button-disabled" type="button" disabled>Delete Bot</button>
+                {% else %}
+                <button class="button button-danger" type="button" data-delete-bot-open>Delete Bot</button>
+                {% endif %}
             </form>
         </div>
     </div>
 </section>
+
+<div class="modal-backdrop" data-delete-bot-modal hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="delete-bot-title">
+        <div class="modal-header">
+            <h2 id="delete-bot-title">Delete {{ bot.name }}?</h2>
+            <button class="modal-close" type="button" data-delete-bot-close aria-label="Close">×</button>
+        </div>
+        <p class="modal-copy">
+            This removes the bot registration from Adminbot. The bot must be stopped before it can be deleted.
+        </p>
+        <label class="danger-check">
+            <input form="delete-bot-form" name="delete_workspace" type="checkbox" value="true" />
+            <span>
+                Also delete workspace files at <strong class="mono">{{ bot.workspace }}</strong>.
+                This cannot be undone.
+            </span>
+        </label>
+        <div class="modal-actions">
+            <button class="button" type="button" data-delete-bot-close>Cancel</button>
+            <button class="button button-danger" type="submit" form="delete-bot-form">Delete Bot</button>
+        </div>
+    </div>
+</div>
 {% endblock %}

@@ -29,9 +29,14 @@
             </div>
             {% endif %}
             {% if request.state.authenticated %}
-            <form class="sidebar-logout" method="post" action="/logout">
-                <button class="button button-small" type="submit">Logout</button>
-            </form>
+            <div class="sidebar-bottom">
+                <form id="logout-adminbot-form" class="sidebar-logout" method="post" action="/logout">
+                    <button class="button button-small" type="button" data-logout-open>Logout</button>
+                </form>
+                <form id="shutdown-adminbot-form" class="sidebar-logout sidebar-shutdown" method="post" action="/shutdown">
+                    <button class="button button-small button-danger" type="button" data-shutdown-open>Shutdown</button>
+                </form>
+            </div>
             {% endif %}
         </aside>
         <main class="content">
@@ -50,6 +55,41 @@
             {% block content %}{% endblock %}
         </main>
     </div>
-    <script src="/static/adminbot.js"></script>
+    {% if request.state.authenticated %}
+    <div class="modal-backdrop" data-logout-modal hidden>
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="logout-title">
+            <div class="modal-header">
+                <h2 id="logout-title">Logout?</h2>
+                <button class="modal-close" type="button" data-logout-close aria-label="Close">×</button>
+            </div>
+            <p class="modal-copy">
+                This ends your current Adminbot session. Running bots will keep running.
+            </p>
+            <div class="modal-actions">
+                <button class="button" type="button" data-logout-close>Cancel</button>
+                <button class="button button-danger" type="submit" form="logout-adminbot-form">Logout</button>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop" data-shutdown-modal hidden>
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="shutdown-title">
+            <div class="modal-header">
+                <h2 id="shutdown-title">Shutdown Adminbot?</h2>
+                <button class="modal-close" type="button" data-shutdown-close aria-label="Close">×</button>
+            </div>
+            <p class="modal-copy">
+                This closes only the Adminbot manager UI. Running bots will keep running.
+            </p>
+            <p class="modal-copy">
+                To open Adminbot again, start it from the terminal.
+            </p>
+            <div class="modal-actions">
+                <button class="button" type="button" data-shutdown-close>Cancel</button>
+                <button class="button button-danger" type="submit" form="shutdown-adminbot-form">Shutdown</button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    <script src="/static/adminbot.js?v=20260614-adminbot-shutdown"></script>
 </body>
 </html>

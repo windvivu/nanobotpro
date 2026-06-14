@@ -10,7 +10,7 @@ Current local adoption status: **Wave A core + Wave B local web UI**.
 
 Included:
 
-- CLI entrypoint: `python -m adminbot.app.main`
+- CLI entrypoint: `adminbot`
 - bot registry in `.adminbot/bots.json`
 - per-bot config instances in `.adminbot/instances/`
 - per-bot logs in `.adminbot/logs/`
@@ -22,18 +22,23 @@ Included:
 
 Deferred to later waves:
 
-- password/auth hardening
 - embedded terminal or PTY
 
 ## Quick Commands
 
 ```powershell
-.\venv\Scripts\python.exe -m adminbot.app.main list
-.\venv\Scripts\python.exe -m adminbot.app.main create --workspace .\bot-a --name bot-a --web-port 8899
-.\venv\Scripts\python.exe -m adminbot.app.main start bot-a
-.\venv\Scripts\python.exe -m adminbot.app.main stop bot-a
-.\venv\Scripts\python.exe -m adminbot.app.main restart bot-a
-.\venv\Scripts\python.exe -m adminbot.app.main status bot-a
+adminbot list
+adminbot create --workspace .\bot-a --name bot-a --web-port 8899
+adminbot start bot-a
+adminbot stop bot-a
+adminbot restart bot-a
+adminbot status bot-a
+adminbot web --port 8900
+```
+
+If the `adminbot` command is not available, reinstall the local package or use the module fallback:
+
+```powershell
 .\venv\Scripts\python.exe -m adminbot.app.main web --port 8900
 ```
 

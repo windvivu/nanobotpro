@@ -61,6 +61,13 @@ def _format_relative(value: str | None) -> str:
     return f"{days}d ago"
 
 
+def _format_timestamp(value: str | None) -> str:
+    dt = _parse_iso(value)
+    if not dt:
+        return "-"
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+
 def build_bot_summary(bot: BotRecord) -> BotSummary:
     is_running = bot.process.status == "running"
     exit_code = bot.process.exit_code
@@ -87,10 +94,10 @@ def build_bot_summary(bot: BotRecord) -> BotSummary:
         config_path=bot.config_path,
         web_port=bot.web_port,
         pid=str(bot.process.pid) if bot.process.pid else "-",
-        last_run_at=bot.last_run_at or "-",
-        updated_at=bot.updated_at,
+        last_run_at=_format_timestamp(bot.last_run_at),
+        updated_at=_format_timestamp(bot.updated_at),
         dashboard_url=f"http://127.0.0.1:{bot.web_port}",
-        last_stopped_at=last_stopped_at,
+        last_stopped_at=_format_timestamp(last_stopped_at),
         exit_code=str(exit_code) if exit_code is not None else "-",
         status_tone=status_tone,
         attention=attention,
