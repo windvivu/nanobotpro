@@ -24,6 +24,11 @@
             <input name="name" type="text" value="{{ name }}" placeholder="Optional display name" />
         </label>
         <label>
+            <span>Description</span>
+            <textarea name="description" rows="3" placeholder="Optional note about this bot's purpose">{{ description }}</textarea>
+            <p class="field-help">This is only an Adminbot note for easier fleet management.</p>
+        </label>
+        <label>
             <span>Web Port</span>
             <input name="web_port" required min="1" max="65535" type="number" value="{{ web_port }}" />
         </label>

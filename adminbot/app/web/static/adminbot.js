@@ -152,6 +152,17 @@
     attachModal("[data-logout-modal]", "[data-logout-open]", "[data-logout-close]");
     attachModal("[data-shutdown-modal]", "[data-shutdown-open]", "[data-shutdown-close]");
     attachModal("[data-delete-bot-modal]", "[data-delete-bot-open]", "[data-delete-bot-close]");
+
+    const soulDeleteButtons = document.querySelectorAll("[data-delete-soul-open]");
+    for (const button of soulDeleteButtons) {
+        const soulId = button.getAttribute("data-delete-soul-open");
+        if (!soulId) continue;
+        attachModal(
+            `[data-delete-soul-modal="${soulId}"]`,
+            `[data-delete-soul-open="${soulId}"]`,
+            `[data-delete-soul-close="${soulId}"]`
+        );
+    }
 })();
 
 (function () {
@@ -311,4 +322,95 @@
 
     loadLines();
     schedule();
+})();
+
+(function () {
+    const copyButtons = document.querySelectorAll("[data-copy-soul]");
+    const selectButtons = document.querySelectorAll("[data-select-soul]");
+    if (!copyButtons.length && !selectButtons.length) {
+        return;
+    }
+
+    let toastTimer = null;
+
+    function showToast(message) {
+        let toast = document.querySelector("[data-copy-toast]");
+        if (!toast) {
+            toast = document.createElement("div");
+            toast.className = "copy-toast";
+            toast.setAttribute("data-copy-toast", "");
+            document.body.appendChild(toast);
+        }
+        toast.textContent = message;
+        toast.hidden = false;
+        if (toastTimer) {
+            clearTimeout(toastTimer);
+        }
+        toastTimer = setTimeout(() => {
+            toast.hidden = true;
+        }, 1800);
+    }
+
+    async function copyText(text) {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+            return;
+        }
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.left = "-9999px";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        textarea.remove();
+    }
+
+    function selectPreview(preview) {
+        const range = document.createRange();
+        range.selectNodeContents(preview);
+        const selection = window.getSelection();
+        if (!selection) {
+            return false;
+        }
+        selection.removeAllRanges();
+        selection.addRange(range);
+        preview.focus({ preventScroll: true });
+        return true;
+    }
+
+    for (const button of copyButtons) {
+        button.addEventListener("click", async () => {
+            const id = button.getAttribute("data-copy-soul");
+            const preview = id ? document.getElementById(`soul-${id}`) : null;
+            if (!preview) {
+                return;
+            }
+            const original = button.textContent;
+            try {
+                await copyText(preview.textContent || "");
+                button.textContent = "Copied";
+                showToast("Soul copied to clipboard.");
+                setTimeout(() => {
+                    button.textContent = original;
+                }, 1400);
+            } catch (err) {
+                showToast("Copy failed. Select the text manually.");
+            }
+        });
+    }
+
+    for (const button of selectButtons) {
+        button.addEventListener("click", () => {
+            const id = button.getAttribute("data-select-soul");
+            const preview = id ? document.getElementById(`soul-${id}`) : null;
+            if (!preview) {
+                return;
+            }
+            if (selectPreview(preview)) {
+                showToast("Soul content selected.");
+            }
+        });
+    }
 })();

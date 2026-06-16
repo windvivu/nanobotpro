@@ -63,7 +63,49 @@ def _sanitize_name(name: str) -> str:
 
 def _is_transient(exc: BaseException) -> bool:
     """Check if an exception looks like a transient connection error."""
-    return type(exc).__name__ in _TRANSIENT_EXC_NAMES
+    if isinstance(exc, (TimeoutError, httpx.HTTPError)):
+        return True
+    return type(exc).__name__ in _TRANSIENT_EXC_NAMES or type(exc).__name__.endswith("McpError")
+
+
+def _http_status(exc: BaseException) -> int | None:
+    """Extract an HTTP status code without logging response bodies or headers."""
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        response = getattr(current, "response", None)
+        status = getattr(response, "status_code", None)
+        if isinstance(status, int):
+            return status
+        status = getattr(current, "status_code", None)
+        if isinstance(status, int):
+            return status
+        current = current.__cause__ if isinstance(current.__cause__, BaseException) else None
+    return None
+
+
+def _log_mcp_error(
+    *,
+    server_name: str,
+    tool_name: str,
+    phase: str,
+    exc: BaseException,
+    retry_attempted: bool,
+    level: str = "warning",
+) -> None:
+    """Log MCP failures with routing detail but without secrets or payloads."""
+    status = _http_status(exc)
+    logger.log(
+        level.upper(),
+        "MCP server='{}' tool='{}' phase='{}' error_class='{}' http_status={} retry_attempted={}",
+        server_name,
+        tool_name or "(none)",
+        phase,
+        type(exc).__name__,
+        status if status is not None else "(none)",
+        retry_attempted,
+    )
 
 
 def _windows_command_basename(command: str) -> str:
@@ -165,11 +207,249 @@ def _normalize_schema_for_openai(schema: Any) -> dict[str, Any]:
     return normalized
 
 
+class MCPServerRuntime:
+    """Owns one named MCP server session and its registered tools."""
+
+    def __init__(
+        self,
+        *,
+        server_name: str,
+        cfg: Any,
+        registry: ToolRegistry,
+    ) -> None:
+        self.server_name = server_name
+        self.cfg = cfg
+        self.registry = registry
+        self._stack: AsyncExitStack | None = None
+        self._session: Any | None = None
+        self._transport_type = ""
+        self._registered_tool_names: set[str] = set()
+        self._lock = asyncio.Lock()
+
+    async def connect(self) -> None:
+        """Open a fresh session, list tools, and register wrappers for this server."""
+        async with self._lock:
+            await self._close_locked(unregister_tools=True)
+            stack = AsyncExitStack()
+            try:
+                await stack.__aenter__()
+                logger.debug(
+                    "MCP server='{}' tool='(none)' phase='initialize' retry_attempted=False",
+                    self.server_name,
+                )
+                transport_type, session = await _open_mcp_session(self.cfg, stack)
+                logger.debug(
+                    "MCP server='{}' tool='(none)' phase='list_tools' retry_attempted=False",
+                    self.server_name,
+                )
+                tools = await session.list_tools()
+                self._stack = stack
+                self._session = session
+                self._transport_type = transport_type
+                self._register_tools(tools)
+            except Exception as exc:
+                _log_mcp_error(
+                    server_name=self.server_name,
+                    tool_name="",
+                    phase="initialize/list_tools",
+                    exc=exc,
+                    retry_attempted=False,
+                    level="error",
+                )
+                try:
+                    await stack.aclose()
+                except Exception:
+                    pass
+                raise
+
+    async def close(self) -> None:
+        """Close this server session and unregister only this server's tools."""
+        async with self._lock:
+            await self._close_locked(unregister_tools=True)
+
+    async def call_tool(
+        self,
+        original_name: str,
+        arguments: dict[str, Any],
+        wrapper_name: str,
+        timeout: int,
+    ) -> Any:
+        """Call a tool, reconnecting this server once if the session is stale."""
+        from mcp import types  # noqa: F401  # imported here so tests can fake mcp module lazily
+
+        for attempt in range(2):
+            call_task: asyncio.Task | None = None
+            try:
+                if self._session is None:
+                    raise ConnectionError("MCP session is not connected")
+                call_task = asyncio.create_task(
+                    self._session.call_tool(original_name, arguments=arguments)
+                )
+                return await asyncio.wait_for(call_task, timeout=timeout)
+            except asyncio.TimeoutError as exc:
+                if call_task is not None and not call_task.done():
+                    call_task.cancel()
+                    await asyncio.gather(call_task, return_exceptions=True)
+                _log_mcp_error(
+                    server_name=self.server_name,
+                    tool_name=wrapper_name,
+                    phase="call_tool",
+                    exc=exc,
+                    retry_attempted=attempt > 0,
+                )
+                if attempt == 1:
+                    return f"(MCP tool call timed out after {timeout}s)"
+                try:
+                    await self.reconnect()
+                except Exception as reconnect_exc:
+                    _log_mcp_error(
+                        server_name=self.server_name,
+                        tool_name=wrapper_name,
+                        phase="retry",
+                        exc=reconnect_exc,
+                        retry_attempted=True,
+                        level="error",
+                    )
+                    return f"(MCP tool call failed after reconnect: {type(reconnect_exc).__name__})"
+            except asyncio.CancelledError:
+                task = asyncio.current_task()
+                if task is not None and task.cancelling() > 0:
+                    raise
+                _log_mcp_error(
+                    server_name=self.server_name,
+                    tool_name=wrapper_name,
+                    phase="call_tool",
+                    exc=asyncio.CancelledError(),
+                    retry_attempted=attempt > 0,
+                )
+                return "(MCP tool call was cancelled)"
+            except Exception as exc:
+                if not _is_transient(exc):
+                    _log_mcp_error(
+                        server_name=self.server_name,
+                        tool_name=wrapper_name,
+                        phase="call_tool",
+                        exc=exc,
+                        retry_attempted=attempt > 0,
+                        level="error",
+                    )
+                    return f"(MCP tool call failed: {type(exc).__name__})"
+                if attempt == 1:
+                    _log_mcp_error(
+                        server_name=self.server_name,
+                        tool_name=wrapper_name,
+                        phase="retry",
+                        exc=exc,
+                        retry_attempted=True,
+                        level="error",
+                    )
+                    if isinstance(exc, asyncio.TimeoutError):
+                        return f"(MCP tool call timed out after {timeout}s)"
+                    return f"(MCP tool call failed after retry: {type(exc).__name__})"
+
+                _log_mcp_error(
+                    server_name=self.server_name,
+                    tool_name=wrapper_name,
+                    phase="call_tool",
+                    exc=exc,
+                    retry_attempted=False,
+                )
+                try:
+                    await self.reconnect()
+                except Exception as reconnect_exc:
+                    _log_mcp_error(
+                        server_name=self.server_name,
+                        tool_name=wrapper_name,
+                        phase="retry",
+                        exc=reconnect_exc,
+                        retry_attempted=True,
+                        level="error",
+                    )
+                    return f"(MCP tool call failed after reconnect: {type(reconnect_exc).__name__})"
+
+        return "(MCP tool call failed)"
+
+    async def reconnect(self) -> None:
+        """Reconnect this server only and refresh its tool registrations."""
+        logger.info(
+            "MCP server='{}' phase='retry' reconnecting named server only",
+            self.server_name,
+        )
+        await self.connect()
+
+    def _register_tools(self, tools: Any) -> None:
+        enabled_tools = set(self.cfg.enabled_tools)
+        allow_all_tools = "*" in enabled_tools
+        registered_count = 0
+        matched_enabled_tools: set[str] = set()
+        available_raw_names = [tool_def.name for tool_def in tools.tools]
+        available_wrapped_names = [
+            f"mcp_{self.server_name}_{tool_def.name}" for tool_def in tools.tools
+        ]
+
+        for tool_def in tools.tools:
+            wrapped_name = f"mcp_{self.server_name}_{tool_def.name}"
+            if (
+                not allow_all_tools
+                and tool_def.name not in enabled_tools
+                and wrapped_name not in enabled_tools
+            ):
+                logger.debug(
+                    "MCP: skipping tool '{}' from server '{}' (not in enabledTools)",
+                    wrapped_name,
+                    self.server_name,
+                )
+                continue
+            wrapper = MCPToolWrapper(self, self.server_name, tool_def, tool_timeout=self.cfg.tool_timeout)
+            self.registry.register(wrapper)
+            self._registered_tool_names.add(wrapper.name)
+            logger.debug("MCP: registered tool '{}' from server '{}'", wrapper.name, self.server_name)
+            registered_count += 1
+            if enabled_tools:
+                if tool_def.name in enabled_tools:
+                    matched_enabled_tools.add(tool_def.name)
+                if wrapped_name in enabled_tools:
+                    matched_enabled_tools.add(wrapped_name)
+
+        if enabled_tools and not allow_all_tools:
+            unmatched_enabled_tools = sorted(enabled_tools - matched_enabled_tools)
+            if unmatched_enabled_tools:
+                logger.warning(
+                    "MCP server '{}': enabledTools entries not found: {}. Available raw names: {}. "
+                    "Available wrapped names: {}",
+                    self.server_name,
+                    ", ".join(unmatched_enabled_tools),
+                    ", ".join(available_raw_names) or "(none)",
+                    ", ".join(available_wrapped_names) or "(none)",
+                )
+
+        logger.info(
+            "MCP server '{}': connected, {} tools registered",
+            self.server_name,
+            registered_count,
+        )
+
+    async def _close_locked(self, *, unregister_tools: bool) -> None:
+        if unregister_tools:
+            for tool_name in sorted(self._registered_tool_names):
+                self.registry.unregister(tool_name)
+            self._registered_tool_names.clear()
+        if self._stack is not None:
+            try:
+                await self._stack.aclose()
+            except (RuntimeError, BaseExceptionGroup, asyncio.TimeoutError, asyncio.CancelledError):
+                pass
+            self._stack = None
+        self._session = None
+        self._transport_type = ""
+
+
 class MCPToolWrapper(Tool):
     """Wraps a single MCP server tool as a nanobot Tool."""
 
-    def __init__(self, session, server_name: str, tool_def, tool_timeout: int = 30):
-        self._session = session
+    def __init__(self, runtime: MCPServerRuntime, server_name: str, tool_def, tool_timeout: int = 30):
+        self._runtime = runtime
+        self._server_name = server_name
         self._original_name = tool_def.name
         self._name = _sanitize_name(f"mcp_{server_name}_{tool_def.name}")
         self._description = tool_def.description or tool_def.name
@@ -192,57 +472,22 @@ class MCPToolWrapper(Tool):
     async def execute(self, **kwargs: Any) -> str:
         from mcp import types
 
-        for attempt in range(2):
-            try:
-                result = await asyncio.wait_for(
-                    self._session.call_tool(self._original_name, arguments=kwargs),
-                    timeout=self._tool_timeout,
-                )
-            except asyncio.TimeoutError:
-                logger.warning("MCP tool '{}' timed out after {}s", self._name, self._tool_timeout)
-                return f"(MCP tool call timed out after {self._tool_timeout}s)"
-            except asyncio.CancelledError:
-                # MCP SDK's anyio cancel scopes can leak CancelledError on timeout/failure.
-                # Re-raise only if our task was externally cancelled (e.g. /stop).
-                task = asyncio.current_task()
-                if task is not None and task.cancelling() > 0:
-                    raise
-                logger.warning("MCP tool '{}' was cancelled by server/SDK", self._name)
-                return "(MCP tool call was cancelled)"
-            except Exception as exc:
-                if _is_transient(exc):
-                    if attempt == 0:
-                        logger.warning(
-                            "MCP tool '{}' hit transient error ({}), retrying once...",
-                            self._name,
-                            type(exc).__name__,
-                        )
-                        await asyncio.sleep(1)
-                        continue
-                    logger.error(
-                        "MCP tool '{}' failed after retry: {}: {}",
-                        self._name,
-                        type(exc).__name__,
-                        exc,
-                    )
-                    return f"(MCP tool call failed after retry: {type(exc).__name__})"
-                logger.exception(
-                    "MCP tool '{}' failed: {}: {}",
-                    self._name,
-                    type(exc).__name__,
-                    exc,
-                )
-                return f"(MCP tool call failed: {type(exc).__name__})"
-            else:
-                parts = []
-                for block in result.content:
-                    if isinstance(block, types.TextContent):
-                        parts.append(block.text)
-                    else:
-                        parts.append(str(block))
-                return "\n".join(parts) or "(no output)"
+        result = await self._runtime.call_tool(
+            self._original_name,
+            kwargs,
+            self._name,
+            self._tool_timeout,
+        )
+        if isinstance(result, str):
+            return result
 
-        return "(MCP tool call failed)"
+        parts = []
+        for block in result.content:
+            if isinstance(block, types.TextContent):
+                parts.append(block.text)
+            else:
+                parts.append(str(block))
+        return "\n".join(parts) or "(no output)"
 
 
 def _resolve_mcp_transport(cfg: Any) -> str:
@@ -378,59 +623,20 @@ async def inspect_mcp_server(
 
 async def connect_mcp_servers(
     mcp_servers: dict, registry: ToolRegistry, stack: AsyncExitStack
-) -> None:
+) -> dict[str, MCPServerRuntime]:
     """Connect to configured MCP servers and register their tools."""
+    runtimes: dict[str, MCPServerRuntime] = {}
     for name, cfg in mcp_servers.items():
         if not cfg.enabled:
             logger.info("MCP server '{}': disabled, skipping", name)
             continue
         try:
-            _transport_type, session = await _open_mcp_session(cfg, stack)
-
-            tools = await session.list_tools()
-            enabled_tools = set(cfg.enabled_tools)
-            allow_all_tools = "*" in enabled_tools
-            registered_count = 0
-            matched_enabled_tools: set[str] = set()
-            available_raw_names = [tool_def.name for tool_def in tools.tools]
-            available_wrapped_names = [f"mcp_{name}_{tool_def.name}" for tool_def in tools.tools]
-            for tool_def in tools.tools:
-                wrapped_name = f"mcp_{name}_{tool_def.name}"
-                if (
-                    not allow_all_tools
-                    and tool_def.name not in enabled_tools
-                    and wrapped_name not in enabled_tools
-                ):
-                    logger.debug(
-                        "MCP: skipping tool '{}' from server '{}' (not in enabledTools)",
-                        wrapped_name,
-                        name,
-                    )
-                    continue
-                wrapper = MCPToolWrapper(session, name, tool_def, tool_timeout=cfg.tool_timeout)
-                registry.register(wrapper)
-                logger.debug("MCP: registered tool '{}' from server '{}'", wrapper.name, name)
-                registered_count += 1
-                if enabled_tools:
-                    if tool_def.name in enabled_tools:
-                        matched_enabled_tools.add(tool_def.name)
-                    if wrapped_name in enabled_tools:
-                        matched_enabled_tools.add(wrapped_name)
-
-            if enabled_tools and not allow_all_tools:
-                unmatched_enabled_tools = sorted(enabled_tools - matched_enabled_tools)
-                if unmatched_enabled_tools:
-                    logger.warning(
-                        "MCP server '{}': enabledTools entries not found: {}. Available raw names: {}. "
-                        "Available wrapped names: {}",
-                        name,
-                        ", ".join(unmatched_enabled_tools),
-                        ", ".join(available_raw_names) or "(none)",
-                        ", ".join(available_wrapped_names) or "(none)",
-                    )
-
-            logger.info("MCP server '{}': connected, {} tools registered", name, registered_count)
+            runtime = MCPServerRuntime(server_name=name, cfg=cfg, registry=registry)
+            await runtime.connect()
+            stack.push_async_callback(runtime.close)
+            runtimes[name] = runtime
         except MCPConfigurationError as e:
             logger.warning("MCP server '{}': {}, skipping", name, e)
         except Exception as e:
-            logger.error("MCP server '{}': failed to connect: {}", name, e)
+            logger.error("MCP server '{}': failed to connect: {}", name, type(e).__name__)
+    return runtimes

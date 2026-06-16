@@ -12,6 +12,7 @@ from adminbot.app.registry import BotRecord
 class BotSummary:
     id: str
     name: str
+    description: str
     status: str
     workspace: str
     config_path: str
@@ -89,6 +90,7 @@ def build_bot_summary(bot: BotRecord) -> BotSummary:
     return BotSummary(
         id=bot.id,
         name=bot.name,
+        description=bot.description,
         status=bot.process.status,
         workspace=bot.workspace,
         config_path=bot.config_path,

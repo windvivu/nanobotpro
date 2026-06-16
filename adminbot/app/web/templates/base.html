@@ -19,6 +19,7 @@
             <nav class="nav">
                 <a class="nav-link {% if request.url.path == '/' %}active{% endif %}" href="/">Dashboard</a>
                 <a class="nav-link {% if request.url.path == '/bots/new' %}active{% endif %}" href="/bots/new">Create Bot</a>
+                <a class="nav-link {% if request.url.path == '/soul-library' %}active{% endif %}" href="/soul-library">Soul Library</a>
             </nav>
             <div class="sidebar-note">
                 Adminbot controls local bot processes. Keep this UI protected.

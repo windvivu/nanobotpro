@@ -96,6 +96,7 @@ include = [
     "adminbot/**/*.html",
     "adminbot/**/*.css",
     "adminbot/**/*.js",
+    "adminbot/**/*.md",
 ]
 
 [tool.hatch.build.targets.wheel]

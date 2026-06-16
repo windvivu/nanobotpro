@@ -110,6 +110,7 @@ async def dashboard(request: Request):
         "max_iterations": defaults.max_tool_iterations,
         "context_window_tokens": defaults.context_window_tokens,
         "reasoning_effort": defaults.reasoning_effort or "default",
+        "unified_session": defaults.unified_session,
         "sessions_count": len(sessions),
         "active_channels": active_channels,
         "provider": effective_model.provider,

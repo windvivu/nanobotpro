@@ -58,13 +58,24 @@
             <div class="absolute top-0 right-0 p-2 opacity-10">
                 <span class="material-symbols-outlined text-6xl">psychology</span>
             </div>
+            <div class="absolute top-4 right-4 z-10">
+                {% if unified_session %}
+                <div class="px-3 py-1 border border-yellow-400/60 bg-black/80 text-[10px] uppercase font-bold text-yellow-300 shadow-[0_0_14px_rgba(250,204,21,0.18)]">
+                    Session: Unified · unified:default
+                </div>
+                {% else %}
+                <div class="px-3 py-1 border border-primary/30 bg-black/70 text-[10px] uppercase font-bold text-primary/70">
+                    Session: Separate
+                </div>
+                {% endif %}
+            </div>
             <div class="flex items-center gap-2 mb-4">
                 <span class="w-2 h-2 bg-primary rounded-full animate-pulse shadow-[0_0_5px_#00FF41]"></span>
                 <h3 class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/60">Main Neural Core</h3>
             </div>
             <div class="flex flex-col">
                 <span class="text-3xl font-bold glow-text tracking-wider uppercase">{{ model }}</span>
-                <span class="text-xs text-primary/40 mt-1">STATUS: OPTIMIZED_EXECUTION</span>
+                <span class="text-xs text-primary/40 mt-1">STATUS: READY</span>
             </div>
             <div class="mt-6 flex gap-4">
                 <div class="px-3 py-1 border border-primary/30 text-[10px] uppercase font-bold">Provider: {{ provider }}

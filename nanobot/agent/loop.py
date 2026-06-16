@@ -300,6 +300,7 @@ class AgentLoop:
         self._running = False
         self._mcp_servers = mcp_servers or {}
         self._mcp_stack: AsyncExitStack | None = None
+        self._mcp_runtimes: dict[str, Any] = {}
         self._mcp_connected = False
         self._mcp_connecting = False
         self._active_tasks: dict[str, list[asyncio.Task]] = {}  # session_key -> tasks
@@ -543,7 +544,11 @@ class AgentLoop:
         try:
             self._mcp_stack = AsyncExitStack()
             await self._mcp_stack.__aenter__()
-            await connect_mcp_servers(self._mcp_servers, self.tools, self._mcp_stack)
+            self._mcp_runtimes = await connect_mcp_servers(
+                self._mcp_servers,
+                self.tools,
+                self._mcp_stack,
+            )
             self._mcp_connected = True
         except BaseException as e:
             logger.error("Failed to connect MCP servers (will retry next message): {}", e)
@@ -553,8 +558,47 @@ class AgentLoop:
                 except Exception:
                     pass
                 self._mcp_stack = None
+                self._mcp_runtimes = {}
         finally:
             self._mcp_connecting = False
+
+    async def unload_mcp_server(self, name: str) -> bool:
+        """Unload one named MCP runtime without affecting other MCP servers."""
+        self._mcp_servers.pop(name, None)
+        runtime = self._mcp_runtimes.pop(name, None)
+        if runtime is None:
+            return False
+        await runtime.close()
+        if not self._mcp_runtimes:
+            self._mcp_connected = False
+        logger.info("MCP server '{}': runtime unloaded", name)
+        return True
+
+    async def load_mcp_server(self, name: str, cfg: Any) -> bool:
+        """Load or replace one named MCP runtime without restarting the gateway."""
+        self._mcp_servers[name] = cfg
+        _, _, _, _, _, eff_mcp = self._resolve_tool_flags()
+        if not eff_mcp or not cfg.enabled:
+            logger.info("MCP server '{}': configured but not live-loaded (disabled)", name)
+            return False
+
+        if self._mcp_stack is None:
+            self._mcp_stack = AsyncExitStack()
+            await self._mcp_stack.__aenter__()
+
+        old_runtime = self._mcp_runtimes.pop(name, None)
+        if old_runtime is not None:
+            await old_runtime.close()
+
+        from nanobot.agent.tools.mcp import MCPServerRuntime
+
+        runtime = MCPServerRuntime(server_name=name, cfg=cfg, registry=self.tools)
+        await runtime.connect()
+        self._mcp_stack.push_async_callback(runtime.close)
+        self._mcp_runtimes[name] = runtime
+        self._mcp_connected = bool(self._mcp_runtimes)
+        logger.info("MCP server '{}': runtime hot-loaded", name)
+        return True
 
     def _set_tool_context(
         self,
@@ -1111,6 +1155,8 @@ class AgentLoop:
             except (RuntimeError, BaseExceptionGroup, asyncio.TimeoutError):
                 pass  # MCP SDK cancel scope cleanup is noisy but harmless
             self._mcp_stack = None
+        self._mcp_runtimes = {}
+        self._mcp_connected = False
 
     def _schedule_background(self, coro) -> None:
         """Schedule a coroutine as a tracked background task (drained on shutdown)."""

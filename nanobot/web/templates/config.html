@@ -74,6 +74,38 @@
 
             <div id="neural-body" class="hidden">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="flex flex-col gap-3 md:col-span-2 border border-primary/15 bg-primary/[0.02] p-4">
+                        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                            <div>
+                                <label for="unified_session_toggle"
+                                    class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90 cursor-pointer">&gt;
+                                    Unified_Session</label>
+                                <p class="dashboard-subtitle text-[10px] font-mono mt-1">Route normal chats into one shared conversation history.</p>
+                            </div>
+                            <label for="unified_session_toggle" class="flex items-center gap-3 cursor-pointer">
+                                <span id="unified-session-status"
+                                    class="text-[10px] font-bold uppercase tracking-wider {{ 'text-yellow-300' if unified_session else 'text-primary/40' }}">
+                                    {{ 'Unified session' if unified_session else 'Separate sessions' }}
+                                </span>
+                                <div class="relative">
+                                    <input type="checkbox" id="unified_session_toggle" onchange="toggleUnifiedSession()"
+                                        class="sr-only peer" {{ 'checked' if unified_session else '' }} />
+                                    <input type="hidden" id="unified_session" name="unified_session"
+                                        value="{{ 'true' if unified_session else 'false' }}" />
+                                    <div class="w-14 h-7 bg-black/60 border border-primary/50 peer-checked:bg-yellow-400/25 peer-checked:border-yellow-400 transition-all duration-300"></div>
+                                    <div class="absolute top-[3px] left-[3px] w-5 h-5 bg-primary/40 peer-checked:bg-yellow-300 peer-checked:shadow-[0_0_10px_rgba(250,204,21,0.9)] peer-checked:translate-x-7 transition-all duration-300"></div>
+                                </div>
+                            </label>
+                        </div>
+                        <div id="unified-session-warning"
+                            class="{{ 'flex' if unified_session else 'hidden' }} items-start gap-3 border border-yellow-400/40 bg-yellow-400/10 px-4 py-3 text-yellow-200/90">
+                            <span class="material-symbols-outlined text-sm mt-0.5">warning</span>
+                            <p class="text-[11px] leading-relaxed font-mono">
+                                All normal chat channels will share <span class="font-bold">unified:default</span>.
+                                Do not enable this for multi-user or customer-facing bots.
+                            </p>
+                        </div>
+                    </div>
                     <div class="flex flex-col gap-2 md:col-span-2">
                         <label for="model_preset"
                             class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
@@ -1995,6 +2027,24 @@
         dreamModelRenderChips();
     }
 
+    function toggleUnifiedSession() {
+        const toggle = document.getElementById('unified_session_toggle');
+        const hidden = document.getElementById('unified_session');
+        const status = document.getElementById('unified-session-status');
+        const warning = document.getElementById('unified-session-warning');
+        const enabled = !!toggle?.checked;
+        if (hidden) hidden.value = enabled ? 'true' : 'false';
+        if (status) {
+            status.textContent = enabled ? 'Unified session' : 'Separate sessions';
+            status.classList.toggle('text-yellow-300', enabled);
+            status.classList.toggle('text-primary/40', !enabled);
+        }
+        if (warning) {
+            warning.classList.toggle('hidden', !enabled);
+            warning.classList.toggle('flex', enabled);
+        }
+    }
+
     const _presetProviderOptions = {{ provider_options | tojson }};
     const _presetReasoningOptions = {{ reasoning_effort_options | tojson }};
     let _presetVerifiedSignature = null;
@@ -3673,6 +3723,7 @@
     toggleModelPresetsPanel();
     updateNeuralProviderConfiguredOptions();
     updateModelPresetManualState();
+    toggleUnifiedSession();
     providerProfileRender();
     presetCrudRender();
     fallbackCrudRender();
@@ -4105,6 +4156,7 @@
         'temperature': 'Độ sáng tạo của bot (0 = chính xác, 2 = sáng tạo tối đa). Nên để 0.5–0.8 cho hội thoại.',
         'max_tokens': 'Số token tối đa mỗi lần trả lời. Token ≈ 0.75 từ tiếng Anh. Càng cao → trả lời dài hơn nhưng tốn phí.',
         'max_tool_iterations': 'Số vòng lặp tool tối đa. Bot có thể gọi nhiều tool liên tiếp (tìm kiếm, chạy code...). Giới hạn để tránh vòng lặp vô hạn.',
+        'unified_session_toggle': 'Khi bật, các chat bình thường từ mọi channel sẽ dùng chung một history: unified:default. Điều này hữu ích cho bot cá nhân/single-user, nhưng nguy hiểm với bot nhiều người dùng vì ngữ cảnh của người này có thể ảnh hưởng người khác. Thread override và system session vẫn tách riêng.',
         'max_tool_result_chars': 'Global budget cho mọi model/preset. Giới hạn số ký tự giữ lại từ mỗi tool result trước khi đưa lại vào LLM context. Áp dụng cho file, web/search, exec, MCP và các tool output đi qua shared runner. Thấp hơn tiết kiệm token nhưng có thể thiếu chi tiết.',
         'context_window_tokens': 'Kích thước context window (tokens). Hệ thống tự động tóm tắt lịch sử khi gần đầy. Mặc định 65536 — phù hợp hầu hết models. Tăng lên để tận dụng context dài hơn (Claude 200K, Gemini 1M...).',
         'reasoning_effort_select': 'Mức độ suy luận của model. Chọn Custom nếu gateway riêng yêu cầu giá trị ngoài danh sách.',

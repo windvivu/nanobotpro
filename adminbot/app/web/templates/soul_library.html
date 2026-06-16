@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+
+{% block title %}Soul Library - Adminbot{% endblock %}
+{% block page_title %}Soul Library{% endblock %}
+{% block page_subtitle %}Reusable soul content for copying into bot instructions.{% endblock %}
+
+{% block content %}
+<details class="panel collapsible-panel" {% if edit_soul %}open{% endif %}>
+    <summary class="collapsible-summary">
+        <div>
+            <h2>{% if edit_soul %}Edit Custom Soul{% else %}Add Custom Soul{% endif %}</h2>
+            <p class="field-help">Custom souls are stored locally under <span class="mono">.adminbot/soul_library/</span>.</p>
+        </div>
+        <span class="button button-small">{% if edit_soul %}Editing{% else %}Open{% endif %}</span>
+    </summary>
+    <div class="collapsible-body">
+        <form class="stack-form" method="post" action="{% if edit_soul %}/soul-library/custom/{{ edit_soul.id }}{% else %}/soul-library/custom{% endif %}">
+            <label>
+                <span>Title</span>
+                <input name="title" type="text" value="{{ edit_soul.title if edit_soul else '' }}" required />
+            </label>
+            <label>
+                <span>Description</span>
+                <textarea name="description" rows="2">{{ edit_soul.description if edit_soul else '' }}</textarea>
+            </label>
+            <label>
+                <span>Content</span>
+                <textarea name="content" rows="12" required>{{ edit_soul.content if edit_soul else '' }}</textarea>
+            </label>
+            <div class="form-actions">
+                <button class="button button-primary" type="submit">{% if edit_soul %}Save Soul{% else %}Add Soul{% endif %}</button>
+                {% if edit_soul %}
+                <a class="button button-link" href="/soul-library">Cancel Edit</a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+</details>
+
+<section class="panel">
+    <div class="panel-header">
+        <div>
+            <h2>Custom Souls</h2>
+            <p class="field-help">Your editable local library. Copy, edit, or delete these entries as needed.</p>
+        </div>
+    </div>
+    {% if custom_souls %}
+    <div class="soul-grid">
+        {% for soul in custom_souls %}
+        <article class="soul-card">
+            <div class="soul-card-header">
+                <div>
+                    <h3>{{ soul.title }}</h3>
+                    <p>{{ soul.description }}</p>
+                </div>
+            </div>
+            <div class="soul-actions">
+                <button class="button button-small" type="button" data-copy-soul="custom-{{ soul.id }}">Copy</button>
+                <button class="button button-small" type="button" data-select-soul="custom-{{ soul.id }}">Select All</button>
+                <a class="button button-small button-link" href="/soul-library?edit={{ soul.id }}">Edit</a>
+                <button class="button button-small button-danger" type="button" data-delete-soul-open="{{ soul.id }}">Delete</button>
+            </div>
+            <pre class="soul-preview" id="soul-custom-{{ soul.id }}">{{ soul.content }}</pre>
+        </article>
+        <div class="modal-backdrop" data-delete-soul-modal="{{ soul.id }}" hidden>
+            <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="delete-soul-title-{{ soul.id }}">
+                <div class="modal-header">
+                    <h2 id="delete-soul-title-{{ soul.id }}">Delete {{ soul.title }}?</h2>
+                    <button class="modal-close" type="button" data-delete-soul-close="{{ soul.id }}" aria-label="Close">×</button>
+                </div>
+                <p class="modal-copy">
+                    This removes the custom soul from the local Adminbot library. Built-in souls are not affected.
+                </p>
+                <div class="modal-actions">
+                    <button class="button" type="button" data-delete-soul-close="{{ soul.id }}">Cancel</button>
+                    <form method="post" action="/soul-library/custom/{{ soul.id }}/delete">
+                        <button class="button button-danger" type="submit">Delete Soul</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">No custom souls yet.</div>
+    {% endif %}
+</section>
+
+<section class="panel">
+    <div class="panel-header">
+        <div>
+            <h2>Built-in Souls</h2>
+            <p class="field-help">Read-only templates shipped with Adminbot. Copy them as a starting point.</p>
+        </div>
+    </div>
+    {% if built_in_souls %}
+    <div class="soul-grid">
+        {% for soul in built_in_souls %}
+        <article class="soul-card">
+            <div class="soul-card-header">
+                <div>
+                    <h3>{{ soul.title }}</h3>
+                    <p>{{ soul.description }}</p>
+                </div>
+            </div>
+            <div class="soul-actions">
+                <button class="button button-small" type="button" data-copy-soul="built-in-{{ soul.id }}">Copy</button>
+                <button class="button button-small" type="button" data-select-soul="built-in-{{ soul.id }}">Select All</button>
+            </div>
+            <pre class="soul-preview" id="soul-built-in-{{ soul.id }}">{{ soul.content }}</pre>
+        </article>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">No built-in soul templates found.</div>
+    {% endif %}
+</section>
+{% endblock %}

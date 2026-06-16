@@ -31,6 +31,7 @@
         </div>
         <dl class="meta-list">
             <div><dt>ID</dt><dd class="mono">{{ bot.id }}</dd></div>
+            <div><dt>Description</dt><dd>{{ bot.description or "-" }}</dd></div>
             <div><dt>Workspace</dt><dd class="mono">{{ bot.workspace }}</dd></div>
             <div><dt>Config</dt><dd class="mono">{{ bot.config_path }}</dd></div>
             <div><dt>Web Port</dt><dd>{{ bot.web_port }}</dd></div>
@@ -40,6 +41,13 @@
             <div><dt>Exit Code</dt><dd class="mono">{{ bot.exit_code }}</dd></div>
             <div><dt>Updated</dt><dd class="mono">{{ bot.updated_at }}</dd></div>
         </dl>
+        <form class="stack-form description-form" method="post" action="/bots/{{ bot.id }}/description">
+            <label>
+                <span>Description</span>
+                <textarea name="description" rows="3" placeholder="Optional note about this bot's purpose">{{ bot.description }}</textarea>
+            </label>
+            <button class="button button-small" type="submit">Save Description</button>
+        </form>
     </div>
 
     <div class="panel">

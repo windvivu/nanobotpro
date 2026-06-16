@@ -31,17 +31,41 @@ def _is_windows() -> bool:
     return os.name == "nt"
 
 
+def _windows_hidden_startupinfo():
+    startupinfo_cls = getattr(subprocess, "STARTUPINFO", None)
+    if not startupinfo_cls:
+        return None
+    startupinfo = startupinfo_cls()
+    startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0)
+    startupinfo.wShowWindow = getattr(subprocess, "SW_HIDE", 0)
+    return startupinfo
+
+
+def _windows_hidden_subprocess_kwargs() -> dict:
+    kwargs = {}
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    if creationflags:
+        kwargs["creationflags"] = creationflags
+    startupinfo = _windows_hidden_startupinfo()
+    if startupinfo is not None:
+        kwargs["startupinfo"] = startupinfo
+    return kwargs
+
+
 def _powershell_json(command: str) -> dict | None:
     completed = subprocess.run(
         [
             "powershell",
             "-NoProfile",
+            "-WindowStyle",
+            "Hidden",
             "-Command",
             "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; " + command,
         ],
         capture_output=True,
         encoding="utf-8",
         check=False,
+        **_windows_hidden_subprocess_kwargs(),
     )
     if completed.returncode != 0:
         return None
@@ -291,6 +315,9 @@ class BotProcessManager:
             creationflags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
             creationflags |= getattr(subprocess, "DETACHED_PROCESS", 0)
             popen_kwargs["creationflags"] = creationflags
+            startupinfo = _windows_hidden_startupinfo()
+            if startupinfo is not None:
+                popen_kwargs["startupinfo"] = startupinfo
         else:
             popen_kwargs["start_new_session"] = True
 
@@ -346,6 +373,7 @@ class BotProcessManager:
                 capture_output=True,
                 text=True,
                 check=False,
+                **_windows_hidden_subprocess_kwargs(),
             )
             if completed.returncode != 0:
                 # The process may have exited naturally after the identity check but before taskkill.

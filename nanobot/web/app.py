@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from loguru import logger
@@ -20,6 +20,31 @@ _STATIC_DIR = _WEB_DIR / "static"
 class AuthMiddleware(BaseHTTPMiddleware):
     """Redirect unauthenticated requests to /login when password is set."""
 
+    async def _call_next_safely(self, request: Request, call_next):
+        try:
+            return await call_next(request)
+        except RuntimeError as exc:
+            # Starlette BaseHTTPMiddleware can raise this when the downstream
+            # response stream closes before a response object is delivered.
+            # Treat it as a client/request lifecycle abort, not a gateway crash.
+            message = str(exc)
+            if message in {
+                "No response returned.",
+                "ASGI callable returned without starting response.",
+            }:
+                try:
+                    disconnected = await request.is_disconnected()
+                except Exception:
+                    disconnected = False
+                logger.warning(
+                    "[Web] Request ended without response for {} (client_disconnected={}, error='{}')",
+                    request.url.path,
+                    disconnected,
+                    message,
+                )
+                return Response(status_code=499)
+            raise
+
     async def dispatch(self, request: Request, call_next):
         from nanobot.web.auth import is_authenticated, is_public_path
 
@@ -30,18 +55,18 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         # No password = no auth required
         if not password:
-            return await call_next(request)
+            return await self._call_next_safely(request, call_next)
 
         # Allow public paths
         if is_public_path(path):
-            return await call_next(request)
+            return await self._call_next_safely(request, call_next)
 
         # Check auth
         if not is_authenticated(request):
             logger.debug(f"[AuthMiddleware] Redirecting {path} -> /login")
             return RedirectResponse(url="/login", status_code=302)
 
-        return await call_next(request)
+        return await self._call_next_safely(request, call_next)
 
 
 def create_app(config, session_manager=None, agent=None, channel_manager=None) -> FastAPI:

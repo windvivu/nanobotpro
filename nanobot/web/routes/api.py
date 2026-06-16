@@ -3,6 +3,7 @@
 import asyncio
 import json
 import os
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,6 +23,17 @@ _fleet_claim: dict = {
     "claimed_by": "",     # IP of the fleet-manager that claimed
     "claimed_at": "",     # ISO timestamp of claim
 }
+
+_FLEET_MCP_NAME_RE = re.compile(r"^[a-zA-Z0-9._-]{1,64}$")
+
+
+def _fleet_mcp_name(value: object) -> str:
+    name = "fleet" if value is None else str(value).strip()
+    if not name:
+        name = "fleet"
+    if not _FLEET_MCP_NAME_RE.fullmatch(name):
+        raise ValueError("Invalid MCP server name")
+    return name
 
 
 @router.get("/api/password-status")
@@ -374,12 +386,24 @@ async def fleet_message(request: Request):
 
         logger.info("[Fleet] Message from '{}': {}", from_bot, content[:100])
 
-        resp = await agent.process_direct(
-            content=content,
-            session_key=session_key,
-            channel="fleet",
-            chat_id=from_bot,
-        )
+        try:
+            resp = await asyncio.shield(
+                agent.process_direct(
+                    content=content,
+                    session_key=session_key,
+                    channel="fleet",
+                    chat_id=from_bot,
+                )
+            )
+        except asyncio.CancelledError:
+            logger.warning(
+                "[Fleet] Message request cancelled while agent was processing '{}'; returning controlled 499",
+                from_bot,
+            )
+            return JSONResponse(
+                {"ok": False, "error": "Fleet message request cancelled"},
+                status_code=499,
+            )
         response = resp.content if resp else ""
 
         logger.info("[Fleet] Reply to '{}': {}", from_bot, response[:100] if response else "(empty)")
@@ -479,11 +503,9 @@ async def fleet_config_mcp(request: Request):
     Called by Fleet Manager after claiming a bot, so the bot gains
     access to fleet workspace tools without any manual setup.
 
-    The server is always stored under the fixed key "fleet" so that
-    joining a new fleet automatically overwrites the old entry.
-
     Auth: Basic Auth (same as /api/health).
     Body JSON: {
+        "name": "fleet",        (optional, default "fleet")
         "type": "streamableHttp",
         "url": "http://fleet-mgr:9000/mcp",
         "headers": {            (optional)
@@ -493,7 +515,7 @@ async def fleet_config_mcp(request: Request):
         "tool_timeout": 30,     (optional, default 30)
         "enabled_tools": ["*"]  (optional, default all)
     }
-    Response: { "ok": true, "restart_required": true }
+    Response: { "ok": true, "name": "<name>", "restart_required": bool, "hot_applied": bool }
     """
     from nanobot.config.loader import get_config_path, load_config, save_config
     from nanobot.config.schema import MCPServerConfig
@@ -510,6 +532,10 @@ async def fleet_config_mcp(request: Request):
     url = (body.get("url") or "").strip()
     if not url:
         return JSONResponse({"ok": False, "error": "url is required"}, status_code=400)
+    try:
+        name = _fleet_mcp_name(body.get("name"))
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
 
     mcp_type = (body.get("type") or "streamableHttp").strip()
     headers = body.get("headers") or {}
@@ -524,25 +550,48 @@ async def fleet_config_mcp(request: Request):
     config_path = get_config_path()
     config = load_config(config_path)
 
-    # Always use fixed key "fleet" -- joining a new fleet overwrites the old entry
-    config.tools.mcp_servers["fleet"] = MCPServerConfig(
+    server_config = MCPServerConfig(
         type=mcp_type,
         url=url,
         headers=headers,
         tool_timeout=tool_timeout,
         enabled_tools=enabled_tools,
     )
+    config.tools.mcp_servers[name] = server_config
     config.tools.enable_mcp = True
 
     save_config(config, config_path)
     # Update runtime config so dashboard reflects change immediately
     request.app.state.config = config
+    hot_applied = False
+    restart_required = True
+    agent = getattr(request.app.state, "agent", None)
+    if agent is not None and hasattr(agent, "load_mcp_server"):
+        try:
+            hot_applied = bool(await agent.load_mcp_server(name, server_config))
+            restart_required = not hot_applied
+        except Exception as exc:
+            logger.warning(
+                "[Fleet] MCP runtime hot-load failed for key '{}': {}",
+                name,
+                type(exc).__name__,
+            )
+    elif agent is not None and hasattr(agent, "_mcp_servers"):
+        try:
+            agent._mcp_servers = config.tools.mcp_servers
+        except Exception as exc:
+            logger.warning("[Fleet] Could not update runtime MCP server map: {}", type(exc).__name__)
 
     logger.info(
-        "[Fleet] MCP config pushed: fleet -> {} (type={}, headers={})",
-        url, mcp_type, list(headers.keys()),
+        "[Fleet] MCP config pushed: {} -> {} (type={}, headers={})",
+        name, url, mcp_type, list(headers.keys()),
     )
-    return JSONResponse({"ok": True, "restart_required": True})
+    return JSONResponse({
+        "ok": True,
+        "name": name,
+        "restart_required": restart_required,
+        "hot_applied": hot_applied,
+    })
 
 
 @router.post("/api/fleet/remove-mcp")
@@ -553,7 +602,8 @@ async def fleet_remove_mcp(request: Request):
     If the entry does not exist the call is still considered successful.
 
     Auth: Basic Auth (same as /api/health).
-    Response: { "ok": true, "removed": true|false }
+    Body JSON: { "name": "fleet" }  (optional, default "fleet")
+    Response: { "ok": true, "name": "<name>", "removed": true|false }
     """
     from nanobot.config.loader import get_config_path, load_config, save_config
 
@@ -561,18 +611,47 @@ async def fleet_remove_mcp(request: Request):
     if auth_err:
         return auth_err
 
+    try:
+        raw_body = await request.body()
+        body = await request.json() if raw_body.strip() else {}
+    except Exception:
+        return JSONResponse({"ok": False, "error": "Invalid JSON"}, status_code=400)
+    if not isinstance(body, dict):
+        return JSONResponse({"ok": False, "error": "Invalid JSON"}, status_code=400)
+    try:
+        name = _fleet_mcp_name(body.get("name"))
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+
     config_path = get_config_path()
     config = load_config(config_path)
 
-    if "fleet" in config.tools.mcp_servers:
-        del config.tools.mcp_servers["fleet"]
-        save_config(config, config_path)
-        request.app.state.config = config
-        logger.info("[Fleet] MCP config removed (key 'fleet')")
-        return JSONResponse({"ok": True, "removed": True})
+    removed = name in config.tools.mcp_servers
+    if removed:
+        del config.tools.mcp_servers[name]
+        logger.info("[Fleet] MCP config removed (key '{}')", name)
+    else:
+        logger.debug("[Fleet] remove-mcp: key '{}' not found, nothing to remove", name)
 
-    logger.debug("[Fleet] remove-mcp: key 'fleet' not found, nothing to remove")
-    return JSONResponse({"ok": True, "removed": False})
+    config.tools.enable_mcp = len(config.tools.mcp_servers) > 0
+    save_config(config, config_path)
+    request.app.state.config = config
+    agent = getattr(request.app.state, "agent", None)
+    if removed and agent is not None and hasattr(agent, "unload_mcp_server"):
+        try:
+            await agent.unload_mcp_server(name)
+        except Exception as exc:
+            logger.warning(
+                "[Fleet] MCP runtime unload failed for key '{}': {}",
+                name,
+                type(exc).__name__,
+            )
+    if agent is not None and hasattr(agent, "_mcp_servers"):
+        try:
+            agent._mcp_servers = config.tools.mcp_servers
+        except Exception as exc:
+            logger.warning("[Fleet] Could not update runtime MCP server map: {}", type(exc).__name__)
+    return JSONResponse({"ok": True, "name": name, "removed": removed})
 
 
 @router.post("/api/fleet/restart")

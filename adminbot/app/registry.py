@@ -30,6 +30,7 @@ class BotRecord:
     web_port: int
     created_at: str
     updated_at: str
+    description: str = ""
     last_run_at: str | None = None
     process: BotProcessState = field(default_factory=BotProcessState)
 
@@ -60,6 +61,7 @@ def _bot_from_dict(raw: dict) -> BotRecord:
         web_port=int(raw["web_port"]),
         created_at=raw["created_at"],
         updated_at=raw.get("updated_at") or raw["created_at"],
+        description=str(raw.get("description") or ""),
         last_run_at=raw.get("last_run_at"),
         process=process,
     )

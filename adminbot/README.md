@@ -48,6 +48,24 @@ The web UI is then available at:
 http://127.0.0.1:8900
 ```
 
+## First Login On A VPS
+
+Do not expose Adminbot directly on a public IP while the default password is still active.
+
+If you manage the VPS through SSH, start Adminbot on the VPS with localhost binding:
+
+```bash
+adminbot web --host 127.0.0.1 --port 8900
+```
+
+From your local machine, open an SSH tunnel:
+
+```powershell
+ssh -L 8900:127.0.0.1:8900 user@VPS_IP
+```
+
+Then open `http://127.0.0.1:8900` locally, log in with `admin / abc123`, and change the password before binding Adminbot to `0.0.0.0`.
+
 ## Coupling Contract
 
 Adminbot does not import Nanobot runtime internals. It controls child bots only through CLI subprocesses:

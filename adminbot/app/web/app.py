@@ -72,10 +72,12 @@ def create_app() -> FastAPI:
     from adminbot.app.web.routes.bots import router as bots_router
     from adminbot.app.web.routes.dashboard import router as dashboard_router
     from adminbot.app.web.routes.logs import router as logs_router
+    from adminbot.app.web.routes.soul_library import router as soul_library_router
 
     app.include_router(auth_router)
     app.include_router(dashboard_router)
     app.include_router(bots_router)
     app.include_router(logs_router)
+    app.include_router(soul_library_router)
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
     return app

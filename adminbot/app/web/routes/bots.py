@@ -48,6 +48,7 @@ def create_bot_page(request: Request):
         "error": request.query_params.get("error", ""),
         "workspace": request.query_params.get("workspace", ""),
         "name": request.query_params.get("name", ""),
+        "description": request.query_params.get("description", ""),
         "web_port": web_port,
     }
     return templates.TemplateResponse(request, "create_bot.html", context)
@@ -58,11 +59,12 @@ def create_bot(
     request: Request,
     workspace: str = Form(...),
     name: str = Form(""),
+    description: str = Form(""),
     web_port: int = Form(...),
 ):
     manager = request.app.state.manager
     try:
-        bot = manager.create_bot(workspace, name or None, web_port)
+        bot = manager.create_bot(workspace, name or None, web_port, description)
         return _redirect(f"/bots/{bot.id}?message={quote_plus(f'Created bot {bot.name}.')}")
     except Exception as exc:
         return _redirect(
@@ -70,6 +72,7 @@ def create_bot(
             f"?error={quote_plus(str(exc))}"
             f"&workspace={quote_plus(workspace)}"
             f"&name={quote_plus(name)}"
+            f"&description={quote_plus(description)}"
             f"&web_port={web_port}"
         )
 
@@ -90,6 +93,16 @@ def bot_detail(request: Request, bot_id: str):
         "error": request.query_params.get("error", ""),
     }
     return templates.TemplateResponse(request, "bot_detail.html", context)
+
+
+@router.post("/bots/{bot_id}/description")
+def update_description(request: Request, bot_id: str, description: str = Form("")):
+    manager = request.app.state.manager
+    try:
+        bot = manager.update_bot_description(bot_id, description)
+        return _redirect(f"/bots/{bot.id}?message={quote_plus('Description updated.')}")
+    except Exception as exc:
+        return _redirect(f"/bots/{bot_id}?error={quote_plus(str(exc))}")
 
 
 @router.post("/bots/{bot_id}/start")

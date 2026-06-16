@@ -121,6 +121,10 @@ pre {
 }
 
 .sidebar {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
     padding: 28px 22px;
@@ -296,6 +300,33 @@ pre {
 .panel {
     padding: 20px;
     margin-bottom: 20px;
+}
+
+.collapsible-panel {
+    display: block;
+}
+
+.collapsible-summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    cursor: pointer;
+    list-style: none;
+}
+
+.collapsible-summary::-webkit-details-marker {
+    display: none;
+}
+
+.collapsible-summary h2 {
+    margin: 0 0 6px;
+}
+
+.collapsible-body {
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid rgba(36, 65, 88, 0.8);
 }
 
 .page-actions {
@@ -573,13 +604,31 @@ pre {
     padding: 11px 0;
 }
 
-.stack-form input {
+.stack-form input,
+.stack-form textarea {
     width: 100%;
     padding: 12px 14px;
     border-radius: 12px;
     border: 1px solid var(--line);
     background: #09141d;
     color: var(--text);
+}
+
+.stack-form textarea {
+    min-height: 88px;
+    resize: vertical;
+}
+
+.description-form {
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid rgba(36, 65, 88, 0.8);
+}
+
+.bot-description {
+    max-width: 260px;
+    color: var(--muted);
+    line-height: 1.45;
 }
 
 .meta-list {
@@ -621,6 +670,71 @@ pre {
     overflow: auto;
     white-space: pre-wrap;
     line-height: 1.45;
+}
+
+.soul-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, calc((100% - 32px) / 3)));
+    gap: 16px;
+}
+
+.soul-card {
+    display: grid;
+    gap: 14px;
+    padding: 16px;
+    border: 1px solid rgba(36, 65, 88, 0.8);
+    border-radius: 16px;
+    background: rgba(9, 20, 29, 0.55);
+}
+
+.soul-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+}
+
+.soul-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 8px;
+    padding-top: 2px;
+}
+
+.soul-card h3 {
+    margin: 0 0 8px;
+}
+
+.soul-card p {
+    margin: 0;
+    color: var(--muted);
+    line-height: 1.5;
+}
+
+.soul-preview {
+    max-height: 340px;
+    margin: 0;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: #071017;
+    overflow: auto;
+    white-space: pre-wrap;
+    line-height: 1.45;
+}
+
+.copy-toast {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    z-index: 1100;
+    padding: 12px 16px;
+    border: 1px solid rgba(77, 226, 177, 0.38);
+    border-radius: 14px;
+    background: rgba(15, 27, 38, 0.98);
+    color: var(--accent);
+    box-shadow: 0 18px 50px var(--shadow);
 }
 
 .spinner {
@@ -739,6 +853,9 @@ pre {
     }
 
     .sidebar {
+        position: static;
+        height: auto;
+        overflow: visible;
         border-right: 0;
         border-bottom: 1px solid var(--line);
     }

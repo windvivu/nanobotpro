@@ -837,6 +837,7 @@ async def config_page(
         "max_tool_result_chars": defaults.max_tool_result_chars,
         "context_window_tokens": defaults.context_window_tokens,
         "reasoning_effort": reasoning_effort,
+        "unified_session": defaults.unified_session,
         "reasoning_effort_options": _REASONING_EFFORT_OPTIONS,
         "reasoning_effort_is_custom": reasoning_effort_is_custom,
         "reasoning_effort_custom_value": reasoning_effort if reasoning_effort_is_custom else "",
@@ -924,6 +925,10 @@ async def config_save(request: Request):
         model_preset = form.get("model_preset")
         if model_preset is not None:
             config.agents.defaults.model_preset = model_preset.strip() or None
+
+        unified_session = form.get("unified_session")
+        if unified_session is not None:
+            config.agents.defaults.unified_session = unified_session == "true"
 
         provider_profiles_json = form.get("provider_profiles_json")
         if provider_profiles_json is not None:

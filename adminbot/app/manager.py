@@ -70,7 +70,13 @@ class AdminbotManager:
                 return updated
         raise RuntimeError(f"Bot '{bot_id_or_name}' was not found.")
 
-    def create_bot(self, workspace_input: str, name: str | None, web_port: int) -> BotRecord:
+    def create_bot(
+        self,
+        workspace_input: str,
+        name: str | None,
+        web_port: int,
+        description: str | None = None,
+    ) -> BotRecord:
         if not 1 <= int(web_port) <= 65535:
             raise RuntimeError("Web port must be between 1 and 65535.")
 
@@ -111,9 +117,15 @@ class AdminbotManager:
             web_port=int(web_port),
             created_at=utc_now_iso(),
             updated_at=utc_now_iso(),
+            description=(description or "").strip(),
             process=BotProcessState(),
         )
         return self.registry.upsert_bot(record)
+
+    def update_bot_description(self, bot_id_or_name: str, description: str) -> BotRecord:
+        bot = self.get_bot(bot_id_or_name)
+        bot.description = description.strip()
+        return self.registry.upsert_bot(bot)
 
     def start_bot(self, bot_id_or_name: str) -> BotRecord:
         bot = self.get_bot(bot_id_or_name)

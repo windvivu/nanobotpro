@@ -39,6 +39,7 @@
             <thead>
                 <tr>
                     <th>Name</th>
+                    <th>Description</th>
                     <th>Status</th>
                     <th>Signal</th>
                     <th>Workspace</th>
@@ -54,6 +55,7 @@
                     <td>
                         <a class="inline-link" href="/bots/{{ bot.id }}">{{ bot.name }}</a>
                     </td>
+                    <td class="bot-description">{{ bot.description or "-" }}</td>
                     <td>
                         <span class="status status-{{ bot.status_tone }}">{{ bot.status }}</span>
                     </td>
