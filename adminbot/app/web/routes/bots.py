@@ -87,7 +87,7 @@ def bot_detail(request: Request, bot_id: str):
         return _redirect(f"/?error={quote_plus(str(exc))}")
     context = {
         "request": request,
-        "bot": build_bot_summary(bot),
+        "bot": build_bot_summary(bot, request_base_url=str(request.base_url)),
         "record": bot,
         "message": request.query_params.get("message", ""),
         "error": request.query_params.get("error", ""),
@@ -102,6 +102,20 @@ def update_description(request: Request, bot_id: str, description: str = Form(""
         bot = manager.update_bot_description(bot_id, description)
         return _redirect(f"/bots/{bot.id}?message={quote_plus('Description updated.')}")
     except Exception as exc:
+        return _redirect(f"/bots/{bot_id}?error={quote_plus(str(exc))}")
+
+
+@router.post("/bots/{bot_id}/name")
+def update_name(request: Request, bot_id: str, name: str = Form("")):
+    manager = request.app.state.manager
+    try:
+        bot = manager.update_bot_name(bot_id, name)
+        if _wants_json(request):
+            return JSONResponse({"ok": True, "name": bot.name, "message": "Bot name updated."})
+        return _redirect(f"/bots/{bot.id}?message={quote_plus('Bot name updated.')}")
+    except Exception as exc:
+        if _wants_json(request):
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
         return _redirect(f"/bots/{bot_id}?error={quote_plus(str(exc))}")
 
 

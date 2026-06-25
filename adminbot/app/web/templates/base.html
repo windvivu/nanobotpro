@@ -34,9 +34,11 @@
                 <form id="logout-adminbot-form" class="sidebar-logout" method="post" action="/logout">
                     <button class="button button-small" type="button" data-logout-open>Logout</button>
                 </form>
+                {% if not request.state.shutdown_disabled %}
                 <form id="shutdown-adminbot-form" class="sidebar-logout sidebar-shutdown" method="post" action="/shutdown">
                     <button class="button button-small button-danger" type="button" data-shutdown-open>Shutdown</button>
                 </form>
+                {% endif %}
             </div>
             {% endif %}
         </aside>
@@ -45,6 +47,7 @@
                 <div>
                     <h1>{% block page_title %}Adminbot{% endblock %}</h1>
                     <p>{% block page_subtitle %}Operate local Nanobot instances from one place.{% endblock %}</p>
+                    {% block page_header_extra %}{% endblock %}
                 </div>
             </header>
             {% if message %}
@@ -72,6 +75,7 @@
             </div>
         </div>
     </div>
+    {% if not request.state.shutdown_disabled %}
     <div class="modal-backdrop" data-shutdown-modal hidden>
         <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="shutdown-title">
             <div class="modal-header">
@@ -90,6 +94,7 @@
             </div>
         </div>
     </div>
+    {% endif %}
     {% endif %}
     <script src="/static/adminbot.js?v=20260614-adminbot-shutdown"></script>
 </body>

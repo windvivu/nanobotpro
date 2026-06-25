@@ -44,3 +44,8 @@ nanobotalonetrade
 nanobotpro
 docs_mcp_tradingview/
 .codegraph/daemon.pid
+.claude/settings.json
+.claude/CLAUDE.md
+.gitignore
+.mcp.json
+integrations/

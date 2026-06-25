@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from urllib.parse import urlsplit
 
 from adminbot.app.registry import BotRecord
 
@@ -69,7 +70,16 @@ def _format_timestamp(value: str | None) -> str:
     return dt.strftime("%Y-%m-%d %H:%M:%S")
 
 
-def build_bot_summary(bot: BotRecord) -> BotSummary:
+def _dashboard_url(bot: BotRecord, request_base_url: str | None = None) -> str:
+    if request_base_url:
+        parsed = urlsplit(request_base_url)
+        scheme = parsed.scheme or "http"
+        host = parsed.hostname or "127.0.0.1"
+        return f"{scheme}://{host}:{bot.web_port}"
+    return f"http://127.0.0.1:{bot.web_port}"
+
+
+def build_bot_summary(bot: BotRecord, request_base_url: str | None = None) -> BotSummary:
     is_running = bot.process.status == "running"
     exit_code = bot.process.exit_code
     last_stopped_at = bot.process.last_stopped_at or "-"
@@ -98,7 +108,7 @@ def build_bot_summary(bot: BotRecord) -> BotSummary:
         pid=str(bot.process.pid) if bot.process.pid else "-",
         last_run_at=_format_timestamp(bot.last_run_at),
         updated_at=_format_timestamp(bot.updated_at),
-        dashboard_url=f"http://127.0.0.1:{bot.web_port}",
+        dashboard_url=_dashboard_url(bot, request_base_url),
         last_stopped_at=_format_timestamp(last_stopped_at),
         exit_code=str(exit_code) if exit_code is not None else "-",
         status_tone=status_tone,

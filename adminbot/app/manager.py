@@ -127,6 +127,17 @@ class AdminbotManager:
         bot.description = description.strip()
         return self.registry.upsert_bot(bot)
 
+    def update_bot_name(self, bot_id_or_name: str, name: str) -> BotRecord:
+        bot = self.get_bot(bot_id_or_name)
+        clean_name = name.strip()
+        if not clean_name:
+            raise RuntimeError("Bot name is required.")
+        for existing in self.registry.list_bots():
+            if existing.id != bot.id and existing.name == clean_name:
+                raise RuntimeError(f"Bot name '{clean_name}' is already registered.")
+        bot.name = clean_name
+        return self.registry.upsert_bot(bot)
+
     def start_bot(self, bot_id_or_name: str) -> BotRecord:
         bot = self.get_bot(bot_id_or_name)
         updated = self.process_manager.start(bot)

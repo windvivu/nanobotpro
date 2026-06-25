@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -40,6 +41,12 @@ def create_app() -> FastAPI:
     app.state.auth_store = auth_store
     app.state.sessions = sessions
     app.state.login_rate_limiter = login_rate_limiter
+    app.state.shutdown_disabled = os.environ.get("ADMINBOT_DISABLE_SHUTDOWN", "").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
     @app.middleware("http")
     async def auth_middleware(request: Request, call_next):
@@ -49,6 +56,7 @@ def create_app() -> FastAPI:
         default_password_active = request.app.state.auth_store.ensure_state().is_default_password
         request.state.authenticated = authenticated
         request.state.default_password_active = default_password_active
+        request.state.shutdown_disabled = request.app.state.shutdown_disabled
 
         public_paths = {"/login", "/change-password", "/logout"}
         if path.startswith("/static/") or path in public_paths:

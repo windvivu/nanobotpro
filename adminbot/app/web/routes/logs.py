@@ -53,7 +53,7 @@ def log_viewer(
     log_path = _safe_log_path(paths.logs_dir, bot.id, stream_name)
     context = {
         "request": request,
-        "bot": build_bot_summary(bot),
+        "bot": build_bot_summary(bot, request_base_url=str(request.base_url)),
         "record": bot,
         "stream": stream_name,
         "tail": tail,

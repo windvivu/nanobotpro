@@ -27,7 +27,7 @@ def _resolve_version() -> str:
         try:
             return _pkg_version("nanobot-ai")
         except PackageNotFoundError:
-            return "0.2.1"
+            return "0.2.2"
 
 
 __version__ = _resolve_version()

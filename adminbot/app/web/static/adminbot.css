@@ -231,6 +231,49 @@ pre {
     color: var(--muted);
 }
 
+.bot-name-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.bot-name-form input {
+    width: min(26rem, 100%);
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: #09141d;
+    color: var(--text);
+}
+
+.inline-status {
+    min-height: 1.2em;
+    color: var(--muted);
+    font-size: 0.9rem;
+}
+
+.inline-status-success {
+    color: var(--accent);
+}
+
+.inline-status-error {
+    color: var(--danger);
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
 .flash {
     margin-bottom: 18px;
     padding: 14px 16px;
@@ -629,6 +672,13 @@ pre {
     max-width: 260px;
     color: var(--muted);
     line-height: 1.45;
+}
+
+.bot-dashboard-link {
+    display: inline-block;
+    max-width: 220px;
+    overflow-wrap: anywhere;
+    line-height: 1.4;
 }
 
 .meta-list {

@@ -41,7 +41,7 @@
                     <th>Name</th>
                     <th>Description</th>
                     <th>Status</th>
-                    <th>Signal</th>
+                    <th>Link</th>
                     <th>Workspace</th>
                     <th>Web Port</th>
                     <th>Runtime</th>
@@ -60,16 +60,11 @@
                         <span class="status status-{{ bot.status_tone }}">{{ bot.status }}</span>
                     </td>
                     <td>
-                        <div class="signal-stack">
-                            <div>{{ bot.status_detail }}</div>
-                            {% if bot.attention %}
-                            <span class="signal-chip signal-chip-warning">check last exit</span>
-                            {% elif bot.last_run_at == "-" %}
-                            <span class="signal-chip">not started</span>
-                            {% else %}
-                            <span class="signal-chip">stable</span>
-                            {% endif %}
-                        </div>
+                        {% if bot.status == "running" %}
+                        <a class="inline-link bot-dashboard-link" href="{{ bot.dashboard_url }}" target="_blank" rel="noreferrer">{{ bot.dashboard_url }}</a>
+                        {% else %}
+                        <span class="muted">Dashboard unavailable while stopped</span>
+                        {% endif %}
                     </td>
                     <td class="mono">{{ bot.workspace }}</td>
                     <td>{{ bot.web_port }}</td>

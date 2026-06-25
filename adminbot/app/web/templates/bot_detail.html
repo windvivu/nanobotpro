@@ -1,8 +1,16 @@
 {% extends "base.html" %}
 
 {% block title %}{{ bot.name }}{% endblock %}
-{% block page_title %}{{ bot.name }}{% endblock %}
+{% block page_title %}<span data-bot-title>{{ bot.name }}</span>{% endblock %}
 {% block page_subtitle %}Runtime detail, quick actions, and links for this managed bot.{% endblock %}
+{% block page_header_extra %}
+<form class="bot-name-form" method="post" action="/bots/{{ bot.id }}/name" data-bot-name-form>
+    <label class="sr-only" for="bot-name-input">Bot name</label>
+    <input id="bot-name-input" name="name" type="text" value="{{ bot.name }}" maxlength="120" autocomplete="off" />
+    <button class="button button-small" type="submit" data-action-label="Apply"><span data-label>Apply</span></button>
+    <span class="inline-status" data-bot-name-status aria-live="polite"></span>
+</form>
+{% endblock %}
 
 {% block content %}
 <section class="summary-grid">

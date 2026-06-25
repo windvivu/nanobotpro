@@ -242,6 +242,72 @@
 })();
 
 (function () {
+    const form = document.querySelector("[data-bot-name-form]");
+    if (!form) {
+        return;
+    }
+
+    const input = form.querySelector("input[name='name']");
+    const button = form.querySelector("button[type='submit']");
+    const label = button ? button.querySelector("[data-label]") : null;
+    const status = form.querySelector("[data-bot-name-status]");
+
+    function setStatus(message, tone) {
+        if (!status) return;
+        status.textContent = message;
+        status.classList.remove("inline-status-success", "inline-status-error");
+        if (tone) {
+            status.classList.add(`inline-status-${tone}`);
+        }
+    }
+
+    function setBusy(active) {
+        if (!button) return;
+        if (active) {
+            button.disabled = true;
+            button.setAttribute("aria-busy", "true");
+            if (label) label.textContent = "Saving...";
+            return;
+        }
+        button.disabled = false;
+        button.removeAttribute("aria-busy");
+        if (label) label.textContent = "Apply";
+    }
+
+    form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        setStatus("", "");
+        setBusy(true);
+
+        try {
+            const response = await fetch(form.action, {
+                method: "POST",
+                headers: { Accept: "application/json" },
+                body: new FormData(form),
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload.ok === false) {
+                setStatus(payload.error || "Could not update bot name.", "error");
+                setBusy(false);
+                return;
+            }
+
+            const name = payload.name || (input ? input.value.trim() : "");
+            for (const title of document.querySelectorAll("[data-bot-title]")) {
+                title.textContent = name;
+            }
+            document.title = name;
+            if (input) input.value = name;
+            setStatus(payload.message || "Saved.", "success");
+            setBusy(false);
+        } catch (err) {
+            setStatus("Request failed. Check your network connection.", "error");
+            setBusy(false);
+        }
+    });
+})();
+
+(function () {
     const logBlock = document.querySelector(".log-block");
     const tailSelect = document.getElementById("tail-select");
     const filterInput = document.getElementById("log-filter");

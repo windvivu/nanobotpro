@@ -37,7 +37,17 @@ def configure_ssrf_whitelist(cidrs: list[str]) -> None:
     _allowed_networks = nets
 
 
+def _normalize_addr(
+    addr: ipaddress.IPv4Address | ipaddress.IPv6Address,
+) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
+    """Normalize IPv6-mapped IPv4 addresses before CIDR checks."""
+    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
+        return addr.ipv4_mapped
+    return addr
+
+
 def _is_private(addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    addr = _normalize_addr(addr)
     if _allowed_networks and any(addr in net for net in _allowed_networks):
         return False
     return any(addr in net for net in _BLOCKED_NETWORKS)

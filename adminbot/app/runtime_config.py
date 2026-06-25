@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -102,5 +103,8 @@ def sync_bot_runtime_config(config_path: Path, workspace_path: Path, web_port: i
     config["agents"].setdefault("defaults", {})
     config["gateway"]["web"]["enabled"] = True
     config["gateway"]["web"]["port"] = int(web_port)
+    child_web_host = os.environ.get("ADMINBOT_CHILD_WEB_HOST", "").strip()
+    if child_web_host:
+        config["gateway"]["web"]["host"] = child_web_host
     config["agents"]["defaults"]["workspace"] = str(workspace_path)
     atomic_write_json(config_path, config)
