@@ -4,22 +4,24 @@
     <meta charset="utf-8" />
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
     <title>{% block title %}Adminbot{% endblock %}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&amp;family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/static/adminbot.css" />
 </head>
 <body>
     <div class="shell">
         <aside class="sidebar">
             <div class="brand">
-                <div class="brand-mark">AB</div>
+                <div class="brand-mark"><span class="material-symbols-outlined" aria-hidden="true">smart_toy</span></div>
                 <div>
                     <div class="brand-title">Adminbot</div>
-                    <div class="brand-subtitle">Local Multi-Bot Manager</div>
+                    <div class="brand-subtitle"><span class="material-symbols-outlined" aria-hidden="true">memory</span>Local Multi-Bot Manager</div>
                 </div>
             </div>
             <nav class="nav">
-                <a class="nav-link {% if request.url.path == '/' %}active{% endif %}" href="/">Dashboard</a>
-                <a class="nav-link {% if request.url.path == '/bots/new' %}active{% endif %}" href="/bots/new">Create Bot</a>
-                <a class="nav-link {% if request.url.path == '/soul-library' %}active{% endif %}" href="/soul-library">Soul Library</a>
+                <a class="nav-link {% if request.url.path == '/' %}active{% endif %}" href="/"><span class="material-symbols-outlined" aria-hidden="true">dashboard</span>Dashboard</a>
+                <a class="nav-link {% if request.url.path == '/bots/new' %}active{% endif %}" href="/bots/new"><span class="material-symbols-outlined" aria-hidden="true">add_circle</span>Create Bot</a>
+                <a class="nav-link {% if request.url.path == '/soul-library' %}active{% endif %}" href="/soul-library">Soul Library<span class="material-symbols-outlined" aria-hidden="true">hub</span></a>
             </nav>
             <div class="sidebar-note">
                 Adminbot controls local bot processes. Keep this UI protected.
@@ -32,11 +34,11 @@
             {% if request.state.authenticated %}
             <div class="sidebar-bottom">
                 <form id="logout-adminbot-form" class="sidebar-logout" method="post" action="/logout">
-                    <button class="button button-small" type="button" data-logout-open>Logout</button>
+                    <button class="button button-small" type="button" data-logout-open><span class="material-symbols-outlined" aria-hidden="true">logout</span>Logout</button>
                 </form>
                 {% if not request.state.shutdown_disabled %}
                 <form id="shutdown-adminbot-form" class="sidebar-logout sidebar-shutdown" method="post" action="/shutdown">
-                    <button class="button button-small button-danger" type="button" data-shutdown-open>Shutdown</button>
+                    <button class="button button-small button-danger" type="button" data-shutdown-open><span class="material-symbols-outlined" aria-hidden="true">power_settings_new</span>Shutdown</button>
                 </form>
                 {% endif %}
             </div>

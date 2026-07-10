@@ -1,4 +1,13 @@
 (function () {
+    const flashes = document.querySelectorAll(".flash");
+    flashes.forEach((flash) => {
+        setTimeout(() => {
+            flash.classList.add("flash-hidden");
+        }, 60000);
+    });
+})();
+
+(function () {
     const workspaceInput = document.getElementById("workspace-input");
     if (!workspaceInput) {
         return;
@@ -177,9 +186,11 @@
         if (!button) return;
         const label = button.querySelector("[data-label]");
         const baseLabel = button.getAttribute("data-action-label") || (label ? label.textContent : "");
+        const icon = button.querySelector(".material-symbols-outlined");
         if (active) {
             button.setAttribute("aria-busy", "true");
             if (label) label.textContent = `${baseLabel}...`;
+            if (icon) icon.style.display = "none";
             const spinner = document.createElement("span");
             spinner.className = "spinner";
             spinner.setAttribute("data-spinner", "");
@@ -188,6 +199,7 @@
         }
         button.removeAttribute("aria-busy");
         if (label) label.textContent = baseLabel;
+        if (icon) icon.style.display = "";
         const spinner = button.querySelector("[data-spinner]");
         if (spinner) spinner.remove();
     }
@@ -231,6 +243,10 @@
                     showActionError(form, payload.error || "Action failed. Please try again.");
                     setBusy(button, false);
                     return;
+                }
+                const cooldownMs = parseInt(form.getAttribute("data-cooldown-ms") || "0", 10);
+                if (cooldownMs > 0) {
+                    await new Promise((resolve) => setTimeout(resolve, cooldownMs));
                 }
                 window.location.reload();
             } catch (err) {

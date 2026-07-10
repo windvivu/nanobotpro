@@ -11,9 +11,9 @@
             <span>Workspace</span>
             <input id="workspace-input" name="workspace" required type="text" value="{{ workspace }}" placeholder="E:\WORKSPACES\bot-one" />
             <div class="field-tools">
-                <button class="button button-small" type="button" data-workspace-prefix="~/">Use `~/`</button>
-                <button class="button button-small" type="button" data-workspace-prefix="$HOME/">Use `$HOME/`</button>
-                <button class="button button-small" type="button" data-workspace-prefix="./">Use `./`</button>
+                <button class="button button-small" type="button" data-workspace-prefix="~/"><span class="material-symbols-outlined" aria-hidden="true">home</span>Use `~/`</button>
+                <button class="button button-small" type="button" data-workspace-prefix="$HOME/"><span class="material-symbols-outlined" aria-hidden="true">folder</span>Use `$HOME/`</button>
+                <button class="button button-small" type="button" data-workspace-prefix="./"><span class="material-symbols-outlined" aria-hidden="true">subdirectory_arrow_right</span>Use `./`</button>
             </div>
             <p class="field-help">
                 Workspace accepts absolute paths, relative paths, <code>~/my-bot</code>, or <code>$HOME/my-bot</code>.
@@ -35,7 +35,7 @@
         <div id="create-bot-error" class="form-error" hidden></div>
         <div class="form-actions">
             <button class="button button-primary" type="submit" data-submit-btn>
-                <span data-label>Create Bot</span>
+                <span class="material-symbols-outlined" aria-hidden="true">rocket_launch</span><span data-label>Create Bot</span>
             </button>
             <a class="button button-link" href="/">Cancel</a>
         </div>

@@ -1,0 +1,339 @@
+        <!-- ============================================================ -->
+        <!-- Section: Tools Configuration -->
+        <!-- ============================================================ -->
+        <div class="matrix-card p-6">
+            <div class="flex items-center justify-between mb-4 border-b border-primary/20 pb-4 cursor-pointer"
+                onclick="toggleSection('tools-body')">
+                <div class="flex items-center gap-3">
+                    <span class="material-symbols-outlined glow-text">build</span>
+                    <h3 class="text-xs font-bold uppercase tracking-widest glow-text">Tools Configuration</h3>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="text-[10px] text-primary/30 font-mono">tools.*</span>
+                    <span class="material-symbols-outlined text-primary/80 text-sm"
+                        id="tools-body-icon">expand_more</span>
+                </div>
+            </div>
+
+            <div id="tools-body" class="hidden">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="flex flex-col gap-3 md:col-span-2 border border-primary/15 bg-black/20 p-4">
+                        <div class="flex items-center justify-between gap-3">
+                            <span class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
+                                Tool_Budget</span>
+                            <span class="text-[9px] text-primary/30 font-mono">agents.defaults.max_tool_result_chars</span>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="flex flex-col gap-2">
+                                <label for="max_tool_result_chars"
+                                    class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
+                                    Max_Tool_Result_Chars</label>
+                                <input type="number" id="max_tool_result_chars" name="max_tool_result_chars"
+                                    value="{{ max_tool_result_chars }}" min="1000" max="64000" step="1000"
+                                    class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                                <span class="text-[9px] text-primary/30">Giới hạn ký tự giữ lại từ mỗi tool result trước khi đưa lại vào model. Range: 1,000-64,000.</span>
+                            </div>
+                            <div class="flex flex-col justify-end gap-2 text-[9px] text-primary/35 font-mono leading-relaxed">
+                                <span>Future budget knobs:</span>
+                                <span>max web fetch chars · max search snippets · MCP result limit</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        <label for="exec_timeout"
+                            class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
+                            Exec_Timeout</label>
+                        <input type="number" id="exec_timeout" name="exec_timeout" value="{{ exec_timeout }}" min="5"
+                            max="600"
+                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        <label for="exec_path_append"
+                            class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
+                            Exec_Path_Append</label>
+                        <input type="text" id="exec_path_append" name="exec_path_append" value="{{ exec_path_append }}"
+                            placeholder="none"
+                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        <label for="web_proxy"
+                            class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
+                            Web_Proxy</label>
+                        <input type="text" id="web_proxy" name="web_proxy" value="{{ web_proxy }}" placeholder="none"
+                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        <label for="search_provider"
+                            class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
+                            Search_Provider</label>
+                        <select id="search_provider" name="search_provider" onchange="updateSearchProviderFields()"
+                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm transition-all duration-300 appearance-none cursor-pointer">
+                            <option value="duckduckgo" {% if search_provider == 'duckduckgo' %}selected{% endif %} style="background: #0a0a0a; color: #00FF41;">DuckDuckGo — no key needed</option>
+                            <option value="brave" {% if search_provider == 'brave' %}selected{% endif %} style="background: #0a0a0a; color: #00FF41;">Brave Search</option>
+                            <option value="tavily" {% if search_provider == 'tavily' %}selected{% endif %} style="background: #0a0a0a; color: #00FF41;">Tavily</option>
+                            <option value="searxng" {% if search_provider == 'searxng' %}selected{% endif %} style="background: #0a0a0a; color: #00FF41;">SearXNG</option>
+                            <option value="jina" {% if search_provider == 'jina' %}selected{% endif %} style="background: #0a0a0a; color: #00FF41;">Jina</option>
+                            <option value="kagi" {% if search_provider == 'kagi' %}selected{% endif %} style="background: #0a0a0a; color: #00FF41;">Kagi</option>
+                        </select>
+                    </div>
+                    <div id="search-api-key-wrap" class="flex flex-col gap-2">
+                        <div class="flex items-center gap-3">
+                            <label for="search_api_key" id="search-api-key-label"
+                                class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
+                                Search_API_Key</label>
+                            <button type="button" onclick="testBraveKey()"
+                                id="test-brave-btn"
+                                class="px-2 py-0.5 border border-primary/30 text-primary/50 text-[9px] font-bold uppercase tracking-wider hover:bg-primary/10 hover:border-primary hover:text-primary transition-all duration-300 flex items-center gap-1">
+                                <span class="material-symbols-outlined text-[11px]">verified</span>
+                                <span>Test</span>
+                            </button>
+                            <span id="brave-test-result" class="text-[10px] font-mono" style="display: none;"></span>
+                        </div>
+                        <div class="relative">
+                            <input type="password" id="search_api_key" name="search_api_key"
+                                value="{{ search_api_key }}"
+                                class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300 pr-10" />
+                            <button type="button" onclick="toggleReveal(this)"
+                                class="absolute right-3 top-1/2 -translate-y-1/2 text-primary/30 hover:text-primary transition-colors">
+                                <span class="material-symbols-outlined text-[16px]">visibility</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div id="search-base-url-wrap" class="hidden flex flex-col gap-2">
+                        <label for="search_base_url"
+                            class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
+                            SearXNG_Base_URL</label>
+                        <input type="text" id="search_base_url" name="search_base_url"
+                            value="{{ search_base_url }}" placeholder="https://search.example.com"
+                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                    </div>
+                    <div class="md:col-span-2 -mt-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                        <div class="text-[10px] text-primary/35 font-mono" id="search-provider-help">
+                            DuckDuckGo uses the public no-key search path.
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span id="search-save-result" class="text-[10px] font-mono" style="display: none;"></span>
+                            <button type="button" onclick="saveSearchProvider()"
+                                id="btn-save-search-provider"
+                                class="px-3 py-2 border border-primary/40 text-primary/80 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/10 hover:border-primary hover:text-primary transition-all duration-300 flex items-center gap-1.5 w-fit">
+                                <span class="material-symbols-outlined text-[14px]">save</span>
+                                <span>Save Search</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-3 md:col-span-2 border-t border-primary/10 pt-4 mt-2">
+                        <div class="flex items-center justify-between gap-3">
+                            <span class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
+                                Image_Generation</span>
+                            <span class="text-[9px] text-primary/30 font-mono">tools.image_generation.*</span>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="flex flex-col gap-2 md:col-span-2">
+                                <label class="flex items-center gap-4 cursor-pointer group py-2">
+                                    <div class="relative">
+                                        <input type="checkbox" id="image_generation_enabled" name="image_generation_enabled" {% if image_generation_enabled %}checked{% endif %} class="sr-only peer" />
+                                        <div class="w-14 h-7 bg-black/60 border border-primary/50 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300"></div>
+                                        <div class="absolute top-[3px] left-[3px] w-5 h-5 bg-primary/40 peer-checked:bg-primary peer-checked:shadow-[0_0_10px_#00FF41] peer-checked:translate-x-7 transition-all duration-300"></div>
+                                    </div>
+                                    <span class="text-sm font-bold glow-text uppercase" id="image-generation-label">{{ "ENABLED" if image_generation_enabled else "DISABLED" }}</span>
+                                </label>
+                                <span class="text-[9px] text-primary/30">Cấu hình tool tạo ảnh ở đây. Preview, history và workflow nâng cao sẽ làm sau.</span>
+                            </div>
+                            <div id="image-generation-settings" class="{% if not image_generation_enabled %}hidden {% endif %}contents">
+                            <div class="flex flex-col gap-2">
+                                <label for="image_generation_provider" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt; Provider</label>
+                                <input type="text" id="image_generation_provider" name="image_generation_provider" value="{{ image_generation_provider }}"
+                                    class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                            </div>
+                            <div class="flex flex-col gap-2">
+                                <label for="image_generation_model" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt; Model</label>
+                                <input type="text" id="image_generation_model" name="image_generation_model" value="{{ image_generation_model }}"
+                                    class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                            </div>
+                            <div class="flex flex-col gap-2">
+                                <label for="image_generation_default_aspect_ratio" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt; Default_Aspect_Ratio</label>
+                                <input type="text" id="image_generation_default_aspect_ratio" name="image_generation_default_aspect_ratio" value="{{ image_generation_default_aspect_ratio }}"
+                                    class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                            </div>
+                            <div class="flex flex-col gap-2">
+                                <label for="image_generation_default_image_size" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt; Default_Image_Size</label>
+                                <input type="text" id="image_generation_default_image_size" name="image_generation_default_image_size" value="{{ image_generation_default_image_size }}"
+                                    class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                            </div>
+                            <div class="flex flex-col gap-2">
+                                <label for="image_generation_max_images_per_turn" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt; Max_Images_Per_Turn</label>
+                                <input type="number" id="image_generation_max_images_per_turn" name="image_generation_max_images_per_turn" value="{{ image_generation_max_images_per_turn }}" min="1" max="8"
+                                    class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                            </div>
+                            <div class="flex flex-col gap-2">
+                                <label for="image_generation_save_dir" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt; Save_Dir</label>
+                                <input type="text" id="image_generation_save_dir" name="image_generation_save_dir" value="{{ image_generation_save_dir }}"
+                                    class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                            </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Tool Preset -->
+                    <div class="flex flex-col gap-3 md:col-span-2 border-t border-primary/10 pt-4 mt-2">
+                        <span class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
+                            Tool_Preset</span>
+                        <div class="flex flex-wrap gap-2">
+                            {% for preset, label, icon in [
+                                ('developer', 'Developer', 'code'),
+                                ('coder', 'Coder', 'terminal'),
+                                ('chatbot', 'Chatbot', 'smart_toy'),
+                                ('custom', 'Custom', 'tune')
+                            ] %}
+                            <label
+                                class="flex items-center gap-2 px-3 py-2 border cursor-pointer transition-all duration-300
+                                       {{ 'border-primary bg-primary/15 text-primary' if tool_preset == preset else 'border-primary/20 text-primary/50 hover:border-primary/50' }}">
+                                <input type="radio" name="tool_preset" value="{{ preset }}"
+                                    {{ 'checked' if tool_preset == preset else '' }}
+                                    class="sr-only" onchange="onToolPresetChange()" />
+                                <span class="material-symbols-outlined text-[14px]">{{ icon }}</span>
+                                <span class="text-[10px] font-bold uppercase tracking-wider">{{ label }}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                        <!-- Preset summary (Developer/Chatbot) -->
+                        <div id="preset-summary" class="{{ 'hidden' if tool_preset == 'custom' else '' }}">
+                            <span id="preset-summary-text" class="text-[10px] text-primary/50 flex items-center gap-1">
+                                <span class="material-symbols-outlined text-[12px]">info</span>
+                                <span id="preset-summary-content-legacy" class="hidden">
+                                    {% if tool_preset == 'chatbot' %}
+                                    Chỉ Message + Web + MCP — File, Exec, Spawn, Cron tắt
+                                    {% elif tool_preset == 'coder' %}
+                                    File, Exec, Web, MCP báº­t â€” Spawn vÃ  Cron táº¯t
+                                    {% else %}
+                                    Tất cả tools bật (File, Exec, Web, Spawn, Cron, MCP)
+                                    {% endif %}
+                                </span>
+                                <span id="preset-summary-content">
+                                    {% if tool_preset == 'chatbot' %}
+                                    Message + Web + MCP only - File, Exec, Spawn, Cron off
+                                    {% elif tool_preset == 'coder' %}
+                                    File, Exec, Web, MCP on - Spawn and Cron off
+                                    {% else %}
+                                    All tools on (File, Exec, Web, Spawn, Cron, MCP)
+                                    {% endif %}
+                                </span>
+                            </span>
+                        </div>
+                        <!-- Custom toggles -->
+                        <div id="preset-custom-toggles" class="{{ '' if tool_preset == 'custom' else 'hidden' }}">
+                            <div class="flex flex-wrap gap-x-6 gap-y-3">
+                                {% for flag, label_text in [
+                                    ('enable_file_tools', 'File Tools'),
+                                    ('enable_web_tools', 'Web Tools'),
+                                    ('enable_spawn', 'Spawn'),
+                                    ('enable_cron', 'Cron'),
+                                    ('enable_mcp', 'MCP Servers')
+                                ] %}
+                                <label class="flex items-center gap-3 cursor-pointer">
+                                    <div class="relative">
+                                        <input type="checkbox" name="{{ flag }}"
+                                            {% if flag == 'enable_file_tools' and enable_file_tools %}checked{% endif %}
+                                            {% if flag == 'enable_web_tools' and enable_web_tools %}checked{% endif %}
+                                            {% if flag == 'enable_spawn' and enable_spawn %}checked{% endif %}
+                                            {% if flag == 'enable_cron' and enable_cron %}checked{% endif %}
+                                            {% if flag == 'enable_mcp' and enable_mcp %}checked{% endif %}
+                                            class="sr-only peer" />
+                                        <div class="w-10 h-5 bg-black/60 border border-primary/30 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300"></div>
+                                        <div class="absolute top-[2px] left-[2px] w-4 h-4 bg-primary/30 peer-checked:bg-primary peer-checked:shadow-[0_0_8px_#00FF41] peer-checked:translate-x-5 transition-all duration-300"></div>
+                                    </div>
+                                    <span class="text-[10px] font-bold uppercase tracking-wider text-primary/60 peer-checked:text-primary">{{ label_text }}</span>
+                                </label>
+                                {% endfor %}
+                            </div>
+                            <span class="text-[9px] text-primary/30 mt-1 block">Exec kiểm soát bởi Sandbox bên dưới. Message luôn bật.</span>
+                        </div>
+                    </div>
+                    <!-- Exec Sandbox -->
+                    <div class="flex flex-col gap-3 md:col-span-2 border-t border-primary/10 pt-4 mt-2">
+                        <span class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
+                            Exec_Sandbox</span>
+                        <div class="flex flex-wrap gap-2">
+                            {% for mode, label, icon in [
+                                ('unrestricted', 'Không hạn chế', 'warning'),
+                                ('workspace', 'Sandbox', 'shield'),
+                                ('disabled', 'Tắt exec', 'block')
+                            ] %}
+                            <label
+                                class="flex items-center gap-2 px-3 py-2 border cursor-pointer transition-all duration-300
+                                       {{ 'border-primary bg-primary/15 text-primary' if sandbox_mode == mode else 'border-primary/20 text-primary/50 hover:border-primary/50' }}">
+                                <input type="radio" name="sandbox_mode" value="{{ mode }}"
+                                    {{ 'checked' if sandbox_mode == mode else '' }}
+                                    class="sr-only" onchange="onSandboxModeChange()" />
+                                <span class="material-symbols-outlined text-[14px]">{{ icon }}</span>
+                                <span class="text-[10px] font-bold uppercase tracking-wider">{{ label }}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                        <!-- Warning for unrestricted mode -->
+                        <div id="sandbox-warning" class="mt-1 px-3 py-2 border border-red-500/40 bg-red-500/10 {{ '' if sandbox_mode == 'unrestricted' else 'hidden' }}">
+                            <span class="text-[10px] text-red-400 font-bold flex items-center gap-1">
+                                <span class="material-symbols-outlined text-[14px]">warning</span>
+                                CHẾ ĐỘ NGUY HIỂM — Bot có thể đọc/ghi/xóa file bất kỳ trên hệ thống
+                            </span>
+                        </div>
+                        <!-- Sandbox settings (shown when mode=workspace) -->
+                        <div id="sandbox-subdir" class="{{ '' if sandbox_mode == 'workspace' else 'hidden' }}">
+                            <div class="flex items-center gap-2 mt-1">
+                                <label for="workspace_subdir"
+                                    class="text-[9px] font-bold uppercase tracking-[0.2em] text-primary/70 whitespace-nowrap">Thư
+                                    mục con:</label>
+                                <input type="text" id="workspace_subdir" name="workspace_subdir"
+                                    value="{{ workspace_subdir }}" placeholder="để trống = sandbox root"
+                                    data-validated=""
+                                    class="flex-1 bg-black/60 border border-primary/30 focus:border-primary outline-none px-3 py-1.5 text-primary font-mono text-[11px] placeholder-primary/35 transition-all duration-300" />
+                                <button type="button" onclick="checkSubdir()"
+                                    id="btn-check-subdir"
+                                    class="px-2 py-1 border border-primary/40 text-primary/70 text-[9px] font-bold uppercase tracking-wider hover:bg-primary/10 hover:border-primary hover:text-primary transition-all duration-300 flex items-center gap-1 whitespace-nowrap"
+                                    title="Kiểm tra hợp lệ">
+                                    <span class="material-symbols-outlined text-[11px]">verified</span>
+                                    <span>Kiểm tra</span>
+                                </button>
+                                <span id="subdir-check-result" class="text-[10px] font-mono whitespace-nowrap" style="display:none;"></span>
+                            </div>
+                            <span class="text-[9px] text-primary/30">Ví dụ: "project" → bot chỉ exec trong
+                                workspace/sandbox/project</span>
+                            <!-- Allowed dirs (extra directories bot can access) -->
+                            <div class="mt-3 border-t border-primary/10 pt-2">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <span
+                                        class="text-[9px] font-bold uppercase tracking-[0.2em] text-primary/70">Thư mục được phép thêm:</span>
+                                    <button type="button" onclick="addAllowedDir()"
+                                        class="px-2 py-0.5 border border-primary/30 text-primary/60 text-[9px] font-bold uppercase tracking-wider hover:bg-primary/10 hover:border-primary hover:text-primary transition-all duration-300 flex items-center gap-1">
+                                        <span class="material-symbols-outlined text-[11px]">add</span>
+                                        <span>Thêm</span>
+                                    </button>
+                                </div>
+                                <div id="allowed-dirs-list" class="flex flex-col gap-1.5">
+                                    {% for dir in allowed_dirs %}
+                                    <div class="flex items-center gap-2 allowed-dir-row">
+                                        <input type="text" name="allowed_dir_{{ loop.index0 }}" value="{{ dir }}"
+                                            placeholder="D:\Projects\MyApp"
+                                            data-validated=""
+                                            class="flex-1 bg-black/60 border border-primary/20 focus:border-primary outline-none px-3 py-1.5 text-primary font-mono text-[11px] placeholder-primary/35 transition-all duration-300" />
+                                        <button type="button" onclick="checkAllowedDir(this)"
+                                            class="px-2 py-1 border border-primary/40 text-primary/70 hover:text-primary hover:bg-primary/10 transition-all flex items-center gap-1"
+                                            title="Kiểm tra hợp lệ">
+                                            <span class="material-symbols-outlined text-[14px]">verified</span>
+                                            <span class="text-[9px] font-bold uppercase tracking-wider">Kiểm tra</span>
+                                        </button>
+                                        <button type="button" onclick="removeAllowedDir(this)"
+                                            class="px-1.5 py-1 text-red-400/50 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                                            title="Xóa">
+                                            <span class="material-symbols-outlined text-[14px]">close</span>
+                                        </button>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                                <span class="text-[9px] text-primary/30 mt-1 block">Ngoài sandbox, bot còn được truy cập các thư mục liệt kê ở trên</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+

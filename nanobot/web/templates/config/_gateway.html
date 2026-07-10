@@ -1,0 +1,116 @@
+        <!-- ============================================================ -->
+        <!-- Section: Gateway -->
+        <!-- ============================================================ -->
+        <div class="matrix-card p-6">
+            <div class="flex items-center justify-between mb-4 border-b border-primary/20 pb-4 cursor-pointer"
+                onclick="toggleSection('gateway-body')">
+                <div class="flex items-center gap-3">
+                    <span class="material-symbols-outlined glow-text">router</span>
+                    <h3 class="text-xs font-bold uppercase tracking-widest glow-text">Gateway Configuration</h3>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="text-[10px] text-primary/30 font-mono">gateway.*</span>
+                    <span class="material-symbols-outlined text-primary/80 text-sm"
+                        id="gateway-body-icon">expand_more</span>
+                </div>
+            </div>
+
+            <div id="gateway-body" class="hidden">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="flex flex-col gap-2">
+                        <label class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
+                            Heartbeat_Enabled</label>
+                        <label class="flex items-center gap-4 cursor-pointer group py-2">
+                            <div class="relative">
+                                <input type="checkbox" id="heartbeat_enabled" name="heartbeat_enabled" {% if
+                                    heartbeat_enabled %}checked{% endif %} class="sr-only peer" />
+                                <div
+                                    class="w-14 h-7 bg-black/60 border border-primary/50 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300">
+                                </div>
+                                <div
+                                    class="absolute top-[3px] left-[3px] w-5 h-5 bg-primary/40 peer-checked:bg-primary peer-checked:shadow-[0_0_10px_#00FF41] peer-checked:translate-x-7 transition-all duration-300">
+                                </div>
+                            </div>
+                            <span class="text-sm font-bold glow-text uppercase" id="hb-label">{{ "ACTIVE" if
+                                heartbeat_enabled else "DISABLED" }}</span>
+                        </label>
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        <label for="heartbeat_interval"
+                            class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
+                            Heartbeat_Interval_S</label>
+                        <input type="number" id="heartbeat_interval" name="heartbeat_interval"
+                            value="{{ heartbeat_interval }}" min="60" max="86400"
+                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        <label for="web_port"
+                            class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
+                            Web_Dashboard_Port</label>
+                        <input type="number" id="web_port" name="web_port" value="{{ web_port }}" min="1024" max="65535"
+                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        <label for="web_host"
+                            class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
+                            Web_Bind_Address</label>
+                        <select id="web_host" name="web_host"
+                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm transition-all duration-300">
+                            <option value="127.0.0.1" {% if web_host == "127.0.0.1" %}selected{% endif %}>127.0.0.1 — localhost only (default, secure)</option>
+                            <option value="0.0.0.0" {% if web_host == "0.0.0.0" %}selected{% endif %}>0.0.0.0 — all interfaces (required for fleet/remote access)</option>
+                        </select>
+                        <p class="text-[10px] text-primary/50 font-mono">
+                            Use <span class="text-yellow-400">0.0.0.0</span> only if this bot runs on a remote machine and needs to be added to fleet-manager or fleet-trading. Restart required after change.
+                        </p>
+                    </div>
+                    <div class="flex flex-col gap-2" id="web-section">
+                        <label class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
+                            Web_Password
+                            {% if web_password and web_password.startswith('nanobot@') %}
+                            <span class="ml-2 text-yellow-400 normal-case font-normal">⚠ Default active — please change</span>
+                            {% endif %}
+                        </label>
+                        <!-- 2 fields side by side -->
+                        <div class="grid grid-cols-2 gap-3">
+                            <!-- New password -->
+                            <div class="relative">
+                                <input type="password" id="web_password" name="web_password" value="{{ web_password }}"
+                                    data-original="{{ web_password }}"
+                                    placeholder="New password..."
+                                    class="w-full bg-black/60 border {% if web_password and web_password.startswith('nanobot@') %}border-yellow-500/60{% else %}border-primary/50{% endif %} focus:border-primary outline-none px-4 py-3 pr-10 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                                <button type="button"
+                                    class="absolute right-2 top-1/2 -translate-y-1/2 text-primary/30 hover:text-primary transition-colors"
+                                    onmousedown="document.getElementById('web_password').type='text'"
+                                    onmouseup="document.getElementById('web_password').type='password'"
+                                    onmouseleave="document.getElementById('web_password').type='password'"
+                                    title="Hold to reveal">
+                                    <span class="material-symbols-outlined text-[18px]">visibility</span>
+                                </button>
+                            </div>
+                            <!-- Repeat password -->
+                            <div class="relative">
+                                <input type="password" id="web_password_confirm" placeholder="Repeat password..."
+                                    class="w-full bg-black/60 border border-primary/50 focus:border-primary outline-none px-4 py-3 pr-10 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                                <button type="button"
+                                    class="absolute right-2 top-1/2 -translate-y-1/2 text-primary/30 hover:text-primary transition-colors"
+                                    onmousedown="document.getElementById('web_password_confirm').type='text'"
+                                    onmouseup="document.getElementById('web_password_confirm').type='password'"
+                                    onmouseleave="document.getElementById('web_password_confirm').type='password'"
+                                    title="Hold to reveal">
+                                    <span class="material-symbols-outlined text-[18px]">visibility</span>
+                                </button>
+                            </div>
+                        </div>
+                        <span id="pwd-match-msg" class="text-[10px] font-mono hidden"></span>
+                        {% if web_password and web_password.startswith('nanobot@') %}
+                        <p class="text-[10px] text-yellow-400/70 font-mono leading-relaxed">
+                            Mật khẩu hiện tại: <code class="text-yellow-300">{{ web_password }}</code><br>
+                            Nhập mật khẩu mới → bấm <strong class="text-primary/80">Save Config</strong> → sau đó <strong class="text-primary/80">restart gateway</strong> để áp dụng.
+                        </p>
+                        {% endif %}
+                    </div>
+
+                </div>
+            </div>
+        </div>
+

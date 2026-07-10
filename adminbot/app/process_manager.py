@@ -401,19 +401,13 @@ class BotProcessManager:
         if not workspace.exists():
             raise RuntimeError(f"Workspace does not exist: {workspace}")
 
-        if _is_windows():
-            self._open_windows_shell(bot)
-            return
+        if not _is_windows():
+            raise RuntimeError(
+                "Open Workspace Shell is only supported on Windows. "
+                "On Linux/macOS, connect over SSH and cd into the workspace directly."
+            )
 
-        shell = os.environ.get("SHELL", "bash")
-        subprocess.Popen(
-            [shell],
-            cwd=workspace,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
+        self._open_windows_shell(bot)
 
     def _open_windows_shell(self, bot: BotRecord) -> None:
         workspace = str(Path(bot.workspace))

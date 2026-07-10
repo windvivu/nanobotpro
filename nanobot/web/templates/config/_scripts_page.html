@@ -1,0 +1,998 @@
+    async function submitConfigAjax(event) {
+        if (event) event.preventDefault();
+        if (!confirmSandboxSave()) return false;
+
+        const form = event ? event.target : document.querySelector('form[action="/config"]');
+        const btn = document.getElementById('save-btn');
+        const result = document.getElementById('config-save-result');
+        if (!form) return false;
+
+        if (btn) {
+            btn.disabled = true;
+            btn.style.opacity = '0.55';
+        }
+        if (result) {
+            result.style.display = 'inline';
+            result.innerHTML = '<span style="color: #00FF41;">⟳ Saving...</span>';
+        }
+
+        try {
+            const response = await fetch(form.action, {
+                method: 'POST',
+                body: new FormData(form),
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json',
+                },
+            });
+            const data = await response.json();
+            if (data.success) {
+                if (result) result.innerHTML = '<span style="color: #00FF41;">✓ ' + (data.message || 'Configuration saved') + '</span>';
+                const pwd = document.getElementById('web_password');
+                if (pwd) pwd.dataset.original = pwd.value || '';
+                refreshEffectiveRoute();
+            } else {
+                if (result) result.innerHTML = '<span style="color: #ff6b6b;">✗ ' + (data.error || 'Save failed') + '</span>';
+            }
+        } catch (e) {
+            if (result) result.innerHTML = '<span style="color: #ff6b6b;">✗ Network error</span>';
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.style.opacity = '1';
+            }
+        }
+        return false;
+    }
+
+    function onSandboxModeChange() {
+        const mode = document.querySelector('input[name="sandbox_mode"]:checked')?.value || 'unrestricted';
+        const subdir = document.getElementById('sandbox-subdir');
+        const warning = document.getElementById('sandbox-warning');
+        if (subdir) subdir.classList.toggle('hidden', mode !== 'workspace');
+        if (warning) warning.classList.toggle('hidden', mode !== 'unrestricted');
+        document.querySelectorAll('input[name="sandbox_mode"]').forEach(radio => {
+            const lbl = radio.closest('label');
+            if (!lbl) return;
+            if (radio.checked) {
+                lbl.classList.remove('border-primary/20', 'text-primary/50', 'hover:border-primary/50');
+                lbl.classList.add('border-primary', 'bg-primary/15', 'text-primary');
+            } else {
+                lbl.classList.remove('border-primary', 'bg-primary/15', 'text-primary');
+                lbl.classList.add('border-primary/20', 'text-primary/50', 'hover:border-primary/50');
+            }
+        });
+    }
+    // ── Tool Preset ──
+    function onToolPresetChange() {
+        const preset = document.querySelector('input[name="tool_preset"]:checked')?.value || 'developer';
+        const summary = document.getElementById('preset-summary');
+        const toggles = document.getElementById('preset-custom-toggles');
+        if (preset === 'custom') {
+            if (summary) summary.classList.add('hidden');
+            if (toggles) toggles.classList.remove('hidden');
+        } else {
+            if (summary) summary.classList.remove('hidden');
+            if (toggles) toggles.classList.add('hidden');
+            /* legacy summary removed
+                const summaryText = {
+                    chatbot: 'Chá»‰ Message + Web + MCP â€” File, Exec, Spawn, Cron táº¯t',
+                    coder: 'File, Exec, Web, MCP báº­t â€” Spawn vÃ  Cron táº¯t',
+                    developer: 'Táº¥t cáº£ tools báº­t (File, Exec, Web, Spawn, Cron, MCP)',
+                };
+                content.textContent = summaryText[preset] || summaryText.developer;
+            } else if (false) {
+                content.textContent = preset === 'chatbot'
+                    ? 'Chỉ Message + Web + MCP — File, Exec, Spawn, Cron tắt'
+                    : 'Tất cả tools bật (File, Exec, Web, Spawn, Cron, MCP)';
+            */
+        }
+        const liveContent = document.getElementById('preset-summary-content');
+        if (preset !== 'custom' && liveContent) {
+            const liveSummaryText = {
+                chatbot: 'Message + Web + MCP only - File, Exec, Spawn, Cron off',
+                coder: 'File, Exec, Web, MCP on - Spawn and Cron off',
+                developer: 'All tools on (File, Exec, Web, Spawn, Cron, MCP)',
+            };
+            liveContent.textContent = liveSummaryText[preset] || liveSummaryText.developer;
+        }
+        document.querySelectorAll('input[name="tool_preset"]').forEach(radio => {
+            const lbl = radio.closest('label');
+            if (!lbl) return;
+            if (radio.checked) {
+                lbl.classList.remove('border-primary/20', 'text-primary/50', 'hover:border-primary/50');
+                lbl.classList.add('border-primary', 'bg-primary/15', 'text-primary');
+            } else {
+                lbl.classList.remove('border-primary', 'bg-primary/15', 'text-primary');
+                lbl.classList.add('border-primary/20', 'text-primary/50', 'hover:border-primary/50');
+            }
+        });
+    }
+    let _adIdx = {{ allowed_dirs | length }};
+    function addAllowedDir() {
+        const list = document.getElementById('allowed-dirs-list');
+        if (!list) return;
+        const row = document.createElement('div');
+        row.className = 'flex items-center gap-2 allowed-dir-row';
+        row.innerHTML = '<input type="text" name="allowed_dir_' + _adIdx + '" placeholder="D:\\\\Projects\\\\MyApp" data-validated="" class="flex-1 bg-black/60 border border-primary/20 focus:border-primary outline-none px-3 py-1.5 text-primary font-mono text-[11px] placeholder-primary/35 transition-all duration-300" /> <button type="button" onclick="checkAllowedDir(this)" class="px-2 py-1 border border-primary/40 text-primary/70 hover:text-primary hover:bg-primary/10 transition-all flex items-center gap-1" title="Kiểm tra hợp lệ"><span class="material-symbols-outlined text-[14px]">verified</span><span class="text-[9px] font-bold uppercase tracking-wider">Kiểm tra</span></button> <button type="button" onclick="removeAllowedDir(this)" class="px-1.5 py-1 text-red-400/50 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Xóa"><span class="material-symbols-outlined text-[14px]">close</span></button>';
+        list.appendChild(row);
+        _adIdx++;
+        row.querySelector('input')?.focus();
+    }
+    function removeAllowedDir(btn) {
+        btn.closest('.allowed-dir-row')?.remove();
+    }
+
+    // ── Path validation ──
+    async function _checkPath(path, mode) {
+        const resp = await fetch('/config/check-path', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path, mode }),
+        });
+        return await resp.json();
+    }
+
+    function _setValidated(input, valid, btnEl) {
+        input.dataset.validated = valid ? 'true' : 'false';
+        if (valid) {
+            input.style.borderColor = '#00FF41';
+            input.style.boxShadow = '0 0 8px rgba(0,255,65,0.2)';
+        } else {
+            input.style.borderColor = '#ff6b6b';
+            input.style.boxShadow = '0 0 8px rgba(255,107,107,0.2)';
+        }
+        // Update the check button appearance
+        if (btnEl) {
+            const iconEl = btnEl.querySelector('.material-symbols-outlined');
+            if (iconEl) {
+                iconEl.textContent = valid ? 'check_circle' : 'error';
+                iconEl.style.color = valid ? '#00FF41' : '#ff6b6b';
+            }
+            // Update button border & bg
+            if (valid) {
+                btnEl.style.borderColor = '#00FF41';
+                btnEl.style.background = 'rgba(0,255,65,0.1)';
+                btnEl.style.color = '#00FF41';
+            } else {
+                btnEl.style.borderColor = '#ff6b6b';
+                btnEl.style.background = 'rgba(255,107,107,0.1)';
+                btnEl.style.color = '#ff6b6b';
+            }
+        }
+    }
+
+    function _resetValidation(input) {
+        input.dataset.validated = '';
+        input.style.borderColor = '';
+        input.style.boxShadow = '';
+        // Reset check button in the same row
+        const row = input.closest('.allowed-dir-row') || input.closest('.flex');
+        if (row) {
+            const btn = row.querySelector('button[onclick*="check"]');
+            if (btn) {
+                const icon = btn.querySelector('.material-symbols-outlined');
+                if (icon) {
+                    icon.textContent = 'verified';
+                    icon.style.color = '';
+                }
+                btn.style.borderColor = '';
+                btn.style.background = '';
+                btn.style.color = '';
+            }
+        }
+        if (input.id === 'workspace_subdir') {
+            const r = document.getElementById('subdir-check-result');
+            if (r) r.style.display = 'none';
+        }
+    }
+
+    // Subdir: syntax check only (dir will be auto-created)
+    async function checkSubdir() {
+        const input = document.getElementById('workspace_subdir');
+        const result = document.getElementById('subdir-check-result');
+        const btn = document.getElementById('btn-check-subdir');
+        const subdir = input?.value?.trim();
+
+        if (!subdir) {
+            _setValidated(input, true, btn);
+            result.style.display = 'inline';
+            result.innerHTML = '<span style="color: #00FF41;">✓ Mặc định sandbox root</span>';
+            return;
+        }
+        const fullPath = '{{ workspace }}' + '/sandbox/' + subdir;
+        result.style.display = 'inline';
+        result.innerHTML = '<span style="color: #00FF41;">⟳ ...</span>';
+        try {
+            const resp = await fetch('/config/check-path', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: fullPath, name: subdir, mode: 'syntax' }),
+            });
+            const data = await resp.json();
+            if (data.valid) {
+                _setValidated(input, true, btn);
+                const note = data.exists ? '✓ Hợp lệ (đã tồn tại)' : '✓ Hợp lệ (sẽ tự tạo)';
+                result.innerHTML = '<span style="color: #00FF41;">' + note + '</span>';
+            } else {
+                _setValidated(input, false, btn);
+                result.innerHTML = '<span style="color: #ff6b6b;">✗ ' + data.error + '</span>';
+            }
+        } catch (e) {
+            _setValidated(input, false, btn);
+            result.innerHTML = '<span style="color: #ff6b6b;">✗ Lỗi kết nối</span>';
+        }
+    }
+
+    // Allowed dir: must exist
+    async function checkAllowedDir(btn) {
+        const row = btn.closest('.allowed-dir-row');
+        const input = row?.querySelector('input');
+        const path = input?.value?.trim();
+        if (!path) {
+            _setValidated(input, false, btn);
+            return;
+        }
+        try {
+            const data = await _checkPath(path, 'exists');
+            _setValidated(input, data.valid, btn);
+        } catch (e) {
+            _setValidated(input, false, btn);
+        }
+    }
+
+    // Reset validation when user edits
+    document.addEventListener('input', function(e) {
+        if (e.target.id === 'workspace_subdir' || e.target.closest('.allowed-dir-row')) {
+            _resetValidation(e.target);
+        }
+    });
+    // Auto-open section from URL hash (e.g. #channels-body)
+    (function() {
+        const hash = location.hash.replace('#', '');
+        if (hash) {
+            const el = document.getElementById(hash);
+            if (el && el.classList.contains('hidden')) {
+                el.classList.remove('hidden');
+                const icon = document.getElementById(hash + '-icon');
+                if (icon) icon.textContent = 'expand_less';
+            }
+        }
+    })();
+
+    // Reveal/hide password fields
+    function toggleReveal(btn) {
+        const input = btn.parentElement.querySelector('input');
+        const icon = btn.querySelector('.material-symbols-outlined');
+        if (input.type === 'password') {
+            input.type = 'text';
+            icon.textContent = 'visibility_off';
+        } else {
+            input.type = 'password';
+            icon.textContent = 'visibility';
+        }
+    }
+
+    // ── Help Tooltips ──
+    const helpTexts = {
+        'model': 'Tên model AI sử dụng (ví dụ: gemini/gemini-2.5-pro, gpt-4o). Đây là "bộ não" của bot.',
+        'provider': 'Nhà cung cấp AI (ví dụ: google, openai, anthropic). Quyết định API nào được gọi.',
+        'temperature': 'Độ sáng tạo của bot (0 = chính xác, 2 = sáng tạo tối đa). Nên để 0.5–0.8 cho hội thoại.',
+        'max_tokens': 'Số token tối đa mỗi lần trả lời. Token ≈ 0.75 từ tiếng Anh. Càng cao → trả lời dài hơn nhưng tốn phí.',
+        'max_tool_iterations': 'Số vòng lặp tool tối đa. Bot có thể gọi nhiều tool liên tiếp (tìm kiếm, chạy code...). Giới hạn để tránh vòng lặp vô hạn.',
+        'unified_session_toggle': 'Khi bật, các chat bình thường từ mọi channel sẽ dùng chung một history: unified:default. Điều này hữu ích cho bot cá nhân/single-user, nhưng nguy hiểm với bot nhiều người dùng vì ngữ cảnh của người này có thể ảnh hưởng người khác. Thread override và system session vẫn tách riêng.',
+        'max_tool_result_chars': 'Global budget cho mọi model/preset. Giới hạn số ký tự giữ lại từ mỗi tool result trước khi đưa lại vào LLM context. Áp dụng cho file, web/search, exec, MCP và các tool output đi qua shared runner. Thấp hơn tiết kiệm token nhưng có thể thiếu chi tiết.',
+        'context_window_tokens': 'Kích thước context window (tokens). Hệ thống tự động tóm tắt lịch sử khi gần đầy. Mặc định 65536 — phù hợp hầu hết models. Tăng lên để tận dụng context dài hơn (Claude 200K, Gemini 1M...).',
+        'reasoning_effort_select': 'Mức độ suy luận của model. Chọn Custom nếu gateway riêng yêu cầu giá trị ngoài danh sách.',
+        'exec_timeout': 'Thời gian chờ tối đa (giây) khi bot chạy lệnh/code. Nếu quá thời gian → tự động dừng.',
+        'exec_path_append': 'Thêm đường dẫn vào PATH khi chạy tool. Hữu ích nếu cần truy cập chương trình ngoài.',
+        'web_proxy': 'Proxy HTTP/HTTPS để truy cập web. Định dạng: http://host:port. Để trống nếu không dùng.',
+        'search_provider': 'Chọn backend tìm kiếm web. DuckDuckGo không cần key; SearXNG dùng base URL; các provider còn lại dùng API key.',
+        'search_api_key': 'API key cho provider search đã chọn. Nút Test hiện hỗ trợ Brave Search và Tavily trong dashboard.',
+        'search_base_url': 'Base URL của instance SearXNG, ví dụ: https://search.example.com.',
+        'sandbox_mode': '3 chế độ: Không hạn chế (bot toàn quyền), Giới hạn workspace (bot chỉ làm việc trong workspace), Whitelist (workspace + các thư mục chỉ định).',
+        'tool_preset': '4 preset: Developer (all tools on), Coder (Spawn/Cron off), Chatbot (safe public mode), Custom (per-group toggles).',
+        'heartbeat_enabled': 'Cho bot tự "thức dậy" định kỳ để thực hiện các nhiệm vụ được viết trong file HEARTBEAT.md (giám sát, nhắc nhở...). ⚠ Khi bật, mỗi lần tick sẽ gọi LLM (~300 tokens) dù không có task.',
+        'heartbeat_interval': 'Khoảng thời gian (giây) giữa các lần heartbeat. Ví dụ: 3600 = mỗi 1 giờ.',
+        'web_port': 'Cổng mạng cho Web Dashboard. Mặc định: 8899. Truy cập: http://localhost:<port>',
+        'web_password': 'Mật khẩu đăng nhập Web Dashboard. Để trống = không yêu cầu đăng nhập.',
+    };
+
+    // Auto-inject (?) icons
+    document.querySelectorAll('label[for]').forEach(label => {
+        const fieldId = label.getAttribute('for');
+        if (helpTexts[fieldId]) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'inline-flex items-center justify-center w-4 h-4 ml-2 text-[8px] font-bold border border-primary/40 text-primary/50 hover:text-primary hover:border-primary rounded-full transition-all cursor-pointer align-middle';
+            btn.textContent = '?';
+            btn.onclick = function (e) { e.stopPropagation(); showHelp(this, fieldId); };
+            label.appendChild(btn);
+        }
+    });
+
+    // Checkbox labels (no 'for' attr)
+    document.querySelectorAll('.flex.flex-col.gap-2 > label:first-child').forEach(label => {
+        if (label.getAttribute('for')) return;
+        const text = label.textContent.trim();
+        let fieldId = null;
+        if (text.includes('Exec_Sandbox')) fieldId = 'sandbox_mode';
+        else if (text.includes('Heartbeat_Enabled')) fieldId = 'heartbeat_enabled';
+        if (fieldId && helpTexts[fieldId]) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'inline-flex items-center justify-center w-4 h-4 ml-2 text-[8px] font-bold border border-primary/40 text-primary/50 hover:text-primary hover:border-primary rounded-full transition-all cursor-pointer align-middle';
+            btn.textContent = '?';
+            btn.onclick = function (e) { e.stopPropagation(); showHelp(this, fieldId); };
+            label.appendChild(btn);
+        }
+    });
+
+    let activeHelp = null;
+    function showHelp(btn, fieldId) {
+        if (activeHelp) { activeHelp.remove(); activeHelp = null; }
+        const tip = document.createElement('div');
+        tip.style.cssText = 'position:absolute;left:0;right:0;top:100%;z-index:30;margin-top:4px;padding:10px 14px;background:rgba(20,15,0,0.97);border:1px solid rgba(255,200,0,0.5);box-shadow:0 4px 20px rgba(255,200,0,0.12),0 0 0 1px rgba(255,200,0,0.1);animation:helpIn 0.2s ease-out;';
+        tip.innerHTML = '<div class="flex items-start gap-2"><span class="material-symbols-outlined text-sm mt-0.5" style="color:#ffc800">info</span><p class="text-xs leading-relaxed flex-1" style="color:rgba(255,200,0,0.9)">' + helpTexts[fieldId] + '</p></div>';
+        const parent = btn.closest('.flex.flex-col');
+        parent.style.position = 'relative';
+        parent.appendChild(tip);
+        activeHelp = tip;
+        // Dismiss on click outside
+        setTimeout(() => {
+            document.addEventListener('click', function _dismiss(e) {
+                if (!tip.contains(e.target)) {
+                    tip.remove();
+                    activeHelp = null;
+                    document.removeEventListener('click', _dismiss);
+                }
+            });
+        }, 0);
+    }
+
+    async function restartGateway() {
+        const confirmed = await showMatrixConfirm(
+            'RESTART GATEWAY',
+            'Hệ thống sẽ ngắt kết nối tất cả channels và sessions.\n\n' +
+            '▸ Gateway sẽ tự khởi động lại sau 1-2 giây\n' +
+            '▸ Dashboard tự tải lại khi server sẵn sàng'
+        );
+        if (!confirmed) return;
+        window.location.href = '/restarting?next=' + encodeURIComponent('/config');
+    }
+
+    function showMatrixConfirm(title, message, confirmLabel, subtitle, options = {}) {
+        return new Promise((resolve) => {
+            const overlay = document.getElementById('matrix-modal-overlay');
+            document.getElementById('matrix-modal-title').textContent = title;
+            document.getElementById('matrix-modal-message').textContent = message;
+            document.getElementById('matrix-modal-confirm-text').textContent = confirmLabel || 'CONFIRM RESTART';
+            document.getElementById('matrix-modal-subtitle').textContent = subtitle || 'SYS.RESTART';
+            const cancelBtn = document.getElementById('matrix-modal-cancel-btn');
+            if (cancelBtn) cancelBtn.classList.toggle('hidden', !!options.hideCancel);
+            overlay.style.display = 'flex';
+            overlay.classList.remove('hidden');
+            overlay._resolve = resolve;
+        });
+    }
+    function matrixModalAction(confirmed) {
+        const overlay = document.getElementById('matrix-modal-overlay');
+        overlay.classList.add('hidden');
+        overlay.style.display = 'none';
+        if (overlay._resolve) overlay._resolve(confirmed);
+    }
+
+    let _oauthFlowSubmit = null;
+
+    function showOAuthFlowModal(options) {
+        const overlay = document.getElementById('oauth-flow-modal-overlay');
+        if (!overlay) return;
+        document.getElementById('oauth-flow-modal-title').textContent = options.title || 'OAUTH LOGIN';
+        document.getElementById('oauth-flow-modal-subtitle').textContent = options.subtitle || 'SYS.OAUTH';
+        document.getElementById('oauth-flow-auth-url').value = options.authUrl || '';
+        const inputLabel = document.getElementById('oauth-flow-input-label');
+        const callbackInput = document.getElementById('oauth-flow-callback-input');
+        if (inputLabel) {
+            inputLabel.textContent = options.inputLabel || 'Paste callback URL';
+            inputLabel.classList.toggle('hidden', !!options.hideInput);
+        }
+        if (callbackInput) {
+            callbackInput.value = '';
+            callbackInput.placeholder = options.placeholder || 'callback URL';
+            callbackInput.classList.toggle('hidden', !!options.hideInput);
+        }
+        document.getElementById('oauth-flow-submit-text').textContent = options.submitLabel || 'CONFIRM';
+        const warning = document.getElementById('oauth-flow-warning');
+        if (warning) {
+            warning.textContent = options.warning || '';
+            warning.classList.toggle('hidden', !options.warning);
+        }
+        const status = document.getElementById('oauth-flow-status');
+        if (status) {
+            status.className = 'hidden text-[10px] font-mono';
+            status.textContent = '';
+        }
+        _oauthFlowSubmit = options.onSubmit || null;
+        overlay.dataset.allowEmptySubmit = options.allowEmptySubmit ? '1' : '';
+        overlay.style.display = 'flex';
+        overlay.classList.remove('hidden');
+        if (!options.hideInput) {
+            setTimeout(() => document.getElementById('oauth-flow-callback-input')?.focus(), 50);
+        }
+    }
+
+    function closeOAuthFlowModal() {
+        const overlay = document.getElementById('oauth-flow-modal-overlay');
+        if (overlay) {
+            overlay.classList.add('hidden');
+            overlay.style.display = 'none';
+            overlay.dataset.allowEmptySubmit = '';
+        }
+        _oauthFlowSubmit = null;
+    }
+
+    function oauthFlowCopyUrl() {
+        const input = document.getElementById('oauth-flow-auth-url');
+        if (input?.value) navigator.clipboard.writeText(input.value).catch(function() {});
+    }
+
+    function oauthFlowStatus(statusEl, message, tone) {
+        if (!statusEl) return;
+        statusEl.classList.remove('hidden');
+        statusEl.className = 'text-[10px] font-mono ' + (
+            tone === 'success' ? 'text-primary/80' :
+            tone === 'warn' ? 'text-yellow-400/80' :
+            'text-red-400/80'
+        );
+        statusEl.textContent = message;
+    }
+
+    async function oauthFlowSubmit() {
+        const input = document.getElementById('oauth-flow-callback-input');
+        const status = document.getElementById('oauth-flow-status');
+        const submitBtn = document.getElementById('oauth-flow-submit-btn');
+        const value = (input?.value || '').trim();
+        const allowEmpty = document.getElementById('oauth-flow-modal-overlay')?.dataset.allowEmptySubmit === '1';
+        if (!value && !allowEmpty) {
+            oauthFlowStatus(status, 'Paste callback URL or code first.', 'error');
+            return;
+        }
+        if (!_oauthFlowSubmit) return;
+        if (submitBtn) submitBtn.disabled = true;
+        oauthFlowStatus(status, 'Confirming OAuth login...', 'success');
+        try {
+            await _oauthFlowSubmit(value, status);
+        } catch (e) {
+            oauthFlowStatus(status, 'OAuth login failed: ' + e, 'error');
+        } finally {
+            if (submitBtn) submitBtn.disabled = false;
+        }
+    }
+
+    // ── Channel Enable/Disable ──
+    async function toggleChannel(channel, enabled) {
+        // Special guard: block disabling Zalo while connected
+        if (channel === 'zalo' && !enabled) {
+            try {
+                const statusRes = await fetch('/zalo/status');
+                const statusData = await statusRes.json();
+                if (statusData.status === 'connected' || statusData.status === 'connecting') {
+                    const el = document.getElementById('toggle-channel-result');
+                    if (el) {
+                        el.style.display = 'inline';
+                        el.innerHTML = '<span class="text-yellow-400">⚠ Zalo đang kết nối — hãy <a href="/zalo/setup" class="underline text-primary hover:text-primary/80">ngắt kết nối</a> trước khi disable.</span>';
+                    }
+                    return;  // Block the disable
+                }
+            } catch (e) { /* if fetch fails, proceed normally */ }
+        }
+
+        if (!enabled) {
+            const ok = await showMatrixConfirm(
+                'DISABLE CHANNEL',
+                `Tắt kênh "${channel}"?\n\nKênh sẽ không hoạt động cho đến khi được bật lại.\nRestart gateway để áp dụng.`,
+                'CONFIRM DISABLE',
+                'SYS.CHANNEL'
+            );
+            if (!ok) return;
+        }
+        try {
+            const resp = await fetch('/config/toggle-channel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ channel, enabled }),
+            });
+            const data = await resp.json();
+            if (data.success) {
+                location.href = '/config#channels-body';  // keep section open
+                location.reload();
+            } else {
+                const el = document.getElementById('toggle-channel-result');
+                if (el) { el.style.display = 'inline'; el.innerHTML = '<span class="text-red-400">✗ ' + data.error + '</span>'; }
+            }
+        } catch (e) {
+            console.error('Toggle channel failed:', e);
+        }
+    }
+
+    function enableSelectedChannel() {
+        const sel = document.getElementById('enable-channel-select');
+        const channel = sel ? sel.value : '';
+        if (!channel) return;
+        toggleChannel(channel, true);
+    }
+
+    const SEARCH_PROVIDER_META = {
+        duckduckgo: {
+            label: '',
+            help: 'DuckDuckGo uses the public no-key search path.',
+            needsKey: false,
+            needsBaseUrl: false,
+            canTest: false,
+        },
+        brave: {
+            label: 'Brave_Search_Key',
+            help: 'Brave Search API key. Test is supported here. Register at brave.com/search/api.',
+            needsKey: true,
+            needsBaseUrl: false,
+            canTest: true,
+        },
+        tavily: {
+            label: 'Tavily_API_Key',
+            help: 'Tavily API key. Test is supported here.',
+            needsKey: true,
+            needsBaseUrl: false,
+            canTest: true,
+        },
+        searxng: {
+            label: '',
+            help: 'SearXNG uses a base URL for your search instance. No API key is required here.',
+            needsKey: false,
+            needsBaseUrl: true,
+            canTest: false,
+        },
+        jina: {
+            label: 'Jina_API_Key',
+            help: 'Jina search API key. Dashboard test is deferred for this provider.',
+            needsKey: true,
+            needsBaseUrl: false,
+            canTest: false,
+        },
+        kagi: {
+            label: 'Kagi_API_Key',
+            help: 'Kagi Search API key. Dashboard test is deferred for this provider.',
+            needsKey: true,
+            needsBaseUrl: false,
+            canTest: false,
+        },
+    };
+
+    let _searchProviderCurrent = null;
+    const _searchProviderKeyCache = {};
+    const _searchProviderBaseUrlCache = {};
+
+    function searchProviderRememberCurrent() {
+        const keyInput = document.getElementById('search_api_key');
+        const baseInput = document.getElementById('search_base_url');
+        const current = _searchProviderCurrent || document.getElementById('search_provider')?.value || 'duckduckgo';
+        const meta = SEARCH_PROVIDER_META[current] || SEARCH_PROVIDER_META.duckduckgo;
+        if (meta.needsKey && keyInput) _searchProviderKeyCache[current] = keyInput.value;
+        if (meta.needsBaseUrl && baseInput) _searchProviderBaseUrlCache[current] = baseInput.value;
+    }
+
+    function updateSearchProviderFields() {
+        const provider = document.getElementById('search_provider')?.value || 'duckduckgo';
+        const meta = SEARCH_PROVIDER_META[provider] || SEARCH_PROVIDER_META.duckduckgo;
+        const keyWrap = document.getElementById('search-api-key-wrap');
+        const baseWrap = document.getElementById('search-base-url-wrap');
+        const testBtn = document.getElementById('test-brave-btn');
+        const result = document.getElementById('brave-test-result');
+        const keyLabel = document.getElementById('search-api-key-label');
+        const help = document.getElementById('search-provider-help');
+        const keyInput = document.getElementById('search_api_key');
+        const baseInput = document.getElementById('search_base_url');
+        if (_searchProviderCurrent && _searchProviderCurrent !== provider) {
+            searchProviderRememberCurrent();
+        } else if (_searchProviderCurrent === null) {
+            if (keyInput && meta.needsKey) _searchProviderKeyCache[provider] = keyInput.value;
+            if (baseInput && meta.needsBaseUrl) _searchProviderBaseUrlCache[provider] = baseInput.value;
+        }
+        if (keyWrap) keyWrap.classList.toggle('hidden', !meta.needsKey);
+        if (baseWrap) baseWrap.classList.toggle('hidden', !meta.needsBaseUrl);
+        if (testBtn) testBtn.classList.toggle('hidden', !meta.canTest);
+        if (keyInput) keyInput.value = meta.needsKey ? (_searchProviderKeyCache[provider] || '') : '';
+        if (baseInput) baseInput.value = meta.needsBaseUrl ? (_searchProviderBaseUrlCache[provider] || '') : '';
+        if (result && !meta.canTest) {
+            result.style.display = 'none';
+            result.textContent = '';
+        }
+        if (keyLabel && meta.label) keyLabel.innerHTML = '&gt; ' + meta.label;
+        if (help) help.textContent = meta.help;
+        _searchProviderCurrent = provider;
+    }
+
+    document.addEventListener('DOMContentLoaded', updateSearchProviderFields);
+
+    async function saveSearchProvider() {
+        searchProviderRememberCurrent();
+        const provider = document.getElementById('search_provider')?.value || 'duckduckgo';
+        const key = document.getElementById('search_api_key')?.value?.trim() || '';
+        const baseUrl = document.getElementById('search_base_url')?.value?.trim() || '';
+        const btn = document.getElementById('btn-save-search-provider');
+        const result = document.getElementById('search-save-result');
+        if (btn) {
+            btn.disabled = true;
+            btn.style.opacity = '0.5';
+        }
+        if (result) {
+            result.style.display = 'inline';
+            result.innerHTML = '<span style="color: #00FF41;">⟳ Saving...</span>';
+        }
+        try {
+            const resp = await fetch('/config/save-search-provider', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider, api_key: key, base_url: baseUrl }),
+            });
+            const data = await resp.json();
+            if (data.success) {
+                if (result) result.innerHTML = '<span style="color: #00FF41;">✓ ' + (data.message || 'Saved') + '</span>';
+            } else {
+                if (result) result.innerHTML = '<span style="color: #ff6b6b;">✗ ' + (data.error || 'Save failed') + '</span>';
+            }
+        } catch (e) {
+            if (result) result.innerHTML = '<span style="color: #ff6b6b;">✗ Network error</span>';
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.style.opacity = '1';
+            }
+        }
+    }
+
+    // ── Test Search Provider Key ──
+    async function testBraveKey() {
+        const provider = document.getElementById('search_provider')?.value || 'duckduckgo';
+        const meta = SEARCH_PROVIDER_META[provider] || SEARCH_PROVIDER_META.duckduckgo;
+        if (!meta.canTest) return;
+        const input = document.getElementById('search_api_key');
+        const result = document.getElementById('brave-test-result');
+        const btn = document.getElementById('test-brave-btn');
+        const key = input ? input.value.trim() : '';
+
+        if (!key) {
+            result.style.display = 'inline';
+            result.innerHTML = '<span style="color: #ff6b6b;">✗ Key trống</span>';
+            return;
+        }
+
+        // Show loading
+        btn.disabled = true;
+        btn.style.opacity = '0.5';
+        result.style.display = 'inline';
+        result.innerHTML = '<span style="color: #00FF41;">⟳ Testing...</span>';
+
+        try {
+            const resp = await fetch('/config/test-search-provider', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider, api_key: key }),
+            });
+            const data = await resp.json();
+            if (data.success) {
+                result.innerHTML = '<span style="color: #00FF41;">✓ ' + data.message + '</span>';
+            } else {
+                result.innerHTML = '<span style="color: #ff6b6b;">✗ ' + data.error + '</span>';
+            }
+        } catch (e) {
+            result.innerHTML = '<span style="color: #ff6b6b;">✗ Connection error</span>';
+        } finally {
+            btn.disabled = false;
+            btn.style.opacity = '1';
+        }
+    }
+
+    // ── Test Telegram Token ──
+    async function testTelegramToken() {
+        const input = document.getElementById('channel_telegram_token');
+        const result = document.getElementById('telegram-test-result');
+        const btn = document.getElementById('test-telegram-btn');
+        const token = input ? input.value.trim() : '';
+
+        if (!token) {
+            result.style.display = 'inline';
+            result.innerHTML = '<span style="color: #ff6b6b;">✗ Token trống</span>';
+            return;
+        }
+
+        btn.disabled = true;
+        btn.style.opacity = '0.5';
+        result.style.display = 'inline';
+        result.innerHTML = '<span style="color: #00FF41;">⟳ Testing...</span>';
+
+        try {
+            const resp = await fetch('/config/test-telegram-token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token }),
+            });
+            const data = await resp.json();
+            if (data.success) {
+                result.innerHTML = '<span style="color: #00FF41;">✓ ' + data.message + '</span>';
+                setTimeout(() => {
+                    document.querySelector('form[action="/config"]').submit();
+                }, 800);
+            } else {
+                result.innerHTML = '<span style="color: #ff6b6b;">✗ ' + data.error + '</span>';
+            }
+        } catch (err) {
+            result.innerHTML = '<span style="color: #ff6b6b;">✗ Network error</span>';
+        } finally {
+            btn.disabled = false;
+            btn.style.opacity = '1';
+        }
+    }
+    // ══════════════════════════════════
+    // OAuth Panel: OpenAI Codex, xAI OAuth, and GitHub Copilot
+    // ══════════════════════════════════
+    let _codexSessionId = null;
+    let _xaiSessionId = null;
+    let _copilotSessionId = null;
+    let _copilotPollTimer = null;
+    let _copilotPollInterval = 5;
+
+    function oauthPanelUpdate(providerName) {
+        const panel = document.getElementById('oauth-panel');
+        const codexSection = document.getElementById('oauth-codex-section');
+        const copilotSection = document.getElementById('oauth-copilot-section');
+        const xaiSection = document.getElementById('oauth-xai-section');
+        if (!panel) return;
+        const isOAuth = (providerName === 'openai_codex' || providerName === 'github_copilot' || providerName === 'xai_oauth');
+        const keyRow = document.getElementById('active-provider-key')?.closest('.flex-col');
+        const baseRow = document.getElementById('active-provider-base')?.closest('.flex-col');
+        const testModelRow = document.getElementById('active-provider-model')?.closest('.mt-2');
+        const btnTest = document.getElementById('btn-test-active');
+        if (keyRow) keyRow.style.display = isOAuth ? 'none' : '';
+        if (baseRow) baseRow.style.display = isOAuth ? 'none' : '';
+        if (testModelRow) testModelRow.style.display = isOAuth ? 'none' : '';
+        if (btnTest) btnTest.style.display = isOAuth ? 'none' : '';
+        if (providerName === 'openai_codex') {
+            panel.classList.remove('hidden');
+            if (codexSection) codexSection.classList.remove('hidden');
+            if (copilotSection) copilotSection.classList.add('hidden');
+            if (xaiSection) xaiSection.classList.add('hidden');
+            codexCheckStatus();
+        } else if (providerName === 'github_copilot') {
+            panel.classList.remove('hidden');
+            if (codexSection) codexSection.classList.add('hidden');
+            if (copilotSection) copilotSection.classList.remove('hidden');
+            if (xaiSection) xaiSection.classList.add('hidden');
+            copilotCheckStatus();
+        } else if (providerName === 'xai_oauth') {
+            panel.classList.remove('hidden');
+            if (codexSection) codexSection.classList.add('hidden');
+            if (copilotSection) copilotSection.classList.add('hidden');
+            if (xaiSection) xaiSection.classList.remove('hidden');
+            xaiCheckStatus();
+        } else {
+            panel.classList.add('hidden');
+            if (codexSection) codexSection.classList.add('hidden');
+            if (copilotSection) copilotSection.classList.add('hidden');
+            if (xaiSection) xaiSection.classList.add('hidden');
+        }
+    }
+
+    async function refreshOAuthProviderStatuses() {
+        await Promise.all(Object.entries(_oauthProviderStatusEndpoints).map(async ([providerName, endpoint]) => {
+            if (!_providerData[providerName]) return;
+            try {
+                const r = await fetch(endpoint);
+                const d = await r.json();
+                setProviderOAuthLoggedIn(providerName, !!d.logged_in);
+            } catch (_) {
+                setProviderOAuthLoggedIn(providerName, false);
+            }
+        }));
+    }
+
+    // -- Codex --
+    async function codexCheckStatus() {
+        try { const r = await fetch('/oauth/codex/status'); const d = await r.json(); _codexSetState(d.logged_in, d.account_id); setProviderOAuthLoggedIn('openai_codex', !!d.logged_in); }
+        catch (e) { _codexSetState(false); setProviderOAuthLoggedIn('openai_codex', false); }
+    }
+    function _codexSetState(loggedIn, accountId) {
+        const loginArea = document.getElementById('codex-login-area');
+        const loggedArea = document.getElementById('codex-logged-area');
+        if (loginArea) loginArea.style.display = loggedIn ? 'none' : '';
+        if (loggedArea) loggedArea.classList.toggle('hidden', !loggedIn);
+        if (loggedIn) {
+            const accEl = document.getElementById('codex-account-id');
+            if (accEl) accEl.textContent = accountId ? '(' + accountId + ')' : '';
+        } else {
+            const urlStep = document.getElementById('codex-url-step');
+            if (urlStep) urlStep.classList.add('hidden');
+            const cbInput = document.getElementById('codex-callback-url');
+            if (cbInput) cbInput.value = '';
+            const res = document.getElementById('codex-callback-result');
+            if (res) { res.style.display = 'none'; res.innerHTML = ''; }
+        }
+    }
+    async function codexStartLogin() {
+        try {
+            const r = await fetch('/oauth/codex/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
+            const d = await r.json();
+            if (!d.success) { alert('Error: ' + (d.error || 'Unknown')); return; }
+            _codexSessionId = d.session_id;
+            const urlInput = document.getElementById('codex-auth-url');
+            if (urlInput) urlInput.value = d.url;
+            const urlStep = document.getElementById('codex-url-step');
+            if (urlStep) urlStep.classList.remove('hidden');
+        } catch (e) { alert('Network error: ' + e); }
+    }
+    function codexCopyUrl() {
+        const url = document.getElementById('codex-auth-url') ? document.getElementById('codex-auth-url').value : '';
+        if (url) navigator.clipboard.writeText(url).catch(function() {});
+    }
+    async function codexSubmitCallback() {
+        const callbackUrl = (document.getElementById('codex-callback-url') ? document.getElementById('codex-callback-url').value : '').trim();
+        const result = document.getElementById('codex-callback-result');
+        if (!callbackUrl) { if (result) { result.style.display='block'; result.innerHTML='<span style="color:#ff6b6b">✗ Paste callback URL trước</span>'; } return; }
+        if (!_codexSessionId) { if (result) { result.style.display='block'; result.innerHTML='<span style="color:#ff6b6b">✗ Session hết hạn, nhấn Generate lại</span>'; } return; }
+        if (result) { result.style.display='block'; result.innerHTML='<span style="color:#00FF41">⟳ Đang xác nhận...</span>'; }
+        try {
+            const r = await fetch('/oauth/codex/callback', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ session_id: _codexSessionId, callback_url: callbackUrl }) });
+            const d = await r.json();
+            if (d.success) { if (result) result.innerHTML='<span style="color:#00FF41">✓ Đăng nhập thành công!</span>'; setTimeout(function() { codexCheckStatus(); }, 800); }
+            else { if (result) result.innerHTML='<span style="color:#ff6b6b">✗ ' + (d.error || 'Lỗi không xác định') + '</span>'; }
+        } catch (e) { if (result) result.innerHTML='<span style="color:#ff6b6b">✗ Network error</span>'; }
+    }
+    async function codexLogout() {
+        await fetch('/oauth/codex/logout', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
+        _codexSetState(false);
+        setProviderOAuthLoggedIn('openai_codex', false);
+    }
+
+    // -- Copilot --
+    async function copilotCheckStatus() {
+        try { const r = await fetch('/oauth/copilot/status'); const d = await r.json(); _copilotSetState(d.logged_in); setProviderOAuthLoggedIn('github_copilot', !!d.logged_in); }
+        catch (e) { _copilotSetState(false); setProviderOAuthLoggedIn('github_copilot', false); }
+    }
+    function _copilotSetState(loggedIn) {
+        const loginArea = document.getElementById('copilot-login-area');
+        const loggedArea = document.getElementById('copilot-logged-area');
+        if (loginArea) loginArea.style.display = loggedIn ? 'none' : '';
+        if (loggedArea) loggedArea.classList.toggle('hidden', !loggedIn);
+        if (!loggedIn) {
+            const devStep = document.getElementById('copilot-device-step');
+            if (devStep) devStep.classList.add('hidden');
+            _stopCopilotPoll();
+        }
+    }
+    async function copilotStartLogin() {
+        try {
+            const r = await fetch('/oauth/copilot/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
+            const d = await r.json();
+            if (!d.success) { alert('Error: ' + (d.error || 'Unknown')); return; }
+            _copilotSessionId = d.session_id;
+            _copilotPollInterval = d.interval || 5;
+            const verifyLink = document.getElementById('copilot-verify-url');
+            if (verifyLink) { verifyLink.href = d.verification_uri; verifyLink.textContent = d.verification_uri; }
+            const codeEl = document.getElementById('copilot-user-code');
+            if (codeEl) codeEl.textContent = d.user_code;
+            const devStep = document.getElementById('copilot-device-step');
+            if (devStep) devStep.classList.remove('hidden');
+            const pollStatus = document.getElementById('copilot-poll-status');
+            if (pollStatus) pollStatus.textContent = 'Đang chờ xác nhận...';
+            _startCopilotPoll();
+        } catch (e) { alert('Network error: ' + e); }
+    }
+    function _startCopilotPoll() {
+        _stopCopilotPoll();
+        _copilotPollTimer = setInterval(_copilotDoPoll, _copilotPollInterval * 1000);
+    }
+    function _stopCopilotPoll() {
+        if (_copilotPollTimer) { clearInterval(_copilotPollTimer); _copilotPollTimer = null; }
+    }
+    async function _copilotDoPoll() {
+        if (!_copilotSessionId) { _stopCopilotPoll(); return; }
+        try {
+            const r = await fetch('/oauth/copilot/poll', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ session_id: _copilotSessionId }) });
+            const d = await r.json();
+            const pollStatus = document.getElementById('copilot-poll-status');
+            if (d.success && d.done) { _stopCopilotPoll(); if (pollStatus) pollStatus.textContent = '✓ Đã xác nhận!'; setTimeout(function() { copilotCheckStatus(); }, 800); }
+            else if (d.done) { _stopCopilotPoll(); if (pollStatus) pollStatus.textContent = '✗ ' + (d.error || 'Thất bại'); }
+            else if (d.slow_down) { _copilotPollInterval += 5; _startCopilotPoll(); }
+        } catch (e) { /* ignore */ }
+    }
+    async function copilotLogout() {
+        _stopCopilotPoll();
+        await fetch('/oauth/copilot/logout', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
+        _copilotSetState(false);
+        setProviderOAuthLoggedIn('github_copilot', false);
+    }
+
+    // -- xAI OAuth (experimental) --
+    async function xaiCheckStatus() {
+        try { const r = await fetch('/oauth/xai/status'); const d = await r.json(); _xaiSetState(d.logged_in, d.account_id); setProviderOAuthLoggedIn('xai_oauth', !!d.logged_in); }
+        catch (e) { _xaiSetState(false); setProviderOAuthLoggedIn('xai_oauth', false); }
+    }
+    function _xaiSetState(loggedIn, accountId) {
+        const loginArea = document.getElementById('xai-login-area');
+        const loggedArea = document.getElementById('xai-logged-area');
+        if (loginArea) loginArea.style.display = loggedIn ? 'none' : '';
+        if (loggedArea) loggedArea.classList.toggle('hidden', !loggedIn);
+        if (loggedIn) {
+            const accEl = document.getElementById('xai-account-id');
+            if (accEl) accEl.textContent = accountId ? '(' + accountId + ')' : '';
+        } else {
+            const step = document.getElementById('xai-url-step');
+            if (step) step.classList.add('hidden');
+        }
+    }
+    async function xaiStartLogin() {
+        const result = document.getElementById('xai-callback-result');
+        if (result) { result.style.display='block'; result.innerHTML='<span style="color:#00FF41">⟳ Generating xAI URL...</span>'; }
+        try {
+            const r = await fetch('/oauth/xai/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
+            const d = await r.json();
+            if (!d.success) { if (result) result.innerHTML='<span style="color:#ff6b6b">✗ ' + (d.error || 'Failed') + '</span>'; return; }
+            _xaiSessionId = d.session_id;
+            const urlEl = document.getElementById('xai-auth-url');
+            if (urlEl) urlEl.value = d.url;
+            const step = document.getElementById('xai-url-step');
+            if (step) step.classList.remove('hidden');
+            if (result) result.innerHTML='<span style="color:#00FF41">✓ URL generated. Paste callback URL or displayed code below.</span>';
+            showOAuthFlowModal({
+                title: 'XAI OAUTH LOGIN',
+                subtitle: 'SYS.OAUTH.XAI',
+                authUrl: d.url,
+                inputLabel: 'Paste full callback URL or displayed code',
+                placeholder: 'callback URL or displayed code',
+                submitLabel: 'CONFIRM LOGIN',
+                warning: 'Experimental xAI OAuth. Bare displayed code fallback cannot verify state.',
+                onSubmit: async (callbackUrl, statusEl) => {
+                    const callback = await fetch('/oauth/xai/callback', {
+                        method: 'POST',
+                        headers: {'Content-Type':'application/json'},
+                        body: JSON.stringify({ session_id: _xaiSessionId, callback_url: callbackUrl }),
+                    });
+                    const done = await callback.json();
+                    if (done.success) {
+                        const warning = done.state_verified ? '' : ' Bare code used; state was not verified.';
+                        oauthFlowStatus(statusEl, 'xAI OAuth login successful.' + warning, done.state_verified ? 'success' : 'warn');
+                        setTimeout(() => {
+                            closeOAuthFlowModal();
+                            xaiCheckStatus();
+                        }, 900);
+                    } else {
+                        oauthFlowStatus(statusEl, done.error || 'Unknown error', 'error');
+                    }
+                },
+            });
+        } catch (e) { if (result) result.innerHTML='<span style="color:#ff6b6b">✗ Network error</span>'; }
+    }
+    function xaiCopyUrl() {
+        const url = document.getElementById('xai-auth-url') ? document.getElementById('xai-auth-url').value : '';
+        if (url) navigator.clipboard.writeText(url).catch(function() {});
+    }
+    async function xaiSubmitCallback() {
+        const callbackUrl = (document.getElementById('xai-callback-url') ? document.getElementById('xai-callback-url').value : '').trim();
+        const result = document.getElementById('xai-callback-result');
+        if (!callbackUrl) { if (result) { result.style.display='block'; result.innerHTML='<span style="color:#ff6b6b">✗ Paste callback URL or displayed code first</span>'; } return; }
+        if (!_xaiSessionId) { if (result) { result.style.display='block'; result.innerHTML='<span style="color:#ff6b6b">✗ Session expired, generate URL again</span>'; } return; }
+        if (result) { result.style.display='block'; result.innerHTML='<span style="color:#00FF41">⟳ Confirming...</span>'; }
+        try {
+            const r = await fetch('/oauth/xai/callback', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ session_id: _xaiSessionId, callback_url: callbackUrl }) });
+            const d = await r.json();
+            if (d.success) {
+                const warn = d.state_verified ? '' : ' <span style="color:#facc15">Bare code used; state was not verified.</span>';
+                if (result) result.innerHTML='<span style="color:#00FF41">✓ xAI OAuth login successful.</span>' + warn;
+                setTimeout(function() { xaiCheckStatus(); }, 800);
+            } else { if (result) result.innerHTML='<span style="color:#ff6b6b">✗ ' + (d.error || 'Unknown error') + '</span>'; }
+        } catch (e) { if (result) result.innerHTML='<span style="color:#ff6b6b">✗ Network error</span>'; }
+    }
+    async function xaiLogout() {
+        await fetch('/oauth/xai/logout', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
+        _xaiSetState(false);
+        setProviderOAuthLoggedIn('xai_oauth', false);
+    }

@@ -1,0 +1,396 @@
+        <!-- ============================================================ -->
+        <!-- Section: Neural Core Settings (agents.defaults) -->
+        <!-- ============================================================ -->
+        <div class="matrix-card p-6">
+            <div class="flex items-center justify-between mb-4 border-b border-primary/20 pb-4 cursor-pointer"
+                onclick="toggleSection('neural-body')">
+                <div class="flex items-center gap-3">
+                    <span class="material-symbols-outlined glow-text">psychology</span>
+                    <h3 class="text-xs font-bold uppercase tracking-widest glow-text">Neural Core Settings</h3>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div id="routing-mode-toggle" class="flex border border-primary/30" onclick="event.stopPropagation()"
+                        title="Simple: chỉ hiện route đang chạy + khai báo trực tiếp. Advanced: đầy đủ Routes / Fallback.">
+                        <button type="button" id="routing-mode-simple" onclick="setRoutingMode('simple')"
+                            class="px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider text-primary/40 transition-all">Simple</button>
+                        <button type="button" id="routing-mode-advanced" onclick="setRoutingMode('advanced')"
+                            class="px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider text-primary/40 transition-all">Advanced</button>
+                    </div>
+                    <span class="material-symbols-outlined text-primary/80 text-sm"
+                        id="neural-body-icon">expand_more</span>
+                </div>
+            </div>
+
+            <!-- Effective Route — always visible, even when the section is collapsed -->
+            <div id="effective-route-strip" class="mb-4 border border-primary/25 bg-primary/[0.04] px-4 py-3">
+                <div class="flex items-center gap-2 flex-wrap">
+                    <span class="material-symbols-outlined text-sm glow-text">route</span>
+                    <span class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">Active Route</span>
+                    <span id="effective-route-line" class="text-[11px] font-mono text-primary/80">loading...</span>
+                </div>
+                <div id="effective-route-fallbacks" class="hidden text-[10px] font-mono text-primary/50 mt-1.5 pl-6"></div>
+                <p class="dashboard-subtitle text-[10px] font-mono mt-1.5 pl-6">Tuyến model đang chạy thật sự sau khi resolve route → credential → fallback.</p>
+                <div id="effective-route-warnings" class="hidden mt-2 flex flex-col gap-1.5"></div>
+            </div>
+
+            <div id="neural-body" class="hidden">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="flex flex-col gap-3 md:col-span-2 border border-primary/15 bg-primary/[0.02] p-4">
+                        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                            <div>
+                                <label for="unified_session_toggle"
+                                    class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90 cursor-pointer">&gt;
+                                    Unified_Session</label>
+                                <p class="dashboard-subtitle text-[10px] font-mono mt-1">Route normal chats into one shared conversation history.</p>
+                            </div>
+                            <label for="unified_session_toggle" class="flex items-center gap-3 cursor-pointer">
+                                <span id="unified-session-status"
+                                    class="text-[10px] font-bold uppercase tracking-wider {{ 'text-yellow-300' if unified_session else 'text-primary/40' }}">
+                                    {{ 'Unified session' if unified_session else 'Separate sessions' }}
+                                </span>
+                                <div class="relative">
+                                    <input type="checkbox" id="unified_session_toggle" onchange="toggleUnifiedSession()"
+                                        class="sr-only peer" {{ 'checked' if unified_session else '' }} />
+                                    <input type="hidden" id="unified_session" name="unified_session"
+                                        value="{{ 'true' if unified_session else 'false' }}" />
+                                    <div class="w-14 h-7 bg-black/60 border border-primary/50 peer-checked:bg-yellow-400/25 peer-checked:border-yellow-400 transition-all duration-300"></div>
+                                    <div class="absolute top-[3px] left-[3px] w-5 h-5 bg-primary/40 peer-checked:bg-yellow-300 peer-checked:shadow-[0_0_10px_rgba(250,204,21,0.9)] peer-checked:translate-x-7 transition-all duration-300"></div>
+                                </div>
+                            </label>
+                        </div>
+                        <div id="unified-session-warning"
+                            class="{{ 'flex' if unified_session else 'hidden' }} items-start gap-3 border border-yellow-400/40 bg-yellow-400/10 px-4 py-3 text-yellow-200/90">
+                            <span class="material-symbols-outlined text-sm mt-0.5">warning</span>
+                            <p class="text-[11px] leading-relaxed font-mono">
+                                All normal chat channels will share <span class="font-bold">unified:default</span>.
+                                Do not enable this for multi-user or customer-facing bots.
+                            </p>
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-2 md:col-span-2">
+                        <label for="model_preset" title="agents.defaults.modelPreset"
+                            class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
+                            Active_Route</label>
+                        <p class="dashboard-subtitle text-[10px] font-mono">Chọn route có tên để chạy, hoặc "Custom" để tự khai model/provider trực tiếp bên dưới.</p>
+                        <select id="model_preset" name="model_preset" onchange="updateModelPresetManualState()"
+                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm transition-all duration-300 appearance-none cursor-pointer">
+                            <option value="" {{ 'selected' if not model_preset else '' }}
+                                style="background: #0a0a0a; color: #00FF41;">Custom</option>
+                            {% for preset_name in model_preset_names %}
+                            <option value="{{ preset_name }}" {{ 'selected' if model_preset==preset_name else '' }}
+                                style="background: #0a0a0a; color: #00FF41;">{{ preset_name }}</option>
+                            {% endfor %}
+                        </select>
+                        <span id="model-preset-effective"
+                            class="dashboard-subtitle text-[10px] font-mono {{ 'hidden' if not model_preset else '' }}"></span>
+                    </div>
+                    <div class="neural-manual-field flex flex-col gap-2 md:col-span-2 {{ 'hidden' if model_preset else '' }}">
+                        <div class="flex items-center gap-3">
+                            <label for="model"
+                                class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
+                                Model</label>
+                            <button type="button" onclick="testModel()" id="btn-test-model"
+                                class="px-3 py-1 border border-primary/40 text-primary/70 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/10 hover:border-primary hover:text-primary transition-all duration-300 flex items-center gap-1.5">
+                                <span class="material-symbols-outlined text-[14px]">bolt</span>
+                                <span>Test</span>
+                            </button>
+                        </div>
+                        <input type="text" id="model" name="model" value="{{ model }}" {{ 'disabled' if model_preset else '' }}
+                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                        <!-- Tested models quick-select -->
+                        <div id="model-tested-models" style="display: none;">
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <span class="text-[9px] text-primary/40 uppercase tracking-wider">Tested:</span>
+                                <div class="flex flex-wrap gap-1" id="model-tested-models-list"></div>
+                            </div>
+                        </div>
+                        <!-- Test result -->
+                        <div class="text-[11px] font-mono" id="model-test-result" style="display: none;"></div>
+                    </div>
+                    <div class="neural-manual-field flex flex-col gap-2 {{ 'hidden' if model_preset else '' }}">
+                        <label for="provider"
+                            class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
+                            Provider</label>
+                        <select id="provider" name="provider" {{ 'disabled' if model_preset else '' }}
+                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm transition-all duration-300 appearance-none cursor-pointer">
+                            {% for opt in provider_options %}
+                            <option value="{{ opt }}" {{ 'selected' if provider==opt else '' }}
+                                style="background: #0a0a0a; color: #00FF41;">{{ provider_label(opt) }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="neural-manual-field flex flex-col gap-2 {{ 'hidden' if model_preset else '' }}">
+                        <div class="flex items-center gap-2">
+                            <label for="temperature"
+                                class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
+                                Temperature</label>
+                            <button type="button" onclick="document.getElementById('temperature').value='0.1'"
+                                class="text-[8px] text-primary/30 hover:text-primary border border-primary/15 hover:border-primary/50 px-1.5 py-0.5 transition-all"
+                                title="Reset to default">↺ 0.1</button>
+                        </div>
+                        <input type="number" id="temperature" name="temperature" value="{{ temperature }}" step="0.05" {{ 'disabled' if model_preset else '' }}
+                            min="0" max="2"
+                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                    </div>
+                    <div class="neural-manual-field flex flex-col gap-2 {{ 'hidden' if model_preset else '' }}">
+                        <div class="flex items-center gap-2">
+                            <label for="max_tokens"
+                                class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
+                                Max_Tokens</label>
+                            <button type="button" onclick="document.getElementById('max_tokens').value='8192'"
+                                class="text-[8px] text-primary/30 hover:text-primary border border-primary/15 hover:border-primary/50 px-1.5 py-0.5 transition-all"
+                                title="Reset to default">↺ 8192</button>
+                        </div>
+                        <input type="number" id="max_tokens" name="max_tokens" value="{{ max_tokens }}" min="1" {{ 'disabled' if model_preset else '' }}
+                            max="1000000"
+                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        <div class="flex items-center gap-2">
+                            <label for="max_tool_iterations"
+                                class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
+                                Max_Iterations</label>
+                            <button type="button" onclick="document.getElementById('max_tool_iterations').value='40'"
+                                class="text-[8px] text-primary/30 hover:text-primary border border-primary/15 hover:border-primary/50 px-1.5 py-0.5 transition-all"
+                                title="Reset to default">↺ 40</button>
+                        </div>
+                        <input type="number" id="max_tool_iterations" name="max_tool_iterations"
+                            value="{{ max_tool_iterations }}" min="1" max="200"
+                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                    </div>
+                    <div class="neural-manual-field flex flex-col gap-2 {{ 'hidden' if model_preset else '' }}">
+                        <div class="flex items-center gap-2">
+                            <label for="context_window_tokens"
+                                class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
+                                Context_Window_Tokens</label>
+                            <button type="button" onclick="document.getElementById('context_window_tokens').value='65536'"
+                                class="text-[8px] text-primary/30 hover:text-primary border border-primary/15 hover:border-primary/50 px-1.5 py-0.5 transition-all"
+                                title="Reset to default">↺ 65536</button>
+                        </div>
+                        <input type="number" id="context_window_tokens" name="context_window_tokens" value="{{ context_window_tokens }}" {{ 'disabled' if model_preset else '' }}
+                            min="8192" max="2000000"
+                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                    </div>
+                    <div class="neural-manual-field flex flex-col gap-2 {{ 'hidden' if model_preset else '' }}">
+                        <label for="reasoning_effort_select"
+                            class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">
+                            &gt; Reasoning_Effort
+                        </label>
+                        <input type="hidden" id="reasoning_effort" name="reasoning_effort" value="{{ reasoning_effort }}" {{ 'disabled' if model_preset else '' }} />
+                        <select id="reasoning_effort_select" onchange="updateReasoningEffortInput()" {{ 'disabled' if model_preset else '' }}
+                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm transition-all duration-300 appearance-none cursor-pointer">
+                            <option value="" {{ 'selected' if not reasoning_effort else '' }}
+                                style="background: #0a0a0a; color: #00FF41;">default</option>
+                            {% for option in reasoning_effort_options %}
+                            <option value="{{ option }}" {{ 'selected' if reasoning_effort==option else '' }}
+                                style="background: #0a0a0a; color: #00FF41;">{{ option }}</option>
+                            {% endfor %}
+                            <option value="__custom__" {{ 'selected' if reasoning_effort_is_custom else '' }}
+                                style="background: #0a0a0a; color: #00FF41;">Custom...</option>
+                        </select>
+                        <input type="text" id="reasoning_effort_custom" value="{{ reasoning_effort_custom_value }}"
+                            placeholder="Custom gateway value" oninput="updateReasoningEffortInput()"
+                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300 {{ 'hidden' if not reasoning_effort_is_custom else '' }}"
+                            {{ 'disabled' if model_preset or not reasoning_effort_is_custom else '' }} />
+                    </div>
+                    <div id="routing-simple-hint" class="hidden md:col-span-2">
+                        <p class="dashboard-subtitle text-[10px] font-mono border border-primary/10 bg-black/20 px-4 py-3">
+                            Simple mode — panel Routes / Fallback đang ẩn. Chuyển <span class="text-primary/80 font-bold">Advanced</span> (góc trên card) khi cần nhiều route, multi-account hoặc fallback.
+                        </p>
+                    </div>
+                    <div class="routing-advanced flex flex-col gap-4 md:col-span-2 border border-primary/15 bg-primary/[0.02] p-4">
+                        <label class="group flex flex-col md:flex-row md:items-center md:justify-between gap-3 cursor-pointer">
+                            <div>
+                                <span title="model_presets" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
+                                    Routes</span>
+                                <p class="dashboard-subtitle text-[10px] font-mono mt-1">Mỗi route = model + provider + tham số, đặt tên để chuyển nhanh. Route dùng key ở Global accounts trừ khi chọn Named account. (config: model_presets)</p>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <span id="model-presets-panel-status" class="text-[10px] font-bold uppercase tracking-wider text-primary/40">Hidden</span>
+                                <div class="relative">
+                                    <input type="checkbox" id="model_presets_panel_enabled" onchange="toggleModelPresetsPanel()"
+                                        class="sr-only peer" />
+                                    <div class="w-14 h-7 bg-black/60 border border-primary/50 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300"></div>
+                                    <div class="absolute top-[3px] left-[3px] w-5 h-5 bg-primary/40 peer-checked:bg-primary peer-checked:shadow-[0_0_10px_#00FF41] peer-checked:translate-x-7 transition-all duration-300"></div>
+                                </div>
+                            </div>
+                        </label>
+
+                        <div id="model-presets-panel" class="hidden flex flex-col gap-4">
+                            <div class="flex justify-end">
+                                <button type="button" id="btn-add-preset"
+                                    onclick="try { if (window.presetCrudNew) presetCrudNew(); } catch (e) { console.error('Add Preset failed', e); } finally { const f = document.getElementById('preset-crud-form'); if (f) { f.classList.remove('hidden'); f.scrollIntoView({ behavior: 'smooth', block: 'center' }); } }"
+                                    class="px-3 py-2 border border-primary/40 text-primary/80 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/10 hover:border-primary hover:text-primary transition-all duration-300 flex items-center gap-1.5 w-fit">
+                                    <span class="material-symbols-outlined text-[14px]">add</span>
+                                    <span>Add Route</span>
+                                </button>
+                            </div>
+
+                            <div id="preset-crud-list" class="flex flex-col gap-2"></div>
+                            <div id="preset-save-result" class="text-[10px] font-mono" style="display: none;"></div>
+
+                            <div id="preset-crud-form" class="hidden border border-primary/20 bg-black/30 p-4">
+                            <input type="hidden" id="preset_edit_original" />
+                            <div class="flex flex-col gap-4">
+                                <!-- Bước 1 · Provider -->
+                                <div class="border border-primary/15 bg-primary/[0.02] p-3">
+                                    <div class="text-[10px] font-bold uppercase tracking-[0.25em] text-primary/70 mb-2">Bước 1 · Provider</div>
+                                    <div id="preset-provider-wrap" class="flex flex-col gap-2">
+                                        <label for="preset_provider" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt; Provider</label>
+                                        <select id="preset_provider" onchange="presetCrudProviderChanged();"
+                                            class="w-full bg-black/60 border border-primary/50 focus:border-primary outline-none px-4 py-3 text-primary font-mono text-sm transition-all duration-300 appearance-none cursor-pointer">
+                                            {% for opt in provider_options %}
+                                            <option value="{{ opt }}" style="background: #0a0a0a; color: #00FF41;">{{ provider_label(opt) }}</option>
+                                            {% endfor %}
+                                        </select>
+                                        <p class="dashboard-subtitle text-[10px] font-mono">"(configured)" = provider đã có key ở Global accounts.</p>
+                                    </div>
+                                    <div id="preset-provider-locked-note" class="hidden dashboard-subtitle text-[10px] font-mono">Provider lấy theo Named account đã chọn ở Bước 2.</div>
+                                </div>
+                                <!-- Bước 2 · Credential -->
+                                <div class="border border-primary/15 bg-primary/[0.02] p-3">
+                                    <div class="text-[10px] font-bold uppercase tracking-[0.25em] text-primary/70 mb-2">Bước 2 · Credential</div>
+                                    <div class="flex flex-col gap-2">
+                                        <label for="preset_credential_profile" title="credentialProfile" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt; Named_Account</label>
+                                        <select id="preset_credential_profile" onchange="presetCrudCredentialProfileChanged();"
+                                            class="w-full bg-black/60 border border-primary/50 focus:border-primary outline-none px-4 py-3 text-primary font-mono text-sm transition-all duration-300 appearance-none cursor-pointer">
+                                            <option value="" style="background: #0a0a0a; color: #00FF41;">Use global account</option>
+                                        </select>
+                                        <div id="preset-credential-profile-note" class="text-[10px] text-primary/45 font-mono min-h-[1rem]"></div>
+                                        <div id="wizard-oauth-status" class="hidden flex items-center gap-2 flex-wrap border border-primary/15 bg-black/40 px-3 py-2">
+                                            <span id="wizard-oauth-state" class="text-[10px] font-mono text-primary/50">checking...</span>
+                                            <button type="button" id="btn-wizard-oauth-login" onclick="wizardOAuthLogin()"
+                                                class="hidden px-2.5 py-1 border border-primary/40 text-primary/80 text-[9px] font-bold uppercase tracking-wider hover:bg-primary/10 hover:border-primary hover:text-primary transition-all items-center gap-1">
+                                                <span class="material-symbols-outlined text-[12px] align-middle">login</span>
+                                                <span>Login</span>
+                                            </button>
+                                            <button type="button" onclick="wizardOAuthRefresh()" title="Re-check OAuth status"
+                                                class="px-2 py-1 border border-primary/20 text-primary/40 text-[9px] font-bold hover:text-primary hover:border-primary/60 transition-all">↻</button>
+                                        </div>
+                                        <button type="button" id="btn-wizard-new-account" onclick="wizardAccountToggle()"
+                                            class="px-3 py-1.5 border border-primary/30 text-primary/60 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/10 hover:border-primary hover:text-primary transition-all w-fit flex items-center gap-1.5">
+                                            <span class="material-symbols-outlined text-[13px]">add</span>
+                                            <span>New Named Account</span>
+                                        </button>
+                                        <div id="wizard-account-row" class="hidden border border-primary/15 bg-black/40 p-3 flex flex-col gap-2">
+                                            <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+                                                <input type="text" id="wizard_account_name" placeholder="account name"
+                                                    class="w-full bg-black/60 border border-primary/50 focus:border-primary outline-none px-3 py-2 text-primary font-mono text-xs placeholder-primary/30 transition-all duration-300" />
+                                                <input type="password" id="wizard_account_api_key" placeholder="API key"
+                                                    class="w-full bg-black/60 border border-primary/50 focus:border-primary outline-none px-3 py-2 text-primary font-mono text-xs placeholder-primary/30 transition-all duration-300" />
+                                                <input type="text" id="wizard_account_api_base" placeholder="API base (optional)"
+                                                    class="w-full bg-black/60 border border-primary/50 focus:border-primary outline-none px-3 py-2 text-primary font-mono text-xs placeholder-primary/30 transition-all duration-300" />
+                                            </div>
+                                            <p id="wizard-account-oauth-note" class="hidden dashboard-subtitle text-[10px] font-mono">Provider OAuth — không cần API key. Sau khi tạo, login tại Accounts &amp; Credentials → Named_Accounts.</p>
+                                            <div class="flex items-center gap-2">
+                                                <button type="button" onclick="wizardAccountCreate()" id="btn-wizard-create-account"
+                                                    class="px-3 py-1.5 border border-primary/40 text-primary/80 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/10 hover:border-primary hover:text-primary transition-all">Create Account</button>
+                                            </div>
+                                        </div>
+                                        <div id="wizard-account-result" class="text-[10px] font-mono"></div>
+                                    </div>
+                                </div>
+                                <!-- Bước 3 · Model & Tham số -->
+                                <div class="border border-primary/15 bg-primary/[0.02] p-3">
+                                <div class="text-[10px] font-bold uppercase tracking-[0.25em] text-primary/70 mb-2">Bước 3 · Model &amp; Tham số</div>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div id="preset-name-wrap" class="flex flex-col gap-2 md:col-span-2">
+                                    <label for="preset_name" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt; Route_Name</label>
+                                    <input type="text" id="preset_name"
+                                        class="w-full bg-black/60 border border-primary/50 focus:border-primary outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                                </div>
+                                <div class="flex flex-col gap-2 md:col-span-2">
+                                    <label for="preset_model" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt; Model</label>
+                                    <input type="text" id="preset_model" oninput="presetCrudMarkUntested()"
+                                        class="w-full bg-black/60 border border-primary/50 focus:border-primary outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                                    <div id="preset-tested-models" style="display: none;">
+                                        <div class="flex items-center gap-2 flex-wrap">
+                                            <span class="text-[9px] text-primary/40 uppercase tracking-wider">Tested:</span>
+                                            <div class="flex flex-wrap gap-1" id="preset-tested-models-list"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="flex flex-col gap-2">
+                                    <label for="preset_temperature" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt; Temperature</label>
+                                    <input type="number" id="preset_temperature" value="0.1" step="0.05" min="0" max="2"
+                                        class="w-full bg-black/60 border border-primary/50 focus:border-primary outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                                </div>
+                                <div class="flex flex-col gap-2">
+                                    <label for="preset_max_tokens" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt; Max_Tokens</label>
+                                    <input type="number" id="preset_max_tokens" value="8192" min="1" max="1000000"
+                                        class="w-full bg-black/60 border border-primary/50 focus:border-primary outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                                </div>
+                                <div class="flex flex-col gap-2">
+                                    <label for="preset_context_window_tokens" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt; Context_Window_Tokens</label>
+                                    <input type="number" id="preset_context_window_tokens" value="65536" min="8192" max="2000000"
+                                        class="w-full bg-black/60 border border-primary/50 focus:border-primary outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                                </div>
+                                <div class="flex flex-col gap-2">
+                                    <label for="preset_reasoning_effort_select" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt; Reasoning_Effort</label>
+                                    <input type="hidden" id="preset_reasoning_effort" />
+                                    <select id="preset_reasoning_effort_select" onchange="updatePresetReasoningEffortInput()"
+                                        class="w-full bg-black/60 border border-primary/50 focus:border-primary outline-none px-4 py-3 text-primary font-mono text-sm transition-all duration-300 appearance-none cursor-pointer">
+                                        <option value="" style="background: #0a0a0a; color: #00FF41;">default</option>
+                                        {% for option in reasoning_effort_options %}
+                                        <option value="{{ option }}" style="background: #0a0a0a; color: #00FF41;">{{ option }}</option>
+                                        {% endfor %}
+                                        <option value="__custom__" style="background: #0a0a0a; color: #00FF41;">Custom...</option>
+                                    </select>
+                                    <input type="text" id="preset_reasoning_effort_custom" placeholder="Custom gateway value"
+                                        oninput="updatePresetReasoningEffortInput()"
+                                        class="hidden w-full bg-black/60 border border-primary/50 focus:border-primary outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                                </div>
+                                <div class="md:col-span-2 flex flex-col gap-2">
+                                    <div class="flex flex-wrap gap-2">
+                                        <button type="button" onclick="presetCrudSave()" id="btn-save-preset" disabled
+                                            class="px-4 py-2 border border-primary/50 text-primary text-[10px] font-bold uppercase tracking-wider hover:bg-primary/10 transition-all opacity-40 cursor-not-allowed">Save Route</button>
+                                        <button type="button" onclick="presetCrudCancel()"
+                                            class="px-4 py-2 border border-primary/20 text-primary/60 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/5 transition-all">Cancel</button>
+                                        <button type="button" onclick="testPresetModel()" id="btn-test-preset-model"
+                                            class="px-4 py-2 border border-primary/40 text-primary/70 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/10 hover:border-primary hover:text-primary transition-all flex items-center gap-1.5">
+                                            <span class="material-symbols-outlined text-[14px]">bolt</span>
+                                            <span>Test</span>
+                                        </button>
+                                    </div>
+                                    <div class="text-[11px] font-mono" id="preset-test-result" style="display: none;"></div>
+                                </div>
+                                </div>
+                                </div>
+                            </div>
+                            </div>
+
+                            <details class="hidden">
+                                <summary class="text-[10px] font-bold uppercase tracking-[0.25em] text-primary/70 cursor-pointer">Advanced Raw Model Presets JSON</summary>
+                                <textarea id="model_presets_json" name="model_presets_json" rows="8" oninput="presetCrudRawChanged()"
+                                    class="mt-3 w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-xs placeholder-primary/20 transition-all duration-300">{{ model_presets_json }}</textarea>
+                                <button type="button" onclick="presetCrudApplyRaw()"
+                                    class="mt-3 px-3 py-2 border border-primary/30 text-primary/70 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/10 hover:border-primary hover:text-primary transition-all">Apply Raw JSON To Editor</button>
+                            </details>
+                        </div>
+                    </div>
+                    <div class="routing-advanced flex flex-col gap-4 md:col-span-2 border border-primary/15 bg-primary/[0.02] p-4">
+                        <div class="group flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                            <div>
+                                <label title="agents.defaults.fallbackModels" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
+                                    Fallback_Models</label>
+                                <p class="dashboard-subtitle text-[10px] font-mono mt-1">Khi route chính lỗi, thử lần lượt các route dự phòng từ trên xuống. (config: fallbackModels)</p>
+                            </div>
+                            <button type="button" onclick="fallbackCrudAdd()"
+                                class="px-3 py-2 border border-primary/40 text-primary/80 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/10 hover:border-primary hover:text-primary transition-all duration-300 flex items-center gap-1.5 w-fit">
+                                <span class="material-symbols-outlined text-[14px]">add</span>
+                                <span>Add Fallback</span>
+                            </button>
+                        </div>
+                        <div id="fallback-crud-list" class="flex flex-col gap-2"></div>
+                        <details class="border border-primary/10 bg-black/20 p-3">
+                            <summary class="text-[10px] font-bold uppercase tracking-[0.25em] text-primary/70 cursor-pointer">Advanced Raw Fallback Models JSON</summary>
+                            <textarea id="fallback_models_json" name="fallback_models_json" rows="5" oninput="fallbackCrudRawChanged()"
+                                class="mt-3 w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-xs placeholder-primary/20 transition-all duration-300">{{ fallback_models_json }}</textarea>
+                            <button type="button" onclick="fallbackCrudApplyRaw()"
+                                class="mt-3 px-3 py-2 border border-primary/30 text-primary/70 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/10 hover:border-primary hover:text-primary transition-all">Apply Raw JSON To Fallbacks</button>
+                        </details>
+                    </div>
+                </div>
+            </div>
+        </div>
+

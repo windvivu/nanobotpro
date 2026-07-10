@@ -1,0 +1,945 @@
+    function dreamModelCanSubmit() {
+        const model = (document.getElementById('dream_model_override')?.value || '').trim();
+        if (!model) return true;
+        return _dreamVerifiedSignature === dreamModelSignature();
+    }
+
+    async function presetCrudTestExisting(name, preset, btn, resultEl) {
+        const model = (preset.model || '').trim();
+        const providerName = preset.provider || 'auto';
+        if (!resultEl) return;
+        resultEl.style.display = 'block';
+        if (!model) {
+            resultEl.innerHTML = '<span class="text-yellow-400">⚠ Missing model for preset ' + escapeHtml(name) + '</span>';
+            return;
+        }
+        const resolved = presetCrudResolveTestProvider(
+            providerName,
+            preset.credentialProfile || preset.credential_profile || ''
+        );
+        if (resolved.credentialProfileMissing) {
+            resultEl.innerHTML = '<span class="text-yellow-400">⚠ Credential profile missing for preset ' + escapeHtml(name) + '</span>';
+            return;
+        }
+        if (!resolved.apiKey && !resolved.oauthProviders.includes(resolved.actualProvider)) {
+            resultEl.innerHTML = '<span class="text-yellow-400">⚠ Provider credentials missing for ' + escapeHtml(resolved.actualProvider) + '</span>';
+            return;
+        }
+        if (btn) {
+            btn.disabled = true;
+            btn.classList.add('preset-test-loading');
+            btn.textContent = 'Wait';
+        }
+        try {
+            const resp = await fetch('/config/test-provider', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    provider: resolved.actualProvider,
+                    api_key: resolved.apiKey,
+                    api_base: resolved.apiBase,
+                    credential_profile: resolved.credentialProfile || '',
+                    model,
+                }),
+            });
+            const data = await resp.json();
+            resultEl.innerHTML = data.success
+                ? '<span class="text-green-400">✓ OK: ' + escapeHtml(data.message || 'model responds') + '</span>'
+                : '<span class="text-red-400">✗ ' + escapeHtml(data.error || 'Test failed') + '</span>';
+        } catch (e) {
+            resultEl.innerHTML = '<span class="text-red-400">✗ Network error: ' + escapeHtml(e.message) + '</span>';
+        }
+        if (btn) {
+            btn.disabled = false;
+            btn.classList.remove('preset-test-loading');
+            btn.textContent = 'Test';
+        }
+    }
+
+    function presetCrudRender() {
+        const list = document.getElementById('preset-crud-list');
+        if (!list) return;
+        const presets = presetCrudParseRaw();
+        const names = Object.keys(presets).sort();
+        list.innerHTML = '';
+        if (names.length === 0) {
+            list.innerHTML = '<div class="dashboard-subtitle border border-primary/10 bg-black/20 px-4 py-3 text-[11px] font-mono">No presets configured.</div>';
+            return;
+        }
+        names.forEach((name) => {
+            const preset = presets[name] || {};
+            const row = document.createElement('div');
+            row.className = 'group border border-primary/15 bg-black/25 px-4 py-3 grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto] items-center gap-3 transition-all duration-300 hover:border-primary/40 hover:bg-primary/[0.04]';
+            row.innerHTML =
+                '<div class="min-w-0">' +
+                '<div class="text-primary font-mono text-sm font-bold truncate">' + escapeHtml(name) + '</div>' +
+                '<div class="text-[10px] text-primary/50 group-hover:text-primary/90 font-mono truncate transition-colors duration-300">' + escapeHtml(preset.provider || 'auto') + ' / ' + escapeHtml(preset.model || '') + '</div>' +
+                ((preset.credentialProfile || preset.credential_profile) ? '<div class="text-[9px] text-primary/40 group-hover:text-primary/75 font-mono truncate transition-colors duration-300">credential=' + escapeHtml(preset.credentialProfile || preset.credential_profile) + '</div>' : '') +
+                '<div class="text-[9px] text-primary/35 group-hover:text-primary/65 font-mono transition-colors duration-300">max=' + escapeHtml(String(preset.maxTokens ?? preset.max_tokens ?? 8192)) +
+                ' temp=' + escapeHtml(String(preset.temperature ?? 0.1)) + '</div>' +
+                '</div>' +
+                '<div class="flex items-center gap-2 shrink-0 md:justify-end">' +
+                '<button type="button" class="preset-test inline-flex h-7 w-16 items-center justify-center overflow-hidden whitespace-nowrap px-2 py-0 border border-primary/30 text-primary/70 text-[10px] uppercase leading-none tracking-wider hover:bg-primary/10">Test</button>' +
+                '<button type="button" class="preset-edit inline-flex h-7 w-16 items-center justify-center overflow-hidden whitespace-nowrap px-2 py-0 border border-primary/30 text-primary/70 text-[10px] uppercase leading-none tracking-wider hover:bg-primary/10">Edit</button>' +
+                '<button type="button" class="preset-delete inline-flex h-7 w-20 items-center justify-center overflow-hidden whitespace-nowrap px-2 py-0 border border-red-500/40 text-red-400/80 text-[10px] uppercase leading-none tracking-wider hover:bg-red-500/10">Delete</button>' +
+                '</div>' +
+                '<div class="preset-row-test-result md:col-span-2 min-h-[1rem] text-[10px] font-mono" style="display:none;"></div>';
+            row.querySelector('.preset-test').onclick = (event) => presetCrudTestExisting(name, preset, event.currentTarget, row.querySelector('.preset-row-test-result'));
+            row.querySelector('.preset-edit').onclick = () => presetCrudEdit(name);
+            row.querySelector('.preset-delete').onclick = () => presetCrudDelete(name);
+            list.appendChild(row);
+        });
+    }
+
+    function escapeHtml(value) {
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    function presetCrudShowForm() {
+        const form = document.getElementById('preset-crud-form');
+        if (form) form.classList.remove('hidden');
+        const result = document.getElementById('preset-test-result');
+        if (result) {
+            result.style.display = 'none';
+            result.innerHTML = '';
+        }
+        wizardAccountReset();
+        wizardOAuthRefresh();
+    }
+
+    function presetCrudCredentialProfileNote() {
+        const note = document.getElementById('preset-credential-profile-note');
+        if (!note) return;
+        const profileName = document.getElementById('preset_credential_profile')?.value || '';
+        if (!profileName) {
+            note.textContent = 'Using providers.<provider> credentials.';
+            return;
+        }
+        const profile = providerProfileParseRaw()[profileName];
+        note.textContent = profile
+            ? 'Uses credential profile provider: ' + (profile.provider || 'unknown')
+            : 'Credential profile missing.';
+    }
+
+    function presetCrudProviderChanged() {
+        const profileSelect = document.getElementById('preset_credential_profile');
+        if (profileSelect && profileSelect.value) {
+            profileSelect.value = '';
+            const note = document.getElementById('preset-credential-profile-note');
+            if (note) note.textContent = 'Credential profile cleared after provider change.';
+        }
+        const wizardRow = document.getElementById('wizard-account-row');
+        if (wizardRow && !wizardRow.classList.contains('hidden')) {
+            const provider = document.getElementById('preset_provider')?.value || '';
+            const isOAuth = providerProfileIsEnabledOAuth(provider);
+            document.getElementById('wizard_account_api_key')?.classList.toggle('hidden', isOAuth);
+            document.getElementById('wizard_account_api_base')?.classList.toggle('hidden', isOAuth);
+            document.getElementById('wizard-account-oauth-note')?.classList.toggle('hidden', !isOAuth);
+            wizardAccountSetResult(!provider || provider === 'auto'
+                ? 'Chọn provider cụ thể ở Bước 1 trước (không dùng "auto").'
+                : 'Account sẽ gắn với provider "' + provider + '" (theo Bước 1).',
+                !provider || provider === 'auto' ? 'error' : 'info');
+        }
+        presetCrudMarkUntested();
+        _renderPresetTestedModels();
+        wizardOAuthRefresh();
+    }
+
+    function presetCrudUpdateProviderVisibility() {
+        const profileName = document.getElementById('preset_credential_profile')?.value || '';
+        const providerWrap = document.getElementById('preset-provider-wrap');
+        const nameWrap = document.getElementById('preset-name-wrap');
+        if (providerWrap) providerWrap.classList.toggle('hidden', Boolean(profileName));
+        const lockedNote = document.getElementById('preset-provider-locked-note');
+        if (lockedNote) lockedNote.classList.toggle('hidden', !profileName);
+        if (nameWrap) nameWrap.classList.toggle('md:col-span-2', Boolean(profileName));
+    }
+
+    function presetCrudCredentialProfileChanged() {
+        const profileName = document.getElementById('preset_credential_profile')?.value || '';
+        const profile = profileName ? providerProfileParseRaw()[profileName] : null;
+        if (profile && profile.provider) {
+            const providerSelect = document.getElementById('preset_provider');
+            if (providerSelect) providerSelect.value = profile.provider;
+        }
+        presetCrudUpdateProviderVisibility();
+        presetCrudCredentialProfileNote();
+        presetCrudMarkUntested();
+        _renderPresetTestedModels();
+        wizardOAuthRefresh();
+    }
+
+    function presetCrudNew() {
+        document.getElementById('preset_edit_original').value = '';
+        document.getElementById('preset_name').value = '';
+        document.getElementById('preset_model').value = '';
+        document.getElementById('preset_provider').value = 'auto';
+        providerProfileRenderPresetOptions('');
+        document.getElementById('preset-credential-profile-note').textContent = '';
+        document.getElementById('preset_temperature').value = '0.1';
+        document.getElementById('preset_max_tokens').value = '8192';
+        document.getElementById('preset_context_window_tokens').value = '65536';
+        setPresetReasoningEffort('');
+        _presetVerifiedSignature = null;
+        presetCrudSetSaveEnabled(false);
+        _renderPresetTestedModels();
+        presetCrudShowForm();
+    }
+
+    function presetCrudEdit(name) {
+        const presets = presetCrudParseRaw();
+        const preset = presets[name] || {};
+        document.getElementById('preset_edit_original').value = name;
+        document.getElementById('preset_name').value = name;
+        document.getElementById('preset_model').value = preset.model || '';
+        document.getElementById('preset_provider').value = preset.provider || 'auto';
+        providerProfileRenderPresetOptions(preset.credentialProfile || preset.credential_profile || '');
+        presetCrudCredentialProfileNote();
+        document.getElementById('preset_temperature').value = preset.temperature ?? 0.1;
+        document.getElementById('preset_max_tokens').value = preset.maxTokens ?? preset.max_tokens ?? 8192;
+        document.getElementById('preset_context_window_tokens').value = preset.contextWindowTokens ?? preset.context_window_tokens ?? 65536;
+        setPresetReasoningEffort(preset.reasoningEffort ?? preset.reasoning_effort ?? '');
+        _presetVerifiedSignature = null;
+        presetCrudSetSaveEnabled(false);
+        _renderPresetTestedModels();
+        presetCrudShowForm();
+    }
+
+    function presetCrudCancel() {
+        const form = document.getElementById('preset-crud-form');
+        if (form) form.classList.add('hidden');
+    }
+
+    function setPresetReasoningEffort(value) {
+        const normalized = (value || '').trim();
+        const select = document.getElementById('preset_reasoning_effort_select');
+        const custom = document.getElementById('preset_reasoning_effort_custom');
+        if (!select || !custom) return;
+        if (!normalized || _presetReasoningOptions.includes(normalized)) {
+            select.value = normalized;
+            custom.value = '';
+        } else {
+            select.value = '__custom__';
+            custom.value = normalized;
+        }
+        updatePresetReasoningEffortInput();
+    }
+
+    function updatePresetReasoningEffortInput() {
+        const select = document.getElementById('preset_reasoning_effort_select');
+        const custom = document.getElementById('preset_reasoning_effort_custom');
+        const hidden = document.getElementById('preset_reasoning_effort');
+        if (!select || !custom || !hidden) return;
+        const isCustom = select.value === '__custom__';
+        hidden.value = isCustom ? custom.value.trim() : select.value;
+        custom.classList.toggle('hidden', !isCustom);
+    }
+
+    async function presetCrudSave() {
+        if (_presetVerifiedSignature !== presetCrudSignature()) {
+            alert('Test this preset provider/model successfully before saving.');
+            presetCrudSetSaveEnabled(false);
+            return;
+        }
+        const name = document.getElementById('preset_name').value.trim();
+        const original = document.getElementById('preset_edit_original').value.trim();
+        const model = document.getElementById('preset_model').value.trim();
+        if (!name || !model) {
+            alert('Preset name and model are required.');
+            return;
+        }
+        if (name.toLowerCase() === 'default') {
+            alert('Preset name "default" is reserved.');
+            return;
+        }
+        const presets = presetCrudParseRaw();
+        if (original && original !== name) delete presets[original];
+        presets[name] = {
+            model,
+            provider: document.getElementById('preset_provider').value || 'auto',
+            maxTokens: parseInt(document.getElementById('preset_max_tokens').value || '8192', 10),
+            contextWindowTokens: parseInt(document.getElementById('preset_context_window_tokens').value || '65536', 10),
+            temperature: parseFloat(document.getElementById('preset_temperature').value || '0.1'),
+        };
+        const credentialProfile = document.getElementById('preset_credential_profile')?.value || '';
+        if (credentialProfile) presets[name].credentialProfile = credentialProfile;
+        const reasoning = document.getElementById('preset_reasoning_effort').value.trim();
+        if (reasoning) presets[name].reasoningEffort = reasoning;
+        presetCrudWriteRaw(presets);
+        const saveBtn = document.getElementById('btn-save-preset');
+        if (saveBtn) saveBtn.disabled = true;
+        dashboardCrudStatus('preset-save-result', 'Saving model presets...', 'info');
+        try {
+            await dashboardCrudPersist('/config/model-presets', { model_presets: presets });
+        } catch (e) {
+            dashboardCrudStatus('preset-save-result', 'Save failed: ' + e.message, 'error');
+            presetCrudSetSaveEnabled(_presetVerifiedSignature === presetCrudSignature());
+            return;
+        }
+        providerProfileRender();
+        presetCrudRender();
+        presetCrudSyncActiveOptions();
+        fallbackCrudRender();
+        presetCrudCancel();
+        dashboardCrudStatus('preset-save-result', 'Saved model presets to config.', 'success');
+    }
+
+    async function presetCrudDelete(name) {
+        const ok = await showMatrixConfirm(
+            'DELETE MODEL PRESET',
+            'Xóa preset "' + name + '"?\n\n' +
+            '▸ Preset sẽ bị xóa khỏi config ngay\n' +
+            '▸ Nếu preset đang nằm trong fallback list, reference đó cũng sẽ bị gỡ\n' +
+            '▸ Thao tác này không cần Save Configuration',
+            'CONFIRM DELETE',
+            'SYS.PRESET'
+        );
+        if (!ok) return;
+        const presets = presetCrudParseRaw();
+        const previousPresets = JSON.stringify(presets, null, 2);
+        const previousFallbacks = JSON.stringify(fallbackCrudParseRaw(), null, 2);
+        delete presets[name];
+        presetCrudWriteRaw(presets);
+        fallbackCrudDropPreset(name);
+        const fallbackModels = fallbackCrudParseRaw();
+        dashboardCrudStatus('preset-save-result', 'Deleting model preset...', 'info');
+        try {
+            await dashboardCrudPersist('/config/model-presets', {
+                model_presets: presets,
+                fallback_models: fallbackModels,
+            });
+        } catch (e) {
+            const presetTextarea = document.getElementById('model_presets_json');
+            const fallbackTextarea = document.getElementById('fallback_models_json');
+            if (presetTextarea) presetTextarea.value = previousPresets;
+            if (fallbackTextarea) fallbackTextarea.value = previousFallbacks;
+            presetCrudRender();
+            fallbackCrudRender();
+            dashboardCrudStatus('preset-save-result', 'Delete failed: ' + e.message, 'error');
+            return;
+        }
+        providerProfileRender();
+        const active = document.getElementById('model_preset');
+        if (active && active.value === name) {
+            active.value = '';
+            updateModelPresetManualState();
+        }
+        presetCrudRender();
+        presetCrudSyncActiveOptions();
+        fallbackCrudRender();
+        dashboardCrudStatus('preset-save-result', 'Deleted model preset from config.', 'success');
+    }
+
+    function presetCrudSyncActiveOptions() {
+        const select = document.getElementById('model_preset');
+        if (!select) return;
+        const current = select.value;
+        const presets = presetCrudParseRaw();
+        select.innerHTML = '<option value="" style="background: #0a0a0a; color: #00FF41;">Custom</option>';
+        Object.keys(presets).sort().forEach((name) => {
+            const option = document.createElement('option');
+            option.value = name;
+            option.textContent = name;
+            option.style.background = '#0a0a0a';
+            option.style.color = '#00FF41';
+            select.appendChild(option);
+        });
+        select.value = Object.prototype.hasOwnProperty.call(presets, current) ? current : '';
+        updateModelPresetManualState();
+    }
+
+    function _renderPresetTestedModels() {
+        const cache = window._testedModelsCache || {};
+        const container = document.getElementById('preset-tested-models');
+        const list = document.getElementById('preset-tested-models-list');
+        if (!container || !list) return;
+        const provider = document.getElementById('preset_provider')?.value || 'auto';
+        const models = provider === 'auto'
+            ? [...new Set(Object.values(cache).flat())]
+            : (cache[provider] || []);
+        if (!models.length) {
+            container.style.display = 'none';
+            list.innerHTML = '';
+            return;
+        }
+        container.style.display = 'block';
+        list.innerHTML = '';
+        models.forEach((model) => {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.textContent = model;
+            chip.style.cssText = 'padding:2px 6px;border:1px solid rgba(0,255,65,0.2);font-size:9px;font-family:monospace;color:rgba(0,255,65,0.6);cursor:pointer;transition:all 0.15s;background:transparent;white-space:nowrap;';
+            chip.onmouseenter = () => { chip.style.color='#00FF41'; chip.style.borderColor='rgba(0,255,65,0.8)'; chip.style.background='rgba(0,255,65,0.08)'; };
+            chip.onmouseleave = () => { chip.style.color='rgba(0,255,65,0.6)'; chip.style.borderColor='rgba(0,255,65,0.2)'; chip.style.background='transparent'; };
+            chip.onclick = () => {
+                const input = document.getElementById('preset_model');
+                if (input) input.value = model;
+                presetCrudMarkUntested();
+            };
+            list.appendChild(chip);
+        });
+    }
+
+    function presetCrudRawChanged() {
+        // Raw textarea is the submitted source of truth. Do not overwrite it here.
+        dreamModelMarkUntested();
+        dreamModelRenderChips();
+    }
+
+    function presetCrudApplyRaw() {
+        providerProfileRender();
+        presetCrudRender();
+        presetCrudSyncActiveOptions();
+        fallbackCrudRender();
+        dreamModelMarkUntested();
+        dreamModelRenderChips();
+    }
+
+    async function testPresetModel() {
+        const model = document.getElementById('preset_model').value.trim();
+        const providerName = document.getElementById('preset_provider').value || 'auto';
+        const credentialProfile = document.getElementById('preset_credential_profile')?.value || '';
+        const resultEl = document.getElementById('preset-test-result');
+        const btn = document.getElementById('btn-test-preset-model');
+        if (!model) {
+            resultEl.style.display = 'block';
+            resultEl.innerHTML = '<span class="text-yellow-400">⚠ Enter a model name first</span>';
+            return;
+        }
+        const resolved = presetCrudResolveTestProvider(providerName, credentialProfile);
+        if (resolved.credentialProfileMissing) {
+            resultEl.style.display = 'block';
+            resultEl.innerHTML = '<span class="text-yellow-400">⚠ Selected credential profile no longer exists.</span>';
+            _presetVerifiedSignature = null;
+            presetCrudSetSaveEnabled(false);
+            return;
+        }
+        if (!resolved.apiKey && !resolved.oauthProviders.includes(resolved.actualProvider)) {
+            resultEl.style.display = 'block';
+            resultEl.innerHTML = '<span class="text-yellow-400">⚠ Provider has no API key. Configure provider credentials before saving this preset.</span>';
+            _presetVerifiedSignature = null;
+            presetCrudSetSaveEnabled(false);
+            return;
+        }
+        btn.disabled = true;
+        btn.innerHTML = '<div class="w-3 h-3 border-2 border-primary/30 border-t-primary rounded-full animate-spin"></div><span>Testing...</span>';
+        try {
+            const resp = await fetch('/config/test-provider', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    provider: resolved.actualProvider,
+                    api_key: resolved.apiKey,
+                    api_base: resolved.apiBase,
+                    credential_profile: resolved.credentialProfile || '',
+                    model,
+                }),
+            });
+            const data = await resp.json();
+            resultEl.style.display = 'block';
+            if (data.success) {
+                await fetch('/config/save-model', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ provider: resolved.actualProvider, model }),
+                });
+                _presetVerifiedSignature = presetCrudSignature();
+                presetCrudSetSaveEnabled(true);
+                resultEl.innerHTML = '<span class="text-green-400">✓ ' + data.message + ' — Save unlocked</span>';
+                loadTestedModels();
+            } else {
+                _presetVerifiedSignature = null;
+                presetCrudSetSaveEnabled(false);
+                const errText = data.error || 'Test failed';
+                resultEl.innerHTML = '<span class="text-red-400">✗ ' + errText + '</span>';
+                if (/oauth credentials not found/i.test(errText)) {
+                    resultEl.innerHTML += '<div class="text-yellow-400/80 text-[10px] font-mono mt-1">→ Account này chưa login OAuth. Dùng nút <span class="font-bold">Login</span> ở Bước 2 · Credential phía trên, xác thực xong bấm Test lại.</div>';
+                    wizardOAuthRefresh();
+                }
+            }
+        } catch (e) {
+            _presetVerifiedSignature = null;
+            presetCrudSetSaveEnabled(false);
+            resultEl.style.display = 'block';
+            resultEl.innerHTML = '<span class="text-red-400">✗ Network error: ' + e.message + '</span>';
+        }
+        btn.disabled = false;
+        btn.innerHTML = '<span class="material-symbols-outlined text-[14px]">bolt</span><span>Test</span>';
+    }
+
+    async function testModel() {
+        const modelInput = document.getElementById('model');
+        const providerSelect = document.getElementById('provider');
+        const btn = document.getElementById('btn-test-model');
+        const resultEl = document.getElementById('model-test-result');
+
+        const model = modelInput ? modelInput.value.trim() : '';
+        const providerName = providerSelect ? providerSelect.value : 'auto';
+
+        if (!model) {
+            resultEl.style.display = 'block';
+            resultEl.innerHTML = '<span class="text-yellow-400">⚠ Enter a model name first</span>';
+            return;
+        }
+
+                // Find provider key+base using _providerData + hidden-key-* inputs
+        // (input-key-* elements removed in combobox refactor)
+        let apiKey = '', apiBase = '', actualProvider = providerName;
+        const _oauthProviders = ['openai_codex', 'github_copilot', 'xai_oauth'];
+        if (providerName !== 'auto') {
+            const keyEl = document.getElementById('hidden-key-' + providerName);
+            const baseEl = document.getElementById('hidden-base-' + providerName);
+            apiKey = keyEl ? keyEl.value.trim() : (_providerData[providerName] ? _providerData[providerName].key : '');
+            apiBase = baseEl ? baseEl.value.trim() : (_providerData[providerName] ? _providerData[providerName].base : '');
+            // OAuth providers don't use API keys — skip the key check
+            if (!apiKey && !_oauthProviders.includes(providerName)) {
+                resultEl.style.display = 'block';
+                resultEl.innerHTML = '<span class="text-yellow-400">⚠ Provider \'' + providerName + '\' chưa có API key. Hãy nhập key cho provider này trước, hoặc đổi sang provider khác.</span>';
+                return;
+            }
+        } else {
+            // Auto mode: find first provider with a key, or first OAuth provider
+            for (const pName of Object.keys(_providerData)) {
+                const info = _providerData[pName];
+                const k = (info.key || '').trim();
+                if (k) {
+                    apiKey = k;
+                    apiBase = (info.base || '').trim();
+                    actualProvider = pName;
+                    break;
+                }
+            }
+            // Fallback: use OAuth provider if no key found
+            if (!apiKey) {
+                for (const pName of _oauthProviders) {
+                    if (_providerData[pName]) { actualProvider = pName; break; }
+                }
+            }
+        }
+
+
+        if (!apiKey && !_oauthProviders.includes(actualProvider)) {
+            resultEl.style.display = 'block';
+            resultEl.innerHTML = '<span class="text-yellow-400">⚠ No API key found — configure a provider key first</span>';
+            return;
+        }
+
+        // Spinner
+        btn.disabled = true;
+        btn.innerHTML = '<div class="w-3 h-3 border-2 border-primary/30 border-t-primary rounded-full animate-spin"></div><span>Testing...</span>';
+
+        try {
+            const resp = await fetch('/config/test-provider', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider: actualProvider, api_key: apiKey, api_base: apiBase, model: model }),
+            });
+            const data = await resp.json();
+
+            resultEl.style.display = 'block';
+            if (data.success) {
+                // Auto-save model + provider
+                const saveResp = await fetch('/config/save-model', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model: model, provider: actualProvider }),
+                });
+                const saveData = await saveResp.json();
+                resultEl.innerHTML = '<span class="text-green-400">✓ ' + data.message +
+                    (saveData.success ? ' — Model + Provider saved ✓' : '') + '</span>' +
+                    '<br><span class="text-primary/50 text-[10px]">✓ Thay đổi có hiệu lực cho lần chat tiếp theo</span>';
+                loadTestedModels();
+            } else if (data.suggestion) {
+                resultEl.innerHTML = '<span class="text-yellow-400">⚠ ' + data.error + '</span>' +
+                    '<br><button type="button" onclick="document.getElementById(\'model\').value=\'' + data.suggestion + '\';testModel();" ' +
+                    'class="mt-1 px-2 py-0.5 border border-primary/40 text-[10px] text-primary/70 hover:bg-primary/10 hover:text-primary hover:border-primary transition-all cursor-pointer">' +
+                    '→ Dùng: ' + data.suggestion + '</button>';
+            } else if (data.key_valid) {
+                resultEl.innerHTML = '<span class="text-yellow-400">⚠ ' + data.error + '</span>';
+            } else {
+                resultEl.innerHTML = '<span class="text-red-400">✗ ' + data.error + '</span>';
+            }
+        } catch (e) {
+            resultEl.style.display = 'block';
+            resultEl.innerHTML = '<span class="text-red-400">✗ Network error: ' + e.message + '</span>';
+        }
+
+        // Restore button
+        btn.disabled = false;
+        btn.innerHTML = '<span class="material-symbols-outlined text-[14px]">bolt</span><span>Test</span>';
+    }
+
+    async function autoSaveProvider(providerName, apiKey, apiBase) {
+        try {
+            const resp = await fetch('/config/save-provider', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider: providerName, api_key: apiKey, api_base: apiBase }),
+            });
+            const data = await resp.json();
+            return data.success;
+        } catch (e) {
+            console.warn('Auto-save failed:', e);
+            return false;
+        }
+    }
+
+    function applySuggestion(providerName, suggested) {
+        const inp = document.getElementById('active-provider-model');
+        if (inp && _activeProvider === providerName) {
+            inp.value = suggested;
+            testProvider(providerName);
+        }
+    }
+
+    async function testProvider(providerName) {
+        if (!providerName) return;
+        // Read values from the single active card
+        const keyInput = document.getElementById('active-provider-key');
+        const baseInput = document.getElementById('active-provider-base');
+        const providerModelInput = document.getElementById('active-provider-model');
+        const btn = document.getElementById('btn-test-active');
+        const resultEl = document.getElementById('test-result-active');
+        const card = document.getElementById('provider-active-card');
+
+        const apiKey = keyInput ? keyInput.value.trim() : '';
+        const apiBase = baseInput ? baseInput.value.trim() : '';
+        const model = providerModelInput ? providerModelInput.value.trim() : '';
+
+        if (!model) {
+            resultEl.style.display = 'block';
+            resultEl.innerHTML = '<span class="text-yellow-400">⚠ Hãy nhập model name vào ô Test Model (VD: gemini/gemini-2.0-flash)</span>';
+            return;
+        }
+        if (!apiKey) {
+            resultEl.style.display = 'block';
+            resultEl.innerHTML = '<span class="text-yellow-400">⚠ Enter API key first</span>';
+            return;
+        }
+
+        // Show spinner
+        btn.disabled = true;
+        btn.innerHTML = '<div class="w-3 h-3 border-2 border-primary/30 border-t-primary rounded-full animate-spin"></div><span>Testing...</span>';
+
+        try {
+            const resp = await fetch('/config/test-provider', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider: providerName, api_key: apiKey, api_base: apiBase, model: model }),
+            });
+            const data = await resp.json();
+
+            resultEl.style.display = 'block';
+            if (data.success) {
+                // Full success — auto-save provider
+                providerTestState[providerName] = 'pass';
+                const saveResult = await autoSaveProvider(providerName, apiKey, apiBase);
+                if (saveResult && _providerData[providerName]) {
+                    _providerData[providerName].hasKey = true;
+                    refreshProviderStatusDots(providerName);
+                }
+                resultEl.innerHTML = '<span class="text-green-400">✓ ' + data.message +
+                    (saveResult ? ' — Saved ✓' : '') + '</span>';
+                card.style.borderColor = 'rgba(74, 222, 128, 0.5)';
+                card.style.boxShadow = '0 0 10px rgba(74, 222, 128, 0.15)';
+                loadTestedModels();
+            } else if (data.suggestion) {
+                // Missing prefix — show clickable suggestion
+                resultEl.innerHTML = '<span class="text-yellow-400">⚠ ' + data.error + '</span>' +
+                    '<br><button type="button" onclick="applySuggestion(\'' + providerName + '\', \'' + data.suggestion + '\')" ' +
+                    'class="mt-1 px-2 py-0.5 border border-primary/40 text-[10px] text-primary/70 hover:bg-primary/10 hover:text-primary hover:border-primary transition-all cursor-pointer">' +
+                    '→ Dùng: ' + data.suggestion + '</button>';
+                card.style.borderColor = 'rgba(250, 204, 21, 0.5)';
+                card.style.boxShadow = '0 0 10px rgba(250, 204, 21, 0.15)';
+                providerTestState[providerName] = 'fail';
+            } else if (data.key_valid) {
+                // Key valid but model not found — still auto-save the key
+                providerTestState[providerName] = 'warn';
+                const saveResult = await autoSaveProvider(providerName, apiKey, apiBase);
+                if (saveResult && _providerData[providerName]) {
+                    _providerData[providerName].hasKey = true;
+                    refreshProviderStatusDots(providerName);
+                }
+                resultEl.innerHTML = '<span class="text-yellow-400">⚠ ' + data.error +
+                    (saveResult ? ' — Key saved ✓' : '') + '</span>';
+                card.style.borderColor = 'rgba(250, 204, 21, 0.5)';
+                card.style.boxShadow = '0 0 10px rgba(250, 204, 21, 0.15)';
+            } else {
+                // Key invalid or connection error
+                resultEl.innerHTML = '<span class="text-red-400">✗ ' + data.error + '</span>';
+                card.style.borderColor = 'rgba(239, 68, 68, 0.5)';
+                card.style.boxShadow = '0 0 10px rgba(239, 68, 68, 0.15)';
+                providerTestState[providerName] = 'fail';
+            }
+        } catch (e) {
+            resultEl.style.display = 'block';
+            resultEl.innerHTML = '<span class="text-red-400">✗ Network error: ' + e.message + '</span>';
+            providerTestState[providerName] = 'fail';
+        }
+
+        // Restore button
+        btn.disabled = false;
+        btn.innerHTML = '<span class="material-symbols-outlined text-[14px]">bolt</span><span>Test</span>';
+
+        updateSaveButton();
+    }
+
+    function onProviderFieldChange(providerName) {
+        // Reset test result when user edits
+        const resultEl = document.getElementById('test-result-active');
+        const card = document.getElementById('provider-active-card');
+        if (resultEl) resultEl.style.display = 'none';
+        if (card) { card.style.borderColor = ''; card.style.boxShadow = ''; }
+        if (providerName) providerTestState[providerName] = 'untested';
+        updateSaveButton();
+    }
+
+    function updateSaveButton() {
+        const saveBtn = document.getElementById('save-btn');
+        if (!saveBtn) return;
+
+        // Check if any provider has a key entered but untested
+        const hasUntestedKey = Object.keys(providerTestState).some(p => providerTestState[p] === 'untested');
+        const hasFailedTest = Object.values(providerTestState).some(s => s === 'fail');
+
+        // Enable save if no untested providers with changed keys and no failures
+        const allStates = Object.values(providerTestState);
+        if (allStates.length === 0) {
+            // No provider fields changed — allow save
+            enableSave(saveBtn);
+        } else if (hasFailedTest) {
+            disableSave(saveBtn, 'Test failed — fix errors first');
+        } else if (hasUntestedKey) {
+            disableSave(saveBtn, 'Test API key before saving');
+        } else {
+            enableSave(saveBtn);
+        }
+    }
+
+    function enableSave(btn) {
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        btn.style.cursor = 'pointer';
+    }
+
+    function disableSave(btn, reason) {
+        btn.disabled = true;
+        btn.style.opacity = '0.4';
+        btn.style.cursor = 'not-allowed';
+    }
+
+    // Also reset test state when model name changes
+    const modelField = document.getElementById('model');
+    if (modelField) {
+        modelField.addEventListener('input', function () {
+            // Reset all provider test states
+            for (const p of Object.keys(providerTestState)) {
+                onProviderFieldChange(p);
+            }
+            dreamModelMarkUntested();
+            dreamModelRenderChips();
+        });
+    }
+    const providerField = document.getElementById('provider');
+    if (providerField) {
+        providerField.addEventListener('change', function () {
+            dreamModelMarkUntested();
+            dreamModelRenderChips();
+        });
+    }
+
+    // Load tested models on page load
+    toggleModelPresetsPanel();
+    updateNeuralProviderConfiguredOptions();
+    updateModelPresetManualState();
+    toggleUnifiedSession();
+    providerProfileRender();
+    presetCrudRender();
+    fallbackCrudRender();
+    loadTestedModels();
+    refreshOAuthProviderStatuses();
+    refreshEffectiveRoute();
+    initRoutingMode();
+
+    // Auto-expand gateway section if URL has #web-section
+    if (window.location.hash === '#web-section') {
+        const gatewayBody = document.getElementById('gateway-body');
+        const gatewayIcon = document.getElementById('gateway-body-icon');
+        if (gatewayBody && gatewayBody.classList.contains('hidden')) {
+            gatewayBody.classList.remove('hidden');
+            if (gatewayIcon) gatewayIcon.textContent = 'expand_less';
+        }
+        setTimeout(() => {
+            const target = document.getElementById('web-section');
+            if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 150);
+    }
+
+    // Toggle heartbeat label
+    const hbCheckbox = document.getElementById('heartbeat_enabled');
+    const hbLabel = document.getElementById('hb-label');
+    if (hbCheckbox && hbLabel) {
+        hbCheckbox.addEventListener('change', () => {
+            hbLabel.textContent = hbCheckbox.checked ? 'ACTIVE' : 'DISABLED';
+        });
+    }
+
+    const imageGenerationCheckbox = document.getElementById('image_generation_enabled');
+    const imageGenerationLabel = document.getElementById('image-generation-label');
+    const imageGenerationSettings = document.getElementById('image-generation-settings');
+    function updateImageGenerationSettingsVisibility() {
+        if (!imageGenerationCheckbox || !imageGenerationSettings) return;
+        const enabled = imageGenerationCheckbox.checked;
+        imageGenerationSettings.classList.toggle('hidden', !enabled);
+        if (imageGenerationLabel) {
+            imageGenerationLabel.textContent = enabled ? 'ENABLED' : 'DISABLED';
+        }
+    }
+    if (imageGenerationCheckbox) {
+        imageGenerationCheckbox.addEventListener('change', updateImageGenerationSettingsVisibility);
+        updateImageGenerationSettingsVisibility();
+    }
+
+    // Live password match indicator
+    const pwdConfirm = document.getElementById('web_password_confirm');
+    if (pwdConfirm) {
+        pwdConfirm.addEventListener('input', () => {
+            const pwd = document.getElementById('web_password');
+            const msg = document.getElementById('pwd-match-msg');
+            if (!msg || !pwd) return;
+            if (pwdConfirm.value === '') { msg.classList.add('hidden'); pwdConfirm.classList.remove('border-red-500', 'border-primary'); return; }
+            if (pwd.value === pwdConfirm.value) {
+                msg.textContent = '✓ Match';
+                msg.className = 'text-[10px] font-mono text-primary/60';
+                msg.classList.remove('hidden');
+                pwdConfirm.classList.remove('border-red-500');
+                pwdConfirm.classList.add('border-primary');
+            } else {
+                msg.textContent = '✗ Passwords do not match';
+                msg.className = 'text-[10px] font-mono text-red-400';
+                msg.classList.remove('hidden');
+                pwdConfirm.classList.add('border-red-500');
+                pwdConfirm.classList.remove('border-primary');
+            }
+        });
+    }
+
+    // Auto-hide toast
+    const flash = document.getElementById('flashMsg');
+    if (flash) {
+        setTimeout(() => { flash.style.animation = 'toastOut 0.4s ease-in forwards'; setTimeout(() => flash.style.display = 'none', 400); }, 3000);
+    }
+
+    // Collapsible sections
+    function toggleSection(id) {
+        const body = document.getElementById(id);
+        const icon = document.getElementById(id + '-icon');
+        if (body) {
+            body.classList.toggle('hidden');
+            if (icon) icon.textContent = body.classList.contains('hidden') ? 'expand_more' : 'expand_less';
+        }
+    }
+
+    // ── Model Routing: Simple / Advanced mode (card-scoped, saved in localStorage) ──
+    function setRoutingMode(mode, persist = true) {
+        const advanced = mode !== 'simple';
+        document.querySelectorAll('.routing-advanced').forEach((el) => el.classList.toggle('hidden', !advanced));
+        const hint = document.getElementById('routing-simple-hint');
+        if (hint) hint.classList.toggle('hidden', advanced);
+        [[document.getElementById('routing-mode-simple'), !advanced],
+         [document.getElementById('routing-mode-advanced'), advanced]].forEach(([btn, active]) => {
+            if (!btn) return;
+            btn.classList.toggle('bg-primary/20', active);
+            btn.classList.toggle('text-primary', active);
+            btn.classList.toggle('text-primary/40', !active);
+        });
+        if (persist) {
+            try { localStorage.setItem('neuralRoutingMode', advanced ? 'advanced' : 'simple'); } catch (_) { }
+        }
+    }
+
+    function initRoutingMode() {
+        let mode = 'simple';
+        try { mode = localStorage.getItem('neuralRoutingMode') || 'simple'; } catch (_) { }
+        // Config already uses routes/named accounts/fallbacks → force Advanced so nothing in use gets hidden
+        let inUse = false;
+        try {
+            inUse = Object.keys(presetCrudParseRaw()).length > 0
+                || Object.keys(providerProfileParseRaw()).length > 0
+                || fallbackCrudParseRaw().length > 0;
+        } catch (_) { }
+        if (inUse) mode = 'advanced';
+        setRoutingMode(mode, false);
+    }
+
+    // ── Exec Sandbox ──
+    function confirmSandboxSave() {
+        if (!dreamModelCanSubmit()) {
+            dreamModelSetResult('<span class="text-yellow-400">Test this Dream model with the current bot provider before saving.</span>');
+            const dreamBody = document.getElementById('dream-body');
+            const dreamIcon = document.getElementById('dream-body-icon');
+            if (dreamBody && dreamBody.classList.contains('hidden')) {
+                dreamBody.classList.remove('hidden');
+                if (dreamIcon) dreamIcon.textContent = 'expand_less';
+            }
+            const input = document.getElementById('dream_model_override');
+            if (input) input.focus();
+            return false;
+        }
+        // Validate password match — only when user CHANGED the password
+        const pwd = document.getElementById('web_password');
+        const confirmPwd = document.getElementById('web_password_confirm');
+        const msg = document.getElementById('pwd-match-msg');
+        const passwordChanged = pwd && pwd.value !== (pwd.dataset.original || '');
+        if (passwordChanged && pwd.value.trim() !== '') {
+            // Password was changed — confirm must match
+            if (confirmPwd.value.trim() === '') {
+                if (msg) {
+                    msg.textContent = '✗ Please repeat the new password';
+                    msg.className = 'text-[10px] font-mono text-red-400';
+                    msg.classList.remove('hidden');
+                }
+                confirmPwd.classList.add('border-red-500');
+                confirmPwd.focus();
+                return false;
+            }
+            if (pwd.value !== confirmPwd.value) {
+                if (msg) {
+                    msg.textContent = '✗ Passwords do not match';
+                    msg.className = 'text-[10px] font-mono text-red-400';
+                    msg.classList.remove('hidden');
+                }
+                confirmPwd.classList.add('border-red-500');
+                confirmPwd.focus();
+                return false;
+            }
+            if (msg) { msg.textContent = '✓ Match'; msg.className = 'text-[10px] font-mono text-primary/60'; msg.classList.remove('hidden'); }
+            confirmPwd.classList.remove('border-red-500');
+        }
+
+
+        const mode = document.querySelector('input[name="sandbox_mode"]:checked')?.value;
+        if (mode === 'unrestricted') {
+            if (!confirm('⚠️ Chế độ "Không hạn chế" cho phép bot đọc/ghi/xóa file bất kỳ trên hệ thống.\n\nBạn chắc chắn muốn lưu?')) {
+                return false;
+            }
+        }
+        // Filter: remove unvalidated allowed_dirs before submit
+        document.querySelectorAll('.allowed-dir-row input').forEach(input => {
+            if (input.dataset.validated !== 'true') {
+                input.removeAttribute('name');  // won't be submitted
+            }
+        });
+        // Clear subdir if not validated (unless empty = default)
+        const subdirInput = document.getElementById('workspace_subdir');
+        if (subdirInput && subdirInput.value.trim() && subdirInput.dataset.validated !== 'true') {
+            subdirInput.value = '';  // reset to default
+        }
+        return true;
+    }
+

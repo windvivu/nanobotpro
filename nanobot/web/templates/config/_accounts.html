@@ -1,0 +1,299 @@
+        <!-- ============================================================ -->
+        <!-- Section: Providers -->
+        <!-- ============================================================ -->
+        <div class="matrix-card p-6">
+            <div class="flex items-center justify-between mb-4 border-b border-primary/20 pb-4 cursor-pointer"
+                onclick="toggleSection('providers-body')">
+                <div class="flex items-center gap-3">
+                    <span class="material-symbols-outlined glow-text">key</span>
+                    <h3 class="text-xs font-bold uppercase tracking-widest glow-text">Accounts &amp; Credentials</h3>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="text-[10px] text-primary/30 font-mono">{{ providers | selectattr('has_key') | list |
+                        length }} configured</span>
+                    <span class="material-symbols-outlined text-primary/80 text-sm"
+                        id="providers-body-icon">expand_more</span>
+                </div>
+            </div>
+
+            <div id="providers-body" class="hidden">
+
+                <!-- ── Hidden inputs for form submit (all providers) ── -->
+                {% for p in providers %}
+                <input type="hidden" name="provider_{{ p.name }}_api_key" id="hidden-key-{{ p.name }}" value="{{ p.api_key }}">
+                <input type="hidden" name="provider_{{ p.name }}_api_base" id="hidden-base-{{ p.name }}" value="{{ p.api_base }}">
+                {% if p.name == 'bedrock' %}
+                <input type="hidden" name="provider_bedrock_region" id="hidden-bedrock-region" value="{{ p.region }}">
+                <input type="hidden" name="provider_bedrock_profile" id="hidden-bedrock-profile" value="{{ p.profile }}">
+                {% endif %}
+                {% endfor %}
+
+                <!-- ── Global accounts (providers.<name>) ── -->
+                <div class="mb-3">
+                    <span title="providers.<name>" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt; Global_Accounts</span>
+                    <p class="dashboard-subtitle text-[10px] font-mono mt-1">Key dùng chung cho mỗi provider — route nào không gán Named account sẽ dùng key này. (config: providers)</p>
+                </div>
+                <div class="relative mb-4" id="provider-picker-wrap">
+                    <div class="flex items-center gap-2 border border-primary/30 bg-black/60 hover:border-primary/60 transition-colors duration-200">
+                        <span class="material-symbols-outlined text-primary/40 text-[16px] ml-3">search</span>
+                        <input
+                            type="text"
+                            id="provider-search-input"
+                            placeholder="Select or search provider (e.g. openai, anthropic...)"
+                            autocomplete="off"
+                            data-bwignore="true"
+                            data-1p-ignore="true"
+                            data-lpignore="true"
+                            data-form-type="other"
+                            role="combobox"
+                            aria-autocomplete="list"
+                            class="flex-1 bg-transparent outline-none px-2 py-2.5 text-primary font-mono text-xs placeholder-primary/30"
+                            oninput="filterProviderDropdown()"
+                            onfocus="openProviderDropdown()"
+                        >
+                        <span id="provider-selected-dot" class="w-2 h-2 rounded-full bg-primary/20 mr-3 transition-colors duration-300" title="Provider status"></span>
+                    </div>
+                <!-- Dropdown list is created by JS portal (appended to body) -->
+                </div>
+
+
+                <!-- ── Active Provider Card (shown after selection) ── -->
+                <div id="provider-active-card" class="hidden border border-primary/20 p-4 transition-all duration-300" style="animation: none;">
+                    <div class="flex items-center gap-3 mb-3">
+                        <span id="active-provider-dot" class="w-2 h-2 rounded-full bg-primary/20"></span>
+                        <span id="active-provider-name" class="text-[11px] font-bold uppercase tracking-widest text-primary">—</span>
+                        <button type="button" onclick="testProvider(_activeProvider)" id="btn-test-active"
+                            class="ml-auto px-3 py-1 border border-primary/40 text-primary/70 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/10 hover:border-primary hover:text-primary transition-all duration-300 flex items-center gap-1.5">
+                            <span class="material-symbols-outlined text-[14px]">bolt</span>
+                            <span>Test</span>
+                        </button>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div class="flex flex-col gap-1">
+                            <label class="text-[9px] font-bold uppercase tracking-[0.3em] text-primary/70">API Key</label>
+                            <div class="relative">
+                                <input type="password" id="active-provider-key" value=""
+                                    oninput="syncActiveProvider('key')"
+                                    class="w-full bg-black/60 border border-primary/30 focus:border-primary outline-none px-3 py-2 text-primary font-mono text-xs transition-all duration-300 pr-10">
+                                <button type="button" onclick="toggleReveal(this)"
+                                    class="absolute right-2 top-1/2 -translate-y-1/2 text-primary/30 hover:text-primary transition-colors">
+                                    <span class="material-symbols-outlined text-[16px]">visibility</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="flex flex-col gap-1">
+                            <label class="text-[9px] font-bold uppercase tracking-[0.3em] text-primary/70">API Base</label>
+                            <input type="text" id="active-provider-base" value="" placeholder="default"
+                                oninput="syncActiveProvider('base')"
+                                class="w-full bg-black/60 border border-primary/30 focus:border-primary outline-none px-3 py-2 text-primary font-mono text-xs placeholder-primary/35 transition-all duration-300">
+                        </div>
+                    </div>
+                    <div id="bedrock-provider-panel" class="hidden mt-3 border-t border-primary/10 pt-3">
+                        <div class="text-[9px] uppercase tracking-[0.3em] text-primary/50 font-bold mb-2">AWS Bedrock Options</div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div class="flex flex-col gap-1">
+                                <label for="active-bedrock-region" class="text-[9px] font-bold uppercase tracking-[0.3em] text-primary/70">Region</label>
+                                <input type="text" id="active-bedrock-region" value="" placeholder="e.g. us-east-1"
+                                    oninput="syncBedrockProviderExtra('region')"
+                                    class="w-full bg-black/60 border border-primary/30 focus:border-primary outline-none px-3 py-2 text-primary font-mono text-xs placeholder-primary/35 transition-all duration-300">
+                            </div>
+                            <div class="flex flex-col gap-1">
+                                <label for="active-bedrock-profile" class="text-[9px] font-bold uppercase tracking-[0.3em] text-primary/70">Profile</label>
+                                <input type="text" id="active-bedrock-profile" value="" placeholder="optional AWS profile"
+                                    oninput="syncBedrockProviderExtra('profile')"
+                                    class="w-full bg-black/60 border border-primary/30 focus:border-primary outline-none px-3 py-2 text-primary font-mono text-xs placeholder-primary/35 transition-all duration-300">
+                            </div>
+                        </div>
+                        <span class="text-[9px] text-primary/30 mt-2 block">Region và profile sẽ đi qua Save Config, không dùng auto-save AJAX.</span>
+                    </div>
+                    <!-- Test model -->
+                    <div class="mt-2">
+                        <div class="flex items-center gap-2">
+                            <label class="text-[9px] font-bold uppercase tracking-[0.3em] text-primary/50 whitespace-nowrap">Test Model</label>
+                            <input type="text" id="active-provider-model" placeholder="e.g. gpt-4o (leave blank to use Neural Core model)"
+                                oninput="onProviderFieldChange(_activeProvider)"
+                                class="flex-1 bg-black/60 border border-primary/20 focus:border-primary outline-none px-3 py-1.5 text-primary font-mono text-[11px] placeholder-primary/35 transition-all duration-300">
+                        </div>
+                    </div>
+                    <!-- Tested models -->
+                    <div class="mt-2" id="tested-models-active" style="display: none;">
+                        <div class="flex items-center gap-2">
+                            <span class="text-[9px] text-primary/40 uppercase tracking-wider">Tested models:</span>
+                            <div class="flex flex-wrap gap-1" id="tested-models-list-active"></div>
+                        </div>
+                    </div>
+                    <!-- Test result -->
+                    <div class="mt-2 text-[11px] font-mono" id="test-result-active" style="display: none;"></div>
+                    <!-- ── OAuth Panel (Codex / Copilot) ── -->
+                    <div id="oauth-panel" class="hidden mt-3 border-t border-primary/10 pt-3">
+                        <!-- OpenAI Codex section -->
+                        <div id="oauth-codex-section" class="hidden">
+                            <div class="text-[9px] uppercase tracking-[0.3em] text-primary/50 font-bold mb-2">ChatGPT / OpenAI Codex — OAuth Login</div>
+                            <div id="codex-login-area">
+                                <button type="button" onclick="codexStartLogin()"
+                                    class="px-3 py-1.5 border border-primary/40 text-primary/70 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/10 hover:border-primary hover:text-primary transition-all duration-300 flex items-center gap-1.5">
+                                    <span class="material-symbols-outlined text-[14px]">login</span>
+                                    <span>Generate Login URL</span>
+                                </button>
+                                <div id="codex-url-step" class="hidden mt-2 space-y-2">
+                                    <div class="text-[10px] text-primary/50 font-mono">1. Copy URL bên dưới, mở trong trình duyệt và đăng nhập ChatGPT:</div>
+                                    <div class="flex gap-2">
+                                        <input type="text" id="codex-auth-url" readonly
+                                            class="flex-1 bg-black/60 border border-primary/20 outline-none px-2 py-1 text-primary/70 font-mono text-[10px]">
+                                        <button type="button" onclick="codexCopyUrl()"
+                                            class="px-2 py-1 border border-primary/30 text-primary/50 hover:text-primary hover:border-primary transition-all text-[10px]">Copy</button>
+                                    </div>
+                                    <div class="text-[10px] text-primary/50 font-mono">2. Sau khi đăng nhập, trình duyệt redirect tới <code class="text-primary/70">localhost:1455/auth/callback?code=...</code> — copy toàn bộ URL đó và paste vào đây:</div>
+                                    <div class="flex gap-2">
+                                        <input type="text" id="codex-callback-url" placeholder="localhost:1455/auth/callback?code=..."
+                                            class="flex-1 bg-black/60 border border-primary/20 focus:border-primary outline-none px-2 py-1 text-primary font-mono text-[10px] placeholder-primary/30">
+                                        <button type="button" onclick="codexSubmitCallback()"
+                                            class="px-3 py-1 border border-primary/40 text-primary/70 hover:bg-primary/10 hover:border-primary hover:text-primary transition-all text-[10px] font-bold">✓ Xác nhận</button>
+                                    </div>
+                                    <div id="codex-callback-result" class="text-[10px] font-mono" style="display:none"></div>
+                                </div>
+                            </div>
+                            <div id="codex-logged-area" class="hidden flex items-center gap-3">
+                                <span class="w-2 h-2 rounded-full bg-primary shadow-[0_0_5px_#00FF41]"></span>
+                                <span class="text-[10px] font-mono text-primary/70">Đã đăng nhập <span id="codex-account-id" class="text-primary/50"></span></span>
+                                <button type="button" onclick="codexLogout()"
+                                    class="ml-auto px-2 py-1 border border-red-500/30 text-red-400/60 hover:text-red-400 hover:border-red-500 transition-all text-[9px] font-bold uppercase tracking-wider">Logout</button>
+                            </div>
+                        </div>
+                        <!-- GitHub Copilot section -->
+                        <div id="oauth-copilot-section" class="hidden">
+                            <div class="text-[9px] uppercase tracking-[0.3em] text-primary/50 font-bold mb-2">GitHub Copilot — Device Login</div>
+                            <div id="copilot-login-area">
+                                <button type="button" onclick="copilotStartLogin()"
+                                    class="px-3 py-1.5 border border-primary/40 text-primary/70 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/10 hover:border-primary hover:text-primary transition-all duration-300 flex items-center gap-1.5">
+                                    <span class="material-symbols-outlined text-[14px]">login</span>
+                                    <span>Login via GitHub Device Flow</span>
+                                </button>
+                                <div id="copilot-device-step" class="hidden mt-2 space-y-2">
+                                    <div class="text-[10px] text-primary/50 font-mono">Vào <a id="copilot-verify-url" href="https://github.com/login/device" target="_blank" class="text-primary underline hover:text-primary/80">github.com/login/device</a> và nhập code:</div>
+                                    <div class="font-mono text-lg tracking-[0.4em] text-primary" id="copilot-user-code">—</div>
+                                    <div class="text-[10px] font-mono text-primary/50" id="copilot-poll-status"></div>
+                                </div>
+                            </div>
+                            <div id="copilot-logged-area" class="hidden flex items-center gap-3">
+                                <span class="w-2 h-2 rounded-full bg-primary shadow-[0_0_5px_#00FF41]"></span>
+                                <span class="text-[10px] font-mono text-primary/70">GitHub Copilot đã xác thực</span>
+                                <button type="button" onclick="copilotLogout()"
+                                    class="ml-auto px-2 py-1 border border-red-500/30 text-red-400/60 hover:text-red-400 hover:border-red-500 transition-all text-[9px] font-bold uppercase tracking-wider">Logout</button>
+                            </div>
+                        </div>
+                        <!-- xAI OAuth section -->
+                        <div id="oauth-xai-section" class="hidden">
+                            <div class="text-[9px] uppercase tracking-[0.3em] text-yellow-400/70 font-bold mb-2">xAI OAuth — Experimental</div>
+                            <div class="text-[10px] text-yellow-400/70 font-mono mb-2">Uses the upstream Grok-CLI client_id for local experimental use. Production path: xai API key.</div>
+                            <div id="xai-login-area">
+                                <button type="button" onclick="xaiStartLogin()"
+                                    class="px-3 py-1.5 border border-primary/40 text-primary/70 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/10 hover:border-primary hover:text-primary transition-all duration-300 flex items-center gap-1.5">
+                                    <span class="material-symbols-outlined text-[14px]">login</span>
+                                    <span>Generate xAI Login URL</span>
+                                </button>
+                                <div id="xai-url-step" class="hidden mt-2 space-y-2">
+                                    <div class="text-[10px] text-primary/50 font-mono">1. Copy URL, open it in a browser, and sign in to xAI:</div>
+                                    <div class="flex gap-2">
+                                        <input type="text" id="xai-auth-url" readonly
+                                            class="flex-1 bg-black/60 border border-primary/20 outline-none px-2 py-1 text-primary/70 font-mono text-[10px]">
+                                        <button type="button" onclick="xaiCopyUrl()"
+                                            class="px-2 py-1 border border-primary/30 text-primary/50 hover:text-primary hover:border-primary transition-all text-[10px]">Copy</button>
+                                    </div>
+                                    <div class="text-[10px] text-primary/50 font-mono">2. Paste the full callback URL if redirected, or paste the displayed code shown by xAI/Grok Build:</div>
+                                    <div class="flex gap-2">
+                                        <input type="text" id="xai-callback-url" placeholder="callback URL or displayed code"
+                                            class="flex-1 bg-black/60 border border-primary/20 focus:border-primary outline-none px-2 py-1 text-primary font-mono text-[10px] placeholder-primary/30">
+                                        <button type="button" onclick="xaiSubmitCallback()"
+                                            class="px-3 py-1 border border-primary/40 text-primary/70 hover:bg-primary/10 hover:border-primary hover:text-primary transition-all text-[10px] font-bold">Confirm</button>
+                                    </div>
+                                    <div id="xai-callback-result" class="text-[10px] font-mono" style="display:none"></div>
+                                </div>
+                            </div>
+                            <div id="xai-logged-area" class="hidden flex items-center gap-3">
+                                <span class="w-2 h-2 rounded-full bg-primary shadow-[0_0_5px_#00FF41]"></span>
+                                <span class="text-[10px] font-mono text-primary/70">xAI OAuth logged in <span id="xai-account-id" class="text-primary/50"></span></span>
+                                <button type="button" onclick="xaiLogout()"
+                                    class="ml-auto px-2 py-1 border border-red-500/30 text-red-400/60 hover:text-red-400 hover:border-red-500 transition-all text-[9px] font-bold uppercase tracking-wider">Logout</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Hint when no provider selected -->
+                <div id="provider-hint" class="text-center py-4 text-primary/20 text-[11px] font-mono tracking-wider">
+                    ▸ CLICK ABOVE TO SELECT A PROVIDER
+                </div>
+
+                <!-- ── Named accounts (provider_profiles) ── -->
+                <div class="flex flex-col gap-4 mt-6 border border-primary/15 bg-primary/[0.02] p-4">
+                    <label class="group flex flex-col md:flex-row md:items-center md:justify-between gap-3 cursor-pointer">
+                        <div>
+                            <span title="provider_profiles" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
+                                Named_Accounts</span>
+                            <p class="dashboard-subtitle text-[10px] font-mono mt-1">Tài khoản có tên riêng — dùng khi cần nhiều account cho cùng một provider; gán vào route qua ô Named_Account trong Neural Core. (config: provider_profiles)</p>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span id="multi-credential-profile-status" class="text-[10px] font-bold uppercase tracking-wider text-primary/40">Hidden</span>
+                            <div class="relative">
+                                <input type="checkbox" id="multi_credential_profile_enabled" onchange="toggleMultiCredentialProfiles()"
+                                    class="sr-only peer" />
+                                <div class="w-14 h-7 bg-black/60 border border-primary/50 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300"></div>
+                                <div class="absolute top-[3px] left-[3px] w-5 h-5 bg-primary/40 peer-checked:bg-primary peer-checked:shadow-[0_0_10px_#00FF41] peer-checked:translate-x-7 transition-all duration-300"></div>
+                            </div>
+                        </div>
+                    </label>
+
+                    <div id="provider-credential-profiles-panel" class="hidden flex flex-col gap-4">
+                        <div class="flex justify-end">
+                            <button type="button" onclick="providerProfileNew()"
+                                class="px-3 py-2 border border-primary/40 text-primary/80 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/10 hover:border-primary hover:text-primary transition-all duration-300 flex items-center gap-1.5 w-fit">
+                                <span class="material-symbols-outlined text-[14px]">add</span>
+                                <span>Add Account</span>
+                            </button>
+                        </div>
+                        <div id="provider-profile-list" class="flex flex-col gap-2"></div>
+                        <div id="provider-profile-save-result" class="text-[10px] font-mono" style="display: none;"></div>
+                        <div id="provider-profile-form" class="hidden mt-4 border border-primary/20 bg-black/30 p-4">
+                            <input type="hidden" id="provider_profile_edit_original" />
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div class="flex flex-col gap-2">
+                                    <label for="provider_profile_name" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt; Account_Name</label>
+                                    <input type="text" id="provider_profile_name"
+                                        class="w-full bg-black/60 border border-primary/50 focus:border-primary outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                                </div>
+                                <div class="flex flex-col gap-2">
+                                    <label for="provider_profile_provider" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt; Provider</label>
+                                    <select id="provider_profile_provider" onchange="providerProfileProviderChanged()"
+                                        class="w-full bg-black/60 border border-primary/50 focus:border-primary outline-none px-4 py-3 text-primary font-mono text-sm transition-all duration-300 appearance-none cursor-pointer">
+                                        {% for opt in provider_options if opt not in ['auto', 'bedrock'] %}
+                                        <option value="{{ opt }}" style="background: #0a0a0a; color: #00FF41;">{{ provider_label(opt) }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div id="provider-profile-api-key-wrap" class="flex flex-col gap-2">
+                                    <label for="provider_profile_api_key" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt; API_Key</label>
+                                    <input type="password" id="provider_profile_api_key"
+                                        class="w-full bg-black/60 border border-primary/50 focus:border-primary outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                                </div>
+                                <div id="provider-profile-api-base-wrap" class="flex flex-col gap-2">
+                                    <label for="provider_profile_api_base" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt; API_Base</label>
+                                    <input type="text" id="provider_profile_api_base"
+                                        class="w-full bg-black/60 border border-primary/50 focus:border-primary outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                                </div>
+                            </div>
+                            <div class="flex justify-end gap-3 mt-4">
+                                <button type="button" onclick="providerProfileSave()" id="btn-save-provider-profile"
+                                    class="px-3 py-2 border border-primary/30 text-primary/70 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/10 hover:border-primary hover:text-primary transition-all">Save Account</button>
+                                <button type="button" onclick="providerProfileCancel()"
+                                    class="px-3 py-2 border border-primary/20 text-primary/50 text-[10px] font-bold uppercase tracking-wider hover:border-primary/50 transition-all">Cancel</button>
+                            </div>
+                        </div>
+                        <textarea id="provider_profiles_json" name="provider_profiles_json" class="hidden">{{ provider_profiles_json }}</textarea>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+

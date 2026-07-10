@@ -1,0 +1,281 @@
+        <!-- ============================================================ -->
+        <!-- Section: Channels (enabled only) -->
+        <!-- ============================================================ -->
+        <div class="matrix-card p-6">
+            <div class="flex items-center justify-between mb-4 border-b border-primary/20 pb-4 cursor-pointer"
+                onclick="toggleSection('channels-body')">
+                <div class="flex items-center gap-3">
+                    <span class="material-symbols-outlined glow-text">forum</span>
+                    <h3 class="text-xs font-bold uppercase tracking-widest glow-text">Active Channels</h3>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="text-[10px] text-primary/30 font-mono">{{ channels | length }} enabled</span>
+                    <span class="material-symbols-outlined text-primary/80 text-sm"
+                        id="channels-body-icon">expand_more</span>
+                </div>
+            </div>
+
+            <div id="channels-body" class="hidden">
+                <!-- Global channel settings -->
+                <div class="flex flex-wrap items-center gap-x-8 gap-y-4 mb-6 pb-4 border-b border-primary/10">
+                    <div class="flex items-center gap-2">
+                        <label class="flex items-center gap-4 cursor-pointer">
+                            <div class="relative">
+                                <input type="checkbox" name="send_progress" {% if send_progress %}checked{% endif %}
+                                    class="sr-only peer" />
+                                <div class="w-12 h-6 bg-black/60 border border-primary/50 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300"></div>
+                                <div class="absolute top-[2px] left-[2px] w-5 h-5 bg-primary/40 peer-checked:bg-primary peer-checked:shadow-[0_0_8px_#00FF41] peer-checked:translate-x-6 transition-all duration-300"></div>
+                            </div>
+                            <span class="text-[10px] font-bold uppercase tracking-widest text-primary/60">Send_Progress</span>
+                        </label>
+                        <div class="relative group flex items-center">
+                            <button type="button" class="text-primary/30 hover:text-primary/70 text-[10px] font-mono transition-colors leading-none">(?)</button>
+                            <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 hidden group-hover:block z-50 pointer-events-none">
+                                <div class="bg-black border border-primary/40 p-3 text-[10px] text-primary/70 font-mono leading-relaxed shadow-[0_0_15px_rgba(0,255,65,0.15)]">
+                                    <p class="text-primary font-bold mb-1">Send_Progress</p>
+                                    Khi bật, bot gửi tin nhắn trung gian trong lúc xử lý (ví dụ: "Đang tìm kiếm...", "Đang đọc file..."). Giúp user biết bot đang làm gì thay vì im lặng chờ.
+                                    <span class="text-primary/40 mt-1 block">Nên tắt nếu channel không hỗ trợ edit message hoặc gây nhiễu.</span>
+                                </div>
+                                <div class="w-2 h-2 bg-black border-r border-b border-primary/40 rotate-45 mx-auto -mt-1"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <label class="flex items-center gap-4 cursor-pointer">
+                            <div class="relative">
+                                <input type="checkbox" name="send_tool_hints" {% if send_tool_hints %}checked{% endif %}
+                                    class="sr-only peer" />
+                                <div class="w-12 h-6 bg-black/60 border border-primary/50 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300"></div>
+                                <div class="absolute top-[2px] left-[2px] w-5 h-5 bg-primary/40 peer-checked:bg-primary peer-checked:shadow-[0_0_8px_#00FF41] peer-checked:translate-x-6 transition-all duration-300"></div>
+                            </div>
+                            <span class="text-[10px] font-bold uppercase tracking-widest text-primary/60">Send_Tool_Hints</span>
+                        </label>
+                        <div class="relative group flex items-center">
+                            <button type="button" class="text-primary/30 hover:text-primary/70 text-[10px] font-mono transition-colors leading-none">(?)</button>
+                            <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 hidden group-hover:block z-50 pointer-events-none">
+                                <div class="bg-black border border-primary/40 p-3 text-[10px] text-primary/70 font-mono leading-relaxed shadow-[0_0_15px_rgba(0,255,65,0.15)]">
+                                    <p class="text-primary font-bold mb-1">Send_Tool_Hints</p>
+                                    Khi bật, bot thông báo ngắn khi bắt đầu dùng tool (ví dụ: "🔍 Đang tìm kiếm web...", "📂 Đang đọc file..."). Giúp user hiểu bot đang thực hiện thao tác gì.
+                                    <span class="text-primary/40 mt-1 block">Khác Send_Progress: chỉ thông báo tên tool, không phải toàn bộ intermediate output.</span>
+                                </div>
+                                <div class="w-2 h-2 bg-black border-r border-b border-primary/40 rotate-45 mx-auto -mt-1"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="text-[10px] font-bold uppercase tracking-widest text-primary/60">Debounce</span>
+                        <div class="relative group flex items-center mr-1">
+                            <button type="button" class="text-primary/30 hover:text-primary/70 text-[10px] font-mono transition-colors leading-none">(?)</button>
+                            <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 hidden group-hover:block z-50 pointer-events-none">
+                                <div class="bg-black border border-primary/40 p-3 text-[10px] text-primary/70 font-mono leading-relaxed shadow-[0_0_15px_rgba(0,255,65,0.15)]">
+                                    <p class="text-primary font-bold mb-1">Debounce</p>
+                                    Thời gian chờ (giây) trước khi xử lý tin nhắn. Nếu user gửi nhiều tin liên tiếp trong khoảng này, bot gộp tất cả thành 1 lần xử lý.
+                                    <br><br>
+                                    <span class="text-primary/60">Ví dụ (debounce = 2s):</span><br>
+                                    • "Bạn ơi..." → chờ 2s<br>
+                                    • "cho tôi hỏi..." → reset timer<br>
+                                    • "về Python nhé" → gộp 3 tin, trả lời 1 lần
+                                    <span class="text-primary/40 mt-1 block">Đặt 0 để tắt. Khuyến nghị: 1.5–3s.</span>
+                                </div>
+                                <div class="w-2 h-2 bg-black border-r border-b border-primary/40 rotate-45 mx-auto -mt-1"></div>
+                            </div>
+                        </div>
+                        <input type="number" id="debounce_seconds" name="debounce_seconds"
+                            value="{{ debounce_seconds }}" step="0.5" min="0" max="10"
+                            class="w-16 bg-black/60 border border-primary/30 focus:border-primary outline-none px-2 py-1 text-primary font-mono text-xs text-center transition-all duration-300" />
+                        <span class="text-[9px] text-primary/30 font-mono">sec</span>
+                    </div>
+                    {% if disabled_channels %}
+                    <div class="flex items-center gap-2">
+                        <select id="enable-channel-select"
+                            class="bg-black/60 border border-primary/30 focus:border-primary outline-none px-2 py-1 text-primary font-mono text-[10px] transition-all duration-300 appearance-none cursor-pointer"
+                            style="background-image: none;">
+                            <option value="" style="background: #0a0a0a; color: #00FF41;">+ channels</option>
+                            {% for dc in disabled_channels %}
+                            <option value="{{ dc }}" style="background: #0a0a0a; color: #00FF41;">{{ dc }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="button" onclick="enableSelectedChannel()"
+                            class="px-2 py-1 border border-primary/40 text-primary/70 text-[9px] font-bold uppercase tracking-wider hover:bg-primary/10 hover:border-primary hover:text-primary transition-all duration-300 flex items-center gap-1">
+                            <span class="material-symbols-outlined text-[12px]">add_circle</span>
+                            <span>Enable</span>
+                        </button>
+                    </div>
+                    {% endif %}
+                </div>
+                <div id="toggle-channel-result" class="mt-2 text-[11px] font-mono" style="display:none;"></div>
+
+                {% if channels %}
+                <div class="space-y-4" id="enabled-channels-list">
+                    {% for ch in channels %}
+                    <div class="border border-primary/20 p-4 bg-primary/5" id="ch-card-{{ ch.name }}">
+                        <div class="flex items-center gap-3 mb-3">
+                            <span class="w-2 h-2 rounded-full bg-primary shadow-[0_0_6px_#00FF41]"></span>
+                            <span class="text-[11px] font-bold uppercase tracking-widest text-primary">{{ ch.name }}</span>
+                            <span class="text-[9px] text-primary/30 font-mono">channels.{{ ch.name }}</span>
+                            <button type="button" onclick="toggleChannel('{{ ch.name }}', false)"
+                                class="ml-auto px-2 py-1 border border-red-500/30 text-red-400/60 text-[9px] font-bold uppercase tracking-wider hover:bg-red-500/10 hover:border-red-500 hover:text-red-400 transition-all duration-300 flex items-center gap-1">
+                                <span class="material-symbols-outlined text-[12px]">power_settings_new</span>
+                                <span>Disable</span>
+                            </button>
+                        </div>
+                        {% if ch.name == 'telegram' %}
+                        {# Telegram: editable fields #}
+                        <div class="grid grid-cols-1 gap-4 text-[10px] font-mono">
+                            {# Token #}
+                            <div class="flex flex-col gap-1">
+                                <div class="flex items-center gap-3">
+                                    <label class="text-primary/70 font-bold">token</label>
+                                    <button type="button" onclick="testTelegramToken()"
+                                        id="test-telegram-btn"
+                                        class="px-2 py-0.5 border border-primary/30 text-primary/50 text-[9px] font-bold uppercase tracking-wider hover:bg-primary/10 hover:border-primary hover:text-primary transition-all duration-300 flex items-center gap-1">
+                                        <span class="material-symbols-outlined text-[11px]">verified</span>
+                                        <span>Test</span>
+                                    </button>
+                                    <span id="telegram-test-result" class="text-[10px] font-mono" style="display: none;"></span>
+                                </div>
+                                <input type="password" id="channel_telegram_token" name="channel_telegram_token"
+                                    value="{{ ch.fields.get('token', '') }}"
+                                    placeholder="e.g. 123456789:AAFxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                                    class="w-full bg-black border border-primary/20 text-primary/90 text-[10px] font-mono px-2 py-1.5 focus:outline-none focus:border-primary/60">
+                                <span class="text-primary/35">Lấy từ @BotFather trên Telegram. Để trống nếu không muốn thay đổi.</span>
+                            </div>
+                            {# allow_from #}
+                            <div class="flex flex-col gap-1">
+                                <label class="text-primary/70 font-bold">allow_from</label>
+                                <input type="text" name="channel_telegram_allow_from"
+                                    value="{{ ch.fields.get('allow_from', ch.fields.get('allowFrom', '')) }}"
+                                    placeholder="e.g. 123456789, 987654321"
+                                    class="w-full bg-black border border-primary/20 text-primary/90 text-[10px] font-mono px-2 py-1.5 focus:outline-none focus:border-primary/60">
+                                <span class="text-primary/35">Danh sách Telegram User ID được phép nhắn tin, cách nhau bởi dấu phẩy. Lấy ID của bạn từ @userinfobot.</span>
+                            </div>
+                            {# proxy #}
+                            <div class="flex flex-col gap-1">
+                                <label class="text-primary/70 font-bold">proxy <span class="text-primary/35 font-normal">(tùy chọn)</span></label>
+                                <input type="text" name="channel_telegram_proxy"
+                                    value="{{ ch.fields.get('proxy', '') }}"
+                                    placeholder="e.g. http://127.0.0.1:7890 hoặc socks5://127.0.0.1:1080"
+                                    class="w-full bg-black border border-primary/20 text-primary/90 text-[10px] font-mono px-2 py-1.5 focus:outline-none focus:border-primary/60">
+                                <span class="text-primary/35">Để trống nếu kết nối Telegram trực tiếp (không qua proxy).</span>
+                            </div>
+                            {# reply_to_message #}
+                            <div class="flex flex-col gap-1">
+                                <label class="flex items-center gap-3 cursor-pointer py-1">
+                                    <div class="relative">
+                                        <input type="checkbox" name="channel_telegram_reply_to_message"
+                                            id="channel_telegram_reply_to_message"
+                                            {% set _reply_to_message = ch.fields.get('reply_to_message', ch.fields.get('replyToMessage')) %}
+                                            {% if _reply_to_message == True or _reply_to_message == 'True' %}checked{% endif %}
+                                            class="sr-only peer" />
+                                        <div class="w-10 h-5 bg-black/60 border border-primary/30 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300"></div>
+                                        <div class="absolute top-[2px] left-[2px] w-4 h-4 bg-primary/30 peer-checked:bg-primary peer-checked:shadow-[0_0_8px_#00FF41] peer-checked:translate-x-5 transition-all duration-300"></div>
+                                    </div>
+                                    <span class="text-[10px] font-bold uppercase tracking-wider text-primary/60 peer-checked:text-primary">reply_to_message</span>
+                                </label>
+                                <span class="text-primary/35 pl-[52px] text-[10px]">Khi bật, bot sẽ reply trích dẫn tin nhắn gốc của user thay vì gửi tin nhắn mới độc lập.</span>
+                            </div>
+                            {# streaming #}
+                            <div class="flex flex-col gap-1">
+                                <label class="flex items-center gap-3 cursor-pointer py-1">
+                                    <div class="relative">
+                                        <input type="checkbox" name="channel_telegram_streaming"
+                                            id="channel_telegram_streaming"
+                                            {% set _stream = ch.fields.get('streaming') %}
+                                            {% if _stream == True or _stream == 'True' or _stream is none %}checked{% endif %}
+                                            class="sr-only peer" />
+                                        <div class="w-10 h-5 bg-black/60 border border-primary/30 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300"></div>
+                                        <div class="absolute top-[2px] left-[2px] w-4 h-4 bg-primary/30 peer-checked:bg-primary peer-checked:shadow-[0_0_8px_#00FF41] peer-checked:translate-x-5 transition-all duration-300"></div>
+                                    </div>
+                                    <span class="text-[10px] font-bold uppercase tracking-wider text-primary/60 peer-checked:text-primary">streaming</span>
+                                </label>
+                                <span class="text-primary/35 pl-[52px] text-[10px]">Khi bật, bot sẽ stream phản hồi từng phần (trên webchat luôn là streaming dù có tắt). Tắt nếu muốn gửi phản hồi đầy đủ 1 lần..</span>
+                            </div>
+                            {# group_policy #}
+                            <div class="flex flex-col gap-3 border border-primary/15 bg-black/20 p-4">
+                                {% set telegram_group_policy = ch.fields.get('group_policy', ch.fields.get('groupPolicy', 'mention')) %}
+                                <div class="flex items-center justify-between gap-3">
+                                    <label class="text-[10px] font-bold uppercase tracking-wider text-primary/60">group_policy</label>
+                                    <span class="text-[9px] text-primary/25 font-mono">groupPolicy</span>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                    <label class="cursor-pointer border border-primary/20 bg-black/30 p-3 hover:border-primary/50 transition-colors">
+                                        <div class="flex items-center gap-3">
+                                            <span class="relative inline-flex w-10 h-5 shrink-0">
+                                                <input type="radio" name="channel_telegram_group_policy" value="mention"
+                                                    {% if telegram_group_policy == "mention" %}checked{% endif %}
+                                                    class="sr-only peer">
+                                                <span class="w-10 h-5 bg-black/60 border border-primary/30 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300"></span>
+                                                <span class="absolute top-[2px] left-[2px] w-4 h-4 bg-primary/30 peer-checked:bg-primary peer-checked:shadow-[0_0_8px_#00FF41] peer-checked:translate-x-5 transition-all duration-300"></span>
+                                            </span>
+                                            <span class="text-xs font-bold uppercase tracking-wider text-primary/80">Mentions only</span>
+                                        </div>
+                                        <p class="mt-2 text-[10px] leading-relaxed text-primary/35">
+                                            Ignore unmentioned group chat before LLM. No token cost.
+                                        </p>
+                                    </label>
+                                    <label class="cursor-pointer border border-primary/20 bg-black/30 p-3 hover:border-primary/50 transition-colors">
+                                        <div class="flex items-center gap-3">
+                                            <span class="relative inline-flex w-10 h-5 shrink-0">
+                                                <input type="radio" name="channel_telegram_group_policy" value="ambient"
+                                                    {% if telegram_group_policy == "ambient" %}checked{% endif %}
+                                                    class="sr-only peer">
+                                                <span class="w-10 h-5 bg-black/60 border border-primary/30 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300"></span>
+                                                <span class="absolute top-[2px] left-[2px] w-4 h-4 bg-primary/30 peer-checked:bg-primary peer-checked:shadow-[0_0_8px_#00FF41] peer-checked:translate-x-5 transition-all duration-300"></span>
+                                            </span>
+                                            <span class="text-xs font-bold uppercase tracking-wider text-primary/80">Smart ambient</span>
+                                        </div>
+                                        <p class="mt-2 text-[10px] leading-relaxed text-primary/35">
+                                            Let LLM decide whether to answer unmentioned group chat.
+                                        </p>
+                                    </label>
+                                    <label class="cursor-pointer border border-primary/20 bg-black/30 p-3 hover:border-primary/50 transition-colors">
+                                        <div class="flex items-center gap-3">
+                                            <span class="relative inline-flex w-10 h-5 shrink-0">
+                                                <input type="radio" name="channel_telegram_group_policy" value="open"
+                                                    {% if telegram_group_policy == "open" %}checked{% endif %}
+                                                    class="sr-only peer">
+                                                <span class="w-10 h-5 bg-black/60 border border-primary/30 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300"></span>
+                                                <span class="absolute top-[2px] left-[2px] w-4 h-4 bg-primary/30 peer-checked:bg-primary peer-checked:shadow-[0_0_8px_#00FF41] peer-checked:translate-x-5 transition-all duration-300"></span>
+                                            </span>
+                                            <span class="text-xs font-bold uppercase tracking-wider text-primary/80">Open</span>
+                                        </div>
+                                        <p class="mt-2 text-[10px] leading-relaxed text-primary/35">
+                                            Treat every group message like normal chat. Debug/private groups only.
+                                        </p>
+                                    </label>
+                                </div>
+                            </div>
+                            <p class="text-[9px] text-yellow-400/60 mt-1 border-t border-yellow-400/20 pt-2">
+                                ⚠ Thay đổi channel config cần <strong>restart gateway</strong> để có hiệu lực
+                            </p>
+                        </div>
+                        {% else %}
+                        {# Other channels: read-only #}
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-[10px] font-mono">
+                            {% for fname, fval in ch.fields.items() %}
+                            <div class="flex gap-2 py-1 border-b border-primary/5">
+                                <span class="text-primary/40 min-w-[120px]">{{ fname }}:</span>
+                                {% if 'token' in fname or 'secret' in fname or 'password' in fname %}
+                                <span class="text-primary/60">{{ '***' + fval[-4:] if fval and fval|string|length > 4 else fval }}</span>
+                                {% else %}
+                                <span class="text-primary/80 break-all">{{ fval }}</span>
+                                {% endif %}
+                            </div>
+                            {% endfor %}
+                        </div>
+                        <p class="text-[9px] text-primary/30 mt-2 pt-2 border-t border-primary/10">
+                            Cấu hình chi tiết trong <strong>config.json</strong> → <code>channels.{{ ch.name }}</code>. Restart gateway để áp dụng.
+                        </p>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="py-4 text-center">
+                    <span class="text-[10px] text-primary/30 uppercase tracking-widest">No channels currently
+                        enabled</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+

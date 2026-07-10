@@ -7,22 +7,27 @@
 {% block content %}
 <section class="summary-grid">
     <div class="summary-card">
+        <span class="material-symbols-outlined kpi-icon" aria-hidden="true">smart_toy</span>
         <div class="summary-label">Total Bots</div>
         <div class="summary-value">{{ bots|length }}</div>
     </div>
     <div class="summary-card">
+        <span class="material-symbols-outlined kpi-icon" aria-hidden="true">bolt</span>
         <div class="summary-label">Running</div>
         <div class="summary-value">{{ running_count }}</div>
     </div>
     <div class="summary-card">
+        <span class="material-symbols-outlined kpi-icon" aria-hidden="true">pause_circle</span>
         <div class="summary-label">Stopped</div>
         <div class="summary-value">{{ stopped_count }}</div>
     </div>
     <div class="summary-card summary-card-warning">
+        <span class="material-symbols-outlined kpi-icon" aria-hidden="true">warning</span>
         <div class="summary-label">Needs Attention</div>
         <div class="summary-value">{{ attention_count }}</div>
     </div>
     <div class="summary-card">
+        <span class="material-symbols-outlined kpi-icon" aria-hidden="true">schedule</span>
         <div class="summary-label">Never Started</div>
         <div class="summary-value">{{ never_started_count }}</div>
     </div>
@@ -30,8 +35,8 @@
 
 <section class="panel">
     <div class="panel-header">
-        <h2>Bot Fleet</h2>
-        <a class="button button-primary" href="/bots/new">Create Bot</a>
+        <h2><span class="material-symbols-outlined panel-icon" aria-hidden="true">view_list</span> Bot Fleet</h2>
+        <a class="button button-primary" href="/bots/new"><span class="material-symbols-outlined" aria-hidden="true">rocket_launch</span>Create Bot</a>
     </div>
     {% if bots %}
     <div class="table-wrap">
@@ -42,10 +47,8 @@
                     <th>Description</th>
                     <th>Status</th>
                     <th>Link</th>
-                    <th>Workspace</th>
                     <th>Web Port</th>
                     <th>Runtime</th>
-                    <th>Updated</th>
                     <th>Actions</th>
                 </tr>
             </thead>
@@ -53,7 +56,13 @@
                 {% for bot in bots %}
                 <tr class="{% if bot.attention %}bot-row-attention{% endif %}">
                     <td>
-                        <a class="inline-link" href="/bots/{{ bot.id }}">{{ bot.name }}</a>
+                        <div class="bot-identity">
+                            <span class="bot-avatar" aria-hidden="true"><span class="material-symbols-outlined">smart_toy</span></span>
+                            <div class="bot-identity-text">
+                                <a class="inline-link" href="/bots/{{ bot.id }}">{{ bot.name }}</a>
+                                <div class="bot-workspace-path mono muted" title="{{ bot.workspace }}">{{ bot.workspace }}</div>
+                            </div>
+                        </div>
                     </td>
                     <td class="bot-description">{{ bot.description or "-" }}</td>
                     <td>
@@ -61,41 +70,35 @@
                     </td>
                     <td>
                         {% if bot.status == "running" %}
-                        <a class="inline-link bot-dashboard-link" href="{{ bot.dashboard_url }}" target="_blank" rel="noreferrer">{{ bot.dashboard_url }}</a>
+                        <a class="button button-small button-link bot-dashboard-link" href="{{ bot.dashboard_url }}" target="_blank" rel="noreferrer" title="{{ bot.dashboard_url }}"><span class="material-symbols-outlined" aria-hidden="true">open_in_new</span>Open</a>
                         {% else %}
-                        <span class="muted">Dashboard unavailable while stopped</span>
+                        <span class="muted">&mdash;</span>
                         {% endif %}
                     </td>
-                    <td class="mono">{{ bot.workspace }}</td>
                     <td>{{ bot.web_port }}</td>
                     <td>
                         <div class="signal-stack mono">
-                            <div>pid {{ bot.pid }}</div>
                             <div>run {{ bot.last_run_label }}</div>
-                        </div>
-                    </td>
-                    <td>
-                        <div class="signal-stack mono">
-                            <div>{{ bot.updated_label }}</div>
-                            <div class="muted">{{ bot.updated_at }}</div>
+                            <div class="muted signal-stack-sub">pid {{ bot.pid }}</div>
                         </div>
                     </td>
                     <td>
                         <div class="action-row">
                             {% if bot.status == "running" %}
                             <form method="post" action="/bots/{{ bot.id }}/stop" data-bot-action-form>
-                                <button class="button button-small" type="submit" data-action-label="Stop"><span data-label>Stop</span></button>
+                                <button class="button button-small" type="submit" data-action-label="Stop"><span class="material-symbols-outlined" aria-hidden="true">stop_circle</span><span data-label>Stop</span></button>
                             </form>
-                            <form method="post" action="/bots/{{ bot.id }}/restart" data-bot-action-form>
-                                <button class="button button-small" type="submit" data-action-label="Restart"><span data-label>Restart</span></button>
+                            <form method="post" action="/bots/{{ bot.id }}/restart" data-bot-action-form data-cooldown-ms="5000">
+                                <button class="button button-small" type="submit" data-action-label="Restart"><span class="material-symbols-outlined" aria-hidden="true">refresh</span><span data-label>Restart</span></button>
                             </form>
                             {% else %}
                             <form method="post" action="/bots/{{ bot.id }}/start" data-bot-action-form>
-                                <button class="button button-small" type="submit" data-action-label="Start"><span data-label>Start</span></button>
+                                <button class="button button-small" type="submit" data-action-label="Start"><span class="material-symbols-outlined" aria-hidden="true">play_arrow</span><span data-label>Start</span></button>
                             </form>
+                            <button class="button button-small button-disabled" type="button" disabled><span class="material-symbols-outlined" aria-hidden="true">refresh</span>Restart</button>
                             {% endif %}
-                            <a class="button button-small button-link" href="/bots/{{ bot.id }}">Details</a>
-                            <a class="button button-small button-link" href="/bots/{{ bot.id }}/logs">Logs</a>
+                            <a class="button button-small" href="/bots/{{ bot.id }}"><span class="material-symbols-outlined" aria-hidden="true">visibility</span>Details</a>
+                            <a class="button button-small" href="/bots/{{ bot.id }}/logs"><span class="material-symbols-outlined" aria-hidden="true">description</span>Logs</a>
                         </div>
                     </td>
                 </tr>

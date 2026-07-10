@@ -1,0 +1,894 @@
+    function providerProfileNew() {
+        document.getElementById('provider_profile_edit_original').value = '';
+        document.getElementById('provider_profile_name').value = '';
+        document.getElementById('provider_profile_provider').value = 'openrouter';
+        document.getElementById('provider_profile_api_key').value = '';
+        document.getElementById('provider_profile_api_base').value = '';
+        providerProfileProviderChanged();
+        providerProfileShowForm();
+    }
+
+    function providerProfileEdit(name) {
+        const profiles = providerProfileParseRaw();
+        const profile = profiles[name] || {};
+        document.getElementById('provider_profile_edit_original').value = name;
+        document.getElementById('provider_profile_name').value = name;
+        document.getElementById('provider_profile_provider').value = profile.provider || 'openrouter';
+        document.getElementById('provider_profile_api_key').value = profile.apiKey ?? profile.api_key ?? '';
+        document.getElementById('provider_profile_api_base').value = profile.apiBase ?? profile.api_base ?? '';
+        providerProfileProviderChanged();
+        providerProfileShowForm();
+    }
+
+    function providerProfileCancel() {
+        const form = document.getElementById('provider-profile-form');
+        if (form) form.classList.add('hidden');
+    }
+
+    // ── Wizard: inline named-account creation (Add Route step 2) ──
+    function wizardAccountSetResult(message, kind) {
+        const el = document.getElementById('wizard-account-result');
+        if (!el) return;
+        el.textContent = message || '';
+        el.className = 'text-[10px] font-mono ' + (kind === 'error' ? 'text-red-400' : kind === 'success' ? 'text-primary' : 'text-primary/60');
+    }
+
+    function wizardAccountReset() {
+        const row = document.getElementById('wizard-account-row');
+        if (row) row.classList.add('hidden');
+        ['wizard_account_name', 'wizard_account_api_key', 'wizard_account_api_base'].forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+        wizardAccountSetResult('', 'info');
+    }
+
+    function wizardAccountToggle() {
+        const row = document.getElementById('wizard-account-row');
+        if (!row) return;
+        if (row.classList.contains('hidden')) {
+            const provider = document.getElementById('preset_provider')?.value || '';
+            if (!provider || provider === 'auto') {
+                wizardAccountSetResult('', 'info');
+                row.classList.remove('hidden');
+                wizardAccountSetResult('Chọn provider cụ thể ở Bước 1 trước (không dùng "auto").', 'error');
+                return;
+            }
+            const isOAuth = providerProfileIsEnabledOAuth(provider);
+            document.getElementById('wizard_account_api_key')?.classList.toggle('hidden', isOAuth);
+            document.getElementById('wizard_account_api_base')?.classList.toggle('hidden', isOAuth);
+            document.getElementById('wizard-account-oauth-note')?.classList.toggle('hidden', !isOAuth);
+            wizardAccountSetResult('Account sẽ gắn với provider "' + provider + '" (theo Bước 1).', 'info');
+            row.classList.remove('hidden');
+        } else {
+            row.classList.add('hidden');
+        }
+    }
+
+    async function wizardAccountCreate() {
+        const provider = document.getElementById('preset_provider')?.value || '';
+        const name = (document.getElementById('wizard_account_name')?.value || '').trim();
+        const btn = document.getElementById('btn-wizard-create-account');
+        if (!provider || provider === 'auto') {
+            wizardAccountSetResult('Chọn provider cụ thể ở Bước 1 trước (không dùng "auto").', 'error');
+            return;
+        }
+        if (provider === 'bedrock') {
+            wizardAccountSetResult('Provider bedrock không hỗ trợ named account.', 'error');
+            return;
+        }
+        if (!name) {
+            wizardAccountSetResult('Nhập tên account.', 'error');
+            return;
+        }
+        if (['default', 'auto'].includes(name.toLowerCase())) {
+            wizardAccountSetResult('Tên "' + name + '" là tên dành riêng, chọn tên khác.', 'error');
+            return;
+        }
+        const profiles = providerProfileParseRaw();
+        if (Object.prototype.hasOwnProperty.call(profiles, name)) {
+            wizardAccountSetResult('Account "' + name + '" đã tồn tại — chọn nó trong dropdown phía trên.', 'error');
+            return;
+        }
+        const isOAuth = providerProfileIsEnabledOAuth(provider);
+        const profile = { provider };
+        if (!isOAuth) {
+            const apiKey = (document.getElementById('wizard_account_api_key')?.value || '').trim();
+            const apiBase = (document.getElementById('wizard_account_api_base')?.value || '').trim();
+            if (!apiKey) {
+                wizardAccountSetResult('Nhập API key cho account này.', 'error');
+                return;
+            }
+            profile.apiKey = apiKey;
+            if (apiBase) profile.apiBase = apiBase;
+        }
+        profiles[name] = profile;
+        providerProfileWriteRaw(profiles);
+        if (btn) btn.disabled = true;
+        wizardAccountSetResult('Saving...', 'info');
+        try {
+            await dashboardCrudPersist('/config/provider-profiles', { provider_profiles: profiles });
+        } catch (e) {
+            delete profiles[name];
+            providerProfileWriteRaw(profiles);
+            wizardAccountSetResult('Save failed: ' + e.message, 'error');
+            if (btn) btn.disabled = false;
+            return;
+        }
+        if (btn) btn.disabled = false;
+        providerProfileRender();
+        providerProfileRenderPresetOptions(name);
+        presetCrudCredentialProfileChanged();
+        document.getElementById('wizard-account-row')?.classList.add('hidden');
+        ['wizard_account_name', 'wizard_account_api_key', 'wizard_account_api_base'].forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+        wizardAccountSetResult(isOAuth
+            ? 'Đã tạo "' + name + '" và chọn vào route. Bấm Login ở khung OAuth phía trên để xác thực.'
+            : 'Đã tạo "' + name + '" và chọn vào route.', 'success');
+        wizardOAuthRefresh();
+    }
+
+    // ── Wizard: OAuth status + login inline (Add Route step 2) ──
+    function wizardOAuthContext() {
+        const profileName = document.getElementById('preset_credential_profile')?.value || '';
+        let provider;
+        if (profileName) {
+            const profile = providerProfileParseRaw()[profileName] || {};
+            provider = profile.provider || '';
+        } else {
+            provider = document.getElementById('preset_provider')?.value || '';
+        }
+        return { profileName, provider, isOAuth: providerProfileIsEnabledOAuth(provider) };
+    }
+
+    async function wizardOAuthRefresh() {
+        const wrap = document.getElementById('wizard-oauth-status');
+        const state = document.getElementById('wizard-oauth-state');
+        const loginBtn = document.getElementById('btn-wizard-oauth-login');
+        if (!wrap || !state) return;
+        const form = document.getElementById('preset-crud-form');
+        if (form && form.classList.contains('hidden')) {
+            wrap.classList.add('hidden');
+            return;
+        }
+        const ctx = wizardOAuthContext();
+        if (!ctx.isOAuth) {
+            wrap.classList.add('hidden');
+            return;
+        }
+        wrap.classList.remove('hidden');
+        const label = providerProfileOAuthLabel(ctx.provider);
+        const target = ctx.profileName ? 'account "' + ctx.profileName + '"' : 'global account';
+        state.textContent = 'Checking ' + label + ' OAuth (' + target + ')...';
+        state.className = 'text-[10px] font-mono text-primary/50';
+        if (loginBtn) loginBtn.classList.add('hidden');
+        try {
+            const url = providerProfileOAuthBasePath(ctx.provider) + '/status'
+                + (ctx.profileName ? '?credential_profile=' + encodeURIComponent(ctx.profileName) : '');
+            const r = await fetch(url);
+            const d = await r.json();
+            if (d.logged_in) {
+                state.textContent = '● ' + label + ' OAuth: logged in (' + target + ')' + (d.account_id ? ' · ' + d.account_id : '');
+                state.className = 'text-[10px] font-mono text-primary/80';
+            } else {
+                state.textContent = '○ ' + label + ' OAuth: chưa login (' + target + ') — bấm Login để xác thực, xong Test lại.';
+                state.className = 'text-[10px] font-mono text-yellow-400/80';
+                if (loginBtn) {
+                    loginBtn.classList.remove('hidden');
+                    loginBtn.classList.add('inline-flex');
+                }
+            }
+        } catch (e) {
+            state.textContent = label + ' OAuth status unavailable — thử Login hoặc ↻.';
+            state.className = 'text-[10px] font-mono text-yellow-400/60';
+            if (loginBtn) {
+                loginBtn.classList.remove('hidden');
+                loginBtn.classList.add('inline-flex');
+            }
+        }
+    }
+
+    function wizardOAuthLogin() {
+        const ctx = wizardOAuthContext();
+        if (!ctx.isOAuth) return;
+        // credential_profile rỗng = global account (backend hiểu '' là global)
+        if (ctx.provider === 'openai_codex') providerProfileCodexLogin(ctx.profileName);
+        else if (ctx.provider === 'github_copilot') providerProfileCopilotLogin(ctx.profileName);
+        else if (ctx.provider === 'xai_oauth') providerProfileXaiLogin(ctx.profileName);
+    }
+
+    async function providerProfileSave() {
+        const name = document.getElementById('provider_profile_name').value.trim();
+        const original = document.getElementById('provider_profile_edit_original').value.trim();
+        const provider = document.getElementById('provider_profile_provider').value || '';
+        const saveBtn = document.getElementById('btn-save-provider-profile');
+        if (!name) {
+            alert('Credential profile name is required.');
+            return;
+        }
+        if (['default', 'auto'].includes(name.toLowerCase())) {
+            alert('Credential profile name "' + name + '" is reserved.');
+            return;
+        }
+        const profiles = providerProfileParseRaw();
+        if (original && original !== name) {
+            const usedBy = providerProfileUsedBy(original);
+            if (usedBy.length) {
+                alert('Cannot rename credential profile "' + original + '" while used by presets: ' + usedBy.join(', '));
+                return;
+            }
+            delete profiles[original];
+        }
+        const existingProfile = profiles[original || name] || {};
+        const isOAuth = providerProfileIsEnabledOAuth(provider);
+        const profile = { provider };
+        if (!isOAuth) {
+            profile.apiKey = document.getElementById('provider_profile_api_key').value.trim();
+            const apiBase = document.getElementById('provider_profile_api_base').value.trim();
+            if (apiBase) profile.apiBase = apiBase;
+        }
+        const extraHeaders = existingProfile.extraHeaders ?? existingProfile.extra_headers;
+        const extraBody = existingProfile.extraBody ?? existingProfile.extra_body;
+        if (extraHeaders) profile.extraHeaders = extraHeaders;
+        if (extraBody) profile.extraBody = extraBody;
+        profiles[name] = profile;
+        providerProfileWriteRaw(profiles);
+        if (saveBtn) saveBtn.disabled = true;
+        dashboardCrudStatus('provider-profile-save-result', 'Saving credential profiles...', 'info');
+        try {
+            await dashboardCrudPersist('/config/provider-profiles', { provider_profiles: profiles });
+        } catch (e) {
+            dashboardCrudStatus('provider-profile-save-result', 'Save failed: ' + e.message, 'error');
+            if (saveBtn) saveBtn.disabled = false;
+            return;
+        }
+        if (saveBtn) saveBtn.disabled = false;
+        providerProfileRender();
+        providerProfileCancel();
+        presetCrudMarkUntested();
+        dashboardCrudStatus('provider-profile-save-result', 'Saved credential profiles to config.', 'success');
+    }
+
+    function providerProfileCodexSetRowActions(host, loggedIn) {
+        const loginBtn = host.querySelector('.profile-codex-login');
+        const logoutBtn = host.querySelector('.profile-codex-logout');
+        if (loginBtn) loginBtn.classList.toggle('hidden', loggedIn);
+        if (logoutBtn) logoutBtn.classList.toggle('hidden', !loggedIn);
+    }
+
+    async function providerProfileOAuthRefreshRowStatus(name, providerName, row = null) {
+        const host = row || document;
+        const statusEl = Array.from(host.querySelectorAll('.profile-codex-state'))
+            .find((el) => el.dataset.profile === name);
+        if (!statusEl) return;
+        const basePath = providerProfileOAuthBasePath(providerName);
+        const label = providerProfileOAuthLabel(providerName);
+        try {
+            const r = await fetch(basePath + '/status?credential_profile=' + encodeURIComponent(name));
+            const d = await r.json();
+            if (d.logged_in) {
+                statusEl.textContent = 'logged in' + (d.account_id ? ' · ' + d.account_id : '');
+                statusEl.className = 'profile-codex-state text-[9px] text-primary/70 font-mono';
+                providerProfileCodexSetRowActions(host, true);
+            } else {
+                statusEl.textContent = 'not logged in' + (d.error ? ' · ' + d.error : '');
+                statusEl.className = 'profile-codex-state text-[9px] text-yellow-400/70 font-mono';
+                providerProfileCodexSetRowActions(host, false);
+            }
+        } catch (e) {
+            statusEl.textContent = label + ' status unavailable';
+            statusEl.className = 'profile-codex-state text-[9px] text-red-400/70 font-mono';
+            providerProfileCodexSetRowActions(host, false);
+        }
+    }
+
+    async function providerProfileOAuthLogin(name, providerName) {
+        if (providerName === 'github_copilot') {
+            return providerProfileCopilotLogin(name);
+        }
+        if (providerName === 'xai_oauth') {
+            return providerProfileXaiLogin(name);
+        }
+        return providerProfileCodexLogin(name);
+    }
+
+    async function providerProfileCodexLogin(name) {
+        try {
+            const start = await fetch('/oauth/codex/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ credential_profile: name }),
+            });
+            const started = await start.json();
+            if (!started.success) {
+                await showMatrixConfirm(
+                    'CODEX LOGIN FAILED',
+                    started.error || 'Unknown error',
+                    'OK',
+                    'SYS.OAUTH',
+                    { hideCancel: true }
+                );
+                return;
+            }
+            showOAuthFlowModal({
+                title: 'CODEX PROFILE LOGIN',
+                subtitle: 'SYS.OAUTH.CODEX',
+                authUrl: started.url,
+                inputLabel: 'Paste full Codex callback URL',
+                placeholder: 'localhost:1455/auth/callback?code=...',
+                submitLabel: 'CONFIRM LOGIN',
+                onSubmit: async (callbackUrl, statusEl) => {
+                    const callback = await fetch('/oauth/codex/callback', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ session_id: started.session_id, callback_url: callbackUrl }),
+                    });
+                    const done = await callback.json();
+                    if (done.success) {
+                        oauthFlowStatus(statusEl, 'Codex profile login OK.', 'success');
+                        setTimeout(() => {
+                            closeOAuthFlowModal();
+                            providerProfileRender();
+                        }, 700);
+                    } else {
+                        oauthFlowStatus(statusEl, 'Codex login failed: ' + (done.error || 'Unknown'), 'error');
+                    }
+                },
+            });
+        } catch (e) {
+            await showMatrixConfirm(
+                'CODEX LOGIN FAILED',
+                String(e),
+                'OK',
+                'SYS.OAUTH',
+                { hideCancel: true }
+            );
+        }
+    }
+
+    async function providerProfileCopilotLogin(name) {
+        try {
+            const start = await fetch('/oauth/copilot/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ credential_profile: name }),
+            });
+            const started = await start.json();
+            if (!started.success) {
+                await showMatrixConfirm(
+                    'COPILOT LOGIN FAILED',
+                    started.error || 'Unknown error',
+                    'OK',
+                    'SYS.OAUTH',
+                    { hideCancel: true }
+                );
+                return;
+            }
+            const waitMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+            let interval = Math.max(1, Number(started.interval || 5));
+            showOAuthFlowModal({
+                title: 'COPILOT PROFILE LOGIN',
+                subtitle: 'SYS.OAUTH.COPILOT',
+                authUrl: started.verification_uri || 'https://github.com/login/device',
+                inputLabel: 'GitHub device code',
+                placeholder: started.user_code || '',
+                submitLabel: 'WAIT FOR CONFIRMATION',
+                warning: 'Open the link, enter this code, then press confirm: ' + (started.user_code || ''),
+                hideInput: true,
+                allowEmptySubmit: true,
+                onSubmit: async (_, statusEl) => {
+                    oauthFlowStatus(statusEl, 'Waiting for GitHub confirmation...', 'success');
+                    while (true) {
+                        await waitMs(interval * 1000);
+                        const poll = await fetch('/oauth/copilot/poll', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ session_id: started.session_id }),
+                        });
+                        const done = await poll.json();
+                        if (done.success && done.done) {
+                            oauthFlowStatus(statusEl, 'Copilot profile login OK.', 'success');
+                            setTimeout(() => {
+                                closeOAuthFlowModal();
+                                providerProfileRender();
+                            }, 700);
+                            return;
+                        }
+                        if (done.done) {
+                            oauthFlowStatus(statusEl, 'Copilot login failed: ' + (done.error || 'Unknown'), 'error');
+                            return;
+                        }
+                        if (done.slow_down) interval += 5;
+                        oauthFlowStatus(statusEl, 'Still waiting for GitHub confirmation...', 'success');
+                    }
+                },
+            });
+        } catch (e) {
+            await showMatrixConfirm(
+                'COPILOT LOGIN FAILED',
+                String(e),
+                'OK',
+                'SYS.OAUTH',
+                { hideCancel: true }
+            );
+        }
+    }
+
+    async function providerProfileXaiLogin(name) {
+        try {
+            const start = await fetch('/oauth/xai/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ credential_profile: name }),
+            });
+            const started = await start.json();
+            if (!started.success) {
+                await showMatrixConfirm(
+                    'XAI LOGIN FAILED',
+                    started.error || 'Unknown error',
+                    'OK',
+                    'SYS.OAUTH',
+                    { hideCancel: true }
+                );
+                return;
+            }
+            showOAuthFlowModal({
+                title: 'XAI PROFILE LOGIN',
+                subtitle: 'SYS.OAUTH.XAI',
+                authUrl: started.url,
+                inputLabel: 'Paste full callback URL or displayed code',
+                placeholder: 'callback URL or displayed code',
+                submitLabel: 'CONFIRM LOGIN',
+                warning: started.warning || 'Experimental xAI OAuth. Bare displayed code fallback cannot verify state.',
+                onSubmit: async (callbackUrl, statusEl) => {
+                    const callback = await fetch('/oauth/xai/callback', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ session_id: started.session_id, callback_url: callbackUrl }),
+                    });
+                    const done = await callback.json();
+                    if (done.success) {
+                        const warning = done.state_verified ? '' : ' Bare code used; state was not verified.';
+                        oauthFlowStatus(statusEl, 'xAI profile login OK.' + warning, done.state_verified ? 'success' : 'warn');
+                        setTimeout(() => {
+                            closeOAuthFlowModal();
+                            providerProfileRender();
+                        }, 900);
+                    } else {
+                        oauthFlowStatus(statusEl, 'xAI login failed: ' + (done.error || 'Unknown'), 'error');
+                    }
+                },
+            });
+        } catch (e) {
+            await showMatrixConfirm(
+                'XAI LOGIN FAILED',
+                String(e),
+                'OK',
+                'SYS.OAUTH',
+                { hideCancel: true }
+            );
+        }
+    }
+
+    async function providerProfileOAuthLogout(name, providerName) {
+        const label = providerProfileOAuthLabel(providerName);
+        const ok = await showMatrixConfirm(
+            'LOGOUT CREDENTIAL PROFILE',
+            'Logout ' + label + ' credential profile "' + name + '"?\n\n' +
+            '▸ OAuth token file của profile này sẽ bị xóa\n' +
+            '▸ Profile config vẫn được giữ lại',
+            'CONFIRM LOGOUT',
+            'SYS.CREDENTIAL'
+        );
+        if (!ok) return;
+        const r = await fetch(providerProfileOAuthBasePath(providerName) + '/logout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ credential_profile: name }),
+        });
+        const d = await r.json();
+        if (!d.success) {
+            await showMatrixConfirm(
+                'LOGOUT FAILED',
+                label + ' logout failed: ' + (d.error || 'Unknown'),
+                'OK',
+                'SYS.OAUTH',
+                { hideCancel: true }
+            );
+        }
+        providerProfileRender();
+    }
+
+    async function providerProfileDelete(name) {
+        const usedBy = providerProfileUsedBy(name);
+        if (usedBy.length) {
+            await showMatrixConfirm(
+                'DELETE BLOCKED',
+                'Không thể xóa credential profile "' + name + '".\n\n' +
+                'Profile này đang được preset sử dụng:\n' +
+                '▸ ' + usedBy.join('\n▸ ') + '\n\n' +
+                'Hãy đổi Credential_Profile của các preset này trước rồi xóa lại.',
+                'OK',
+                'SYS.CREDENTIAL',
+                { hideCancel: true }
+            );
+            return;
+        }
+        const profiles = providerProfileParseRaw();
+        const profile = profiles[name] || {};
+        if (providerProfileIsEnabledOAuth(profile.provider)) {
+            const label = providerProfileOAuthLabel(profile.provider);
+            const ok = await showMatrixConfirm(
+                'DELETE CREDENTIAL PROFILE',
+                'Xóa ' + label + ' credential profile "' + name + '"?\n\n' +
+                '▸ Profile sẽ bị xóa khỏi config ngay\n' +
+                '▸ OAuth token file của profile này cũng sẽ bị xóa\n' +
+                '▸ Thao tác này không cần Save Configuration',
+                'CONFIRM DELETE',
+                'SYS.CREDENTIAL'
+            );
+            if (!ok) return;
+            const r = await fetch(providerProfileOAuthBasePath(profile.provider) + '/logout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ credential_profile: name }),
+            });
+            const d = await r.json();
+            if (!d.success) {
+                await showMatrixConfirm(
+                    'DELETE BLOCKED',
+                    'Cannot delete token for ' + label + ' profile "' + name + '": ' + (d.error || 'Unknown'),
+                    'OK',
+                    'SYS.CREDENTIAL',
+                    { hideCancel: true }
+                );
+                return;
+            }
+        } else {
+            const ok = await showMatrixConfirm(
+                'DELETE CREDENTIAL PROFILE',
+                'Xóa credential profile "' + name + '"?\n\n' +
+                '▸ Profile sẽ bị xóa khỏi config ngay\n' +
+                '▸ Thao tác này không cần Save Configuration',
+                'CONFIRM DELETE',
+                'SYS.CREDENTIAL'
+            );
+            if (!ok) return;
+        }
+        delete profiles[name];
+        providerProfileWriteRaw(profiles);
+        dashboardCrudStatus('provider-profile-save-result', 'Saving credential profiles...', 'info');
+        try {
+            await dashboardCrudPersist('/config/provider-profiles', { provider_profiles: profiles });
+        } catch (e) {
+            dashboardCrudStatus('provider-profile-save-result', 'Delete failed: ' + e.message, 'error');
+            return;
+        }
+        providerProfileRender();
+        dashboardCrudStatus('provider-profile-save-result', 'Deleted credential profile from config.', 'success');
+    }
+
+    function providerProfileRawChanged() {
+        // Raw textarea is submitted as source of truth.
+    }
+
+    function providerProfileApplyRaw() {
+        providerProfileRender();
+        presetCrudMarkUntested();
+    }
+
+    function fallbackCrudParseRaw() {
+        const textarea = document.getElementById('fallback_models_json');
+        if (!textarea) return [];
+        try {
+            const parsed = JSON.parse(textarea.value.trim() || '[]');
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function fallbackCrudWriteRaw(items) {
+        const textarea = document.getElementById('fallback_models_json');
+        if (!textarea) return;
+        textarea.value = JSON.stringify(items, null, 2);
+    }
+
+    function fallbackCrudPresetNames() {
+        return Object.keys(presetCrudParseRaw()).sort();
+    }
+
+    function fallbackCrudStringItems() {
+        const presetNames = fallbackCrudPresetNames();
+        const seen = new Set();
+        const items = [];
+        fallbackCrudParseRaw().forEach((item) => {
+            if (typeof item !== 'string' || !presetNames.includes(item) || seen.has(item)) return;
+            seen.add(item);
+            items.push(item);
+        });
+        return items;
+    }
+
+    function fallbackCrudRender() {
+        const list = document.getElementById('fallback-crud-list');
+        if (!list) return;
+        const presetNames = fallbackCrudPresetNames();
+        const items = fallbackCrudStringItems();
+        list.innerHTML = '';
+        if (!presetNames.length) {
+            list.innerHTML = '<div class="dashboard-subtitle border border-primary/10 bg-black/20 px-4 py-3 text-[11px] font-mono">Create a model preset first.</div>';
+            fallbackCrudWriteRaw([]);
+            return;
+        }
+        if (!items.length) {
+            list.innerHTML = '<div class="dashboard-subtitle border border-primary/10 bg-black/20 px-4 py-3 text-[11px] font-mono">No fallback presets configured.</div>';
+            fallbackCrudWriteRaw([]);
+            return;
+        }
+        items.forEach((name, index) => {
+            const row = document.createElement('div');
+            row.className = 'border border-primary/15 bg-black/25 px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3';
+            const select = document.createElement('select');
+            select.className = 'w-full md:max-w-sm bg-black/60 border border-primary/50 focus:border-primary outline-none px-4 py-2 text-primary font-mono text-sm transition-all duration-300 appearance-none cursor-pointer';
+            presetNames.forEach((presetName) => {
+                const option = document.createElement('option');
+                option.value = presetName;
+                option.textContent = presetName;
+                option.disabled = presetName !== name && items.includes(presetName);
+                option.style.background = '#0a0a0a';
+                option.style.color = '#00FF41';
+                select.appendChild(option);
+            });
+            select.value = name;
+            select.onchange = () => fallbackCrudUpdate(index, select.value);
+            const meta = document.createElement('span');
+            meta.className = 'dashboard-subtitle text-[10px] font-mono';
+            meta.textContent = 'priority ' + (index + 1);
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'px-3 py-1 border border-red-500/40 text-red-400/80 text-[10px] uppercase tracking-wider hover:bg-red-500/10';
+            remove.textContent = 'Remove';
+            remove.onclick = () => fallbackCrudRemove(index);
+            row.appendChild(select);
+            row.appendChild(meta);
+            row.appendChild(remove);
+            list.appendChild(row);
+        });
+        fallbackCrudWriteRaw(items);
+    }
+
+    function fallbackCrudAdd() {
+        const presetNames = fallbackCrudPresetNames();
+        if (!presetNames.length) return;
+        const items = fallbackCrudStringItems();
+        const next = presetNames.find((name) => !items.includes(name));
+        if (!next) return;
+        items.push(next);
+        fallbackCrudWriteRaw(items);
+        fallbackCrudRender();
+    }
+
+    function fallbackCrudUpdate(index, value) {
+        const items = fallbackCrudStringItems();
+        if (items.includes(value) && items[index] !== value) return;
+        items[index] = value;
+        fallbackCrudWriteRaw(items);
+        fallbackCrudRender();
+    }
+
+    function fallbackCrudRemove(index) {
+        const items = fallbackCrudStringItems();
+        items.splice(index, 1);
+        fallbackCrudWriteRaw(items);
+        fallbackCrudRender();
+    }
+
+    function fallbackCrudDropPreset(name) {
+        const items = fallbackCrudParseRaw().filter((item) => item !== name);
+        fallbackCrudWriteRaw(items);
+        fallbackCrudRender();
+    }
+
+    function fallbackCrudRawChanged() {
+        // Raw textarea is the submitted source of truth unless the picker is changed.
+    }
+
+    function fallbackCrudApplyRaw() {
+        fallbackCrudRender();
+    }
+
+    function presetCrudResolveTestProvider(providerName, credentialProfileName = '') {
+        const oauthProviders = ['openai_codex', 'github_copilot', 'xai_oauth'];
+        if (credentialProfileName) {
+            const profile = providerProfileParseRaw()[credentialProfileName] || null;
+            if (!profile) {
+                return { actualProvider: providerName || 'auto', apiKey: '', apiBase: '', oauthProviders, credentialProfileMissing: true };
+            }
+            const actualProvider = profile.provider || providerName || 'auto';
+            return {
+                actualProvider,
+                apiKey: (profile.apiKey ?? profile.api_key ?? '').trim(),
+                apiBase: (profile.apiBase ?? profile.api_base ?? '').trim(),
+                oauthProviders,
+                credentialProfile: credentialProfileName,
+            };
+        }
+        let actualProvider = providerName || 'auto';
+        let apiKey = '';
+        let apiBase = '';
+        if (actualProvider !== 'auto') {
+            apiKey = (document.getElementById('hidden-key-' + actualProvider)?.value || '').trim();
+            apiBase = (document.getElementById('hidden-base-' + actualProvider)?.value || '').trim();
+            return { actualProvider, apiKey, apiBase, oauthProviders };
+        }
+        for (const pName of Object.keys(_providerData)) {
+            const key = (_providerData[pName].key || '').trim();
+            if (key) {
+                actualProvider = pName;
+                apiKey = key;
+                apiBase = (_providerData[pName].base || '').trim();
+                break;
+            }
+        }
+        if (!apiKey) {
+            for (const pName of oauthProviders) {
+                if (_providerData[pName]) {
+                    actualProvider = pName;
+                    break;
+                }
+            }
+        }
+        return { actualProvider, apiKey, apiBase, oauthProviders };
+    }
+
+    function dreamModelEffectiveProviderName() {
+        const activePreset = document.getElementById('model_preset')?.value || '';
+        if (activePreset) {
+            const presets = presetCrudParseRaw();
+            const preset = presets[activePreset] || {};
+            return preset.provider || _initialEffectiveProvider || 'auto';
+        }
+        return document.getElementById('provider')?.value || _initialEffectiveProvider || 'auto';
+    }
+
+    function dreamModelResolveTestProvider() {
+        const activePreset = document.getElementById('model_preset')?.value || '';
+        const preset = activePreset ? (presetCrudParseRaw()[activePreset] || {}) : {};
+        return presetCrudResolveTestProvider(
+            dreamModelEffectiveProviderName(),
+            preset.credentialProfile || preset.credential_profile || ''
+        );
+    }
+
+    function dreamModelSignature() {
+        const model = (document.getElementById('dream_model_override')?.value || '').trim();
+        if (!model) return '';
+        const resolved = dreamModelResolveTestProvider();
+        return (resolved.actualProvider || 'auto') + '|' + (resolved.credentialProfile || '') + '|' + model;
+    }
+
+    function dreamModelSetResult(html, display = true) {
+        const resultEl = document.getElementById('dream-model-test-result');
+        if (!resultEl) return;
+        resultEl.style.display = display ? 'block' : 'none';
+        resultEl.innerHTML = html || '';
+    }
+
+    function dreamModelMarkUntested() {
+        const model = (document.getElementById('dream_model_override')?.value || '').trim();
+        if (!model) {
+            _dreamVerifiedSignature = null;
+            dreamModelSetResult('', false);
+            return;
+        }
+        if (_dreamVerifiedSignature !== dreamModelSignature()) {
+            _dreamVerifiedSignature = null;
+            dreamModelSetResult('<span class="text-yellow-400">Test this Dream model with the current bot provider before saving.</span>');
+        }
+    }
+
+    function dreamModelCandidateModels() {
+        const resolved = dreamModelResolveTestProvider();
+        const provider = resolved.actualProvider || _initialEffectiveProvider || 'auto';
+        const models = new Set();
+        const activePreset = document.getElementById('model_preset')?.value || '';
+        const presets = presetCrudParseRaw();
+        const currentModel = activePreset
+            ? ((presets[activePreset] || {}).model || _initialEffectiveModel || '').trim()
+            : (document.getElementById('model')?.value || _initialEffectiveModel || '').trim();
+        if (currentModel) models.add(currentModel);
+
+        const cache = window._testedModelsCache || {};
+        (cache[provider] || []).forEach((model) => models.add(model));
+
+        Object.values(presets).forEach((preset) => {
+            if (!preset || typeof preset !== 'object') return;
+            const presetProvider = preset.provider || 'auto';
+            const presetModel = preset.model || '';
+            if (presetModel && (presetProvider === provider || presetProvider === dreamModelEffectiveProviderName())) {
+                models.add(presetModel);
+            }
+        });
+        return [...models].filter(Boolean).sort();
+    }
+
+    function dreamModelRenderChips() {
+        const container = document.getElementById('dream-tested-models');
+        const list = document.getElementById('dream-tested-models-list');
+        if (!container || !list) return;
+        const models = dreamModelCandidateModels();
+        if (!models.length) {
+            container.style.display = 'none';
+            list.innerHTML = '';
+            return;
+        }
+        container.style.display = 'block';
+        list.innerHTML = '';
+        models.forEach((model) => {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.textContent = model;
+            chip.className = 'px-2 py-1 border border-primary/20 text-primary/60 text-[9px] font-mono hover:border-primary hover:text-primary hover:bg-primary/10 transition-all';
+            chip.onclick = () => {
+                const input = document.getElementById('dream_model_override');
+                if (input) input.value = model;
+                dreamModelMarkUntested();
+            };
+            list.appendChild(chip);
+        });
+    }
+
+    async function testDreamModelOverride() {
+        const input = document.getElementById('dream_model_override');
+        const btn = document.getElementById('btn-test-dream-model');
+        const model = (input?.value || '').trim();
+        if (!model) {
+            _dreamVerifiedSignature = null;
+            dreamModelSetResult('<span class="text-primary/60">Empty override uses the main bot model; no test required.</span>');
+            return;
+        }
+        const resolved = dreamModelResolveTestProvider();
+        if (!resolved.apiKey && !resolved.oauthProviders.includes(resolved.actualProvider)) {
+            _dreamVerifiedSignature = null;
+            dreamModelSetResult('<span class="text-yellow-400">Provider credentials missing for ' + escapeHtml(resolved.actualProvider) + '</span>');
+            return;
+        }
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<div class="w-3 h-3 border-2 border-primary/30 border-t-primary rounded-full animate-spin"></div><span>Testing...</span>';
+        }
+        try {
+            const resp = await fetch('/config/test-provider', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    provider: resolved.actualProvider,
+                    api_key: resolved.apiKey,
+                    api_base: resolved.apiBase,
+                    credential_profile: resolved.credentialProfile || '',
+                    model,
+                }),
+            });
+            const data = await resp.json();
+            if (data.success) {
+                _dreamVerifiedSignature = dreamModelSignature();
+                dreamModelSetResult('<span class="text-green-400">OK: ' + escapeHtml(data.message || 'Dream model responds') + ' - Save unlocked</span>');
+                loadTestedModels();
+            } else {
+                _dreamVerifiedSignature = null;
+                dreamModelSetResult('<span class="text-red-400">' + escapeHtml(data.error || 'Test failed') + '</span>');
+            }
+        } catch (e) {
+            _dreamVerifiedSignature = null;
+            dreamModelSetResult('<span class="text-red-400">Network error: ' + escapeHtml(e.message) + '</span>');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<span class="material-symbols-outlined text-[14px]">bolt</span><span>Test</span>';
+            }
+        }
+    }
+

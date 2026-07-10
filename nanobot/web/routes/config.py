@@ -359,6 +359,115 @@ async def delete_tested_model(request: Request):
     return JSONResponse({"success": True})
 
 
+@router.get("/config/effective-route")
+async def get_effective_route():
+    """Read-only view of the resolved model route. Never includes key material."""
+    from nanobot.config.loader import load_config
+    from nanobot.providers.registry import find_by_name
+
+    try:
+        config = load_config()
+    except Exception as exc:
+        return _json_error(f"Failed to load config: {exc}", status_code=500)
+
+    warnings: list[str] = []
+    defaults = config.agents.defaults
+
+    active_preset = (defaults.model_preset or "").strip()
+    if active_preset and active_preset not in config.model_presets:
+        warnings.append(
+            f"Active route '{active_preset}' is not defined — running Custom (agents.defaults) instead."
+        )
+
+    effective = config.resolve_effective_model_config()
+
+    def _describe_credential(model: str, provider: str, credential_profile: str | None) -> dict:
+        try:
+            selection = config.resolve_provider_selection(
+                model, provider_override=provider, credential_profile=credential_profile
+            )
+        except ValueError as exc:
+            warnings.append(str(exc))
+            return {"source": "invalid", "detail": str(exc)}
+        if selection.credential_profile:
+            return {
+                "source": "profile",
+                "name": selection.credential_profile,
+                "provider": selection.provider_name,
+            }
+        if selection.provider_name is None:
+            warnings.append(
+                "No provider matched the current model — configure an API key under Accounts & Credentials."
+            )
+            return {"source": "none"}
+        spec = find_by_name(selection.provider_name)
+        if spec is not None and spec.is_oauth:
+            return {"source": "oauth", "provider": selection.provider_name}
+        has_key = bool(getattr(selection.provider_config, "api_key", "")) if selection.provider_config else False
+        if not has_key and not (spec is not None and spec.is_local):
+            warnings.append(f"Provider '{selection.provider_name}' has no API key configured.")
+        return {"source": "global", "provider": selection.provider_name}
+
+    route = {
+        "mode": "preset" if effective.preset_name else "custom",
+        "preset_name": effective.preset_name,
+        "model": effective.model,
+        "provider": effective.provider,
+        "credential": _describe_credential(effective.model, effective.provider, effective.credential_profile),
+        "temperature": effective.temperature,
+        "max_tokens": effective.max_tokens,
+        "context_window_tokens": effective.context_window_tokens,
+        "reasoning_effort": effective.reasoning_effort,
+    }
+
+    def _identity(resolved) -> tuple:
+        return (
+            resolved.model,
+            resolved.provider,
+            resolved.credential_profile or "",
+            resolved.temperature,
+            resolved.max_tokens,
+            resolved.context_window_tokens,
+            resolved.reasoning_effort or "",
+        )
+
+    primary_identity = _identity(effective)
+    fallback_chain = []
+    for index, candidate in enumerate(defaults.fallback_models):
+        if isinstance(candidate, str):
+            entry = {"name": candidate, "kind": "preset"}
+            resolved = config.model_presets.get(candidate)
+            if resolved is None:
+                entry["status"] = "missing_preset"
+                warnings.append(
+                    f"Fallback #{index + 1} route '{candidate}' is not defined — it will be skipped at runtime."
+                )
+                fallback_chain.append(entry)
+                continue
+        else:
+            entry = {"name": f"inline #{index + 1}", "kind": "inline"}
+            resolved = candidate
+        entry["model"] = resolved.model
+        entry["provider"] = resolved.provider
+        if resolved.credential_profile:
+            entry["credential_profile"] = resolved.credential_profile
+        if _identity(resolved) == primary_identity:
+            entry["status"] = "same_as_primary"
+            warnings.append(
+                f"Fallback #{index + 1} '{entry['name']}' matches the active route — it will be skipped at runtime."
+            )
+        else:
+            entry["status"] = "ok"
+        fallback_chain.append(entry)
+
+    return JSONResponse({
+        "success": True,
+        "route": route,
+        "fallback_chain": fallback_chain,
+        "warnings": warnings,
+    })
+
+
 @router.post("/config/save-provider")
 async def save_provider(request: Request):
     """Save a single provider's API key and base URL to config."""

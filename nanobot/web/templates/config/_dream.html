@@ -1,0 +1,61 @@
+        <!-- ============================================================ -->
+        <!-- Section: Dream Memory -->
+        <!-- ============================================================ -->
+        <div class="matrix-card p-6">
+            <div class="flex items-center justify-between mb-4 border-b border-primary/20 pb-4 cursor-pointer"
+                onclick="toggleSection('dream-body')">
+                <div class="flex items-center gap-3">
+                    <span class="material-symbols-outlined glow-text">auto_awesome</span>
+                    <h3 class="text-xs font-bold uppercase tracking-widest glow-text">Dream Memory</h3>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="text-[10px] text-primary/30 font-mono">agents.defaults.dream</span>
+                    <span class="material-symbols-outlined text-primary/80 text-sm"
+                        id="dream-body-icon">expand_more</span>
+                </div>
+            </div>
+            <div id="dream-body" class="hidden">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="flex flex-col gap-2">
+                        <label for="dream_interval_h" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt; Interval_Hours</label>
+                        <input type="number" id="dream_interval_h" name="dream_interval_h" value="{{ dream_interval_h }}" min="1"
+                            class="w-full bg-black/60 border border-primary/50 focus:border-primary outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        <label for="dream_model_override" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt; Model_Override</label>
+                        <div class="flex flex-col gap-2">
+                            <div class="flex flex-col sm:flex-row gap-2">
+                                <input type="text" id="dream_model_override" name="dream_model_override" value="{{ dream_model_override }}"
+                                    placeholder="empty = use main model"
+                                    oninput="dreamModelMarkUntested()"
+                                    class="w-full bg-black/60 border border-primary/50 focus:border-primary outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                                <button type="button" onclick="testDreamModelOverride()" id="btn-test-dream-model"
+                                    class="inline-flex items-center justify-center gap-1.5 px-3 py-3 border border-primary/40 text-primary/70 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/10 hover:border-primary hover:text-primary transition-all duration-300">
+                                    <span class="material-symbols-outlined text-[14px]">bolt</span>
+                                    <span>Test</span>
+                                </button>
+                            </div>
+                            <div id="dream-tested-models" style="display: none;">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="text-[9px] text-primary/40 uppercase tracking-wider">Quick fill</span>
+                                    <div class="flex flex-wrap gap-1" id="dream-tested-models-list"></div>
+                                </div>
+                            </div>
+                            <div class="text-[10px] font-mono min-h-[1rem]" id="dream-model-test-result" style="display: none;"></div>
+                        </div>
+                        <span class="dashboard-subtitle text-[10px] font-mono">Uses the current bot provider; this only overrides the model. Changing Dream model may require restart.</span>
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        <label for="dream_max_batch_size" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt; Max_Batch_Size</label>
+                        <input type="number" id="dream_max_batch_size" name="dream_max_batch_size" value="{{ dream_max_batch_size }}" min="1"
+                            class="w-full bg-black/60 border border-primary/50 focus:border-primary outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        <label for="dream_max_iterations" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt; Max_Iterations</label>
+                        <input type="number" id="dream_max_iterations" name="dream_max_iterations" value="{{ dream_max_iterations }}" min="1"
+                            class="w-full bg-black/60 border border-primary/50 focus:border-primary outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                    </div>
+                </div>
+            </div>
+        </div>
+

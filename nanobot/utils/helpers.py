@@ -406,6 +406,7 @@ def build_status_content(
     context_window_tokens: int,
     session_msg_count: int,
     context_tokens_estimate: int,
+    active_task_count: int = 0,
     search_usage_text: str | None = None,
 ) -> str:
     """Build a human-readable runtime status snapshot.
@@ -439,6 +440,8 @@ def build_status_content(
         f"\U0001f4ac Session: {session_msg_count} messages",
         f"\u23f1 Uptime: {uptime}",
     ]
+    if active_task_count:
+        lines.append(f"\u2699\ufe0f Active tasks: {active_task_count}")
     if search_usage_text:
         lines.append(search_usage_text)
     return "\n".join(lines)

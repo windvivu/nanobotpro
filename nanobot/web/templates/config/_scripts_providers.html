@@ -1,0 +1,791 @@
+    // ── Provider Test System ──
+    const providerTestState = {};  // { providerName: 'untested' | 'pass' | 'warn' | 'fail' }
+
+    // ── Provider data map (from server) ──
+    const _providerData = {
+        {% for p in providers %}
+        '{{ p.name }}': { key: {{ p.api_key | tojson }}, base: {{ p.api_base | tojson }}, region: {{ p.region | tojson }}, profile: {{ p.profile | tojson }}, hasKey: {{ 'true' if p.has_key else 'false' }}, oauthLoggedIn: false },
+        {% endfor %}
+    };
+
+    function providerDisplayName(name) {
+        const labels = {
+            openai_codex: 'openai_codex_oauth',
+            github_copilot: 'github_copilot_oauth',
+            auto: 'auto — detect from model name',
+        };
+        return labels[name] || name;
+    }
+    const _initialEffectiveProvider = {{ effective_provider | tojson }};
+    const _initialEffectiveModel = {{ effective_model | tojson }};
+    let _activeProvider = null;
+
+    const _oauthProviderStatusEndpoints = {
+        openai_codex: '/oauth/codex/status',
+        github_copilot: '/oauth/copilot/status',
+        xai_oauth: '/oauth/xai/status',
+    };
+
+    function providerIsConfigured(name) {
+        const info = _providerData[name] || {};
+        return !!(info.hasKey || info.oauthLoggedIn);
+    }
+
+    function providerDotStyle(name) {
+        const configured = providerIsConfigured(name);
+        return `width:6px;height:6px;border-radius:50%;flex-shrink:0;background:${configured ? '#00FF41' : 'rgba(0,255,65,0.2)'};${configured ? 'box-shadow:0 0 5px #00FF41;' : ''}`;
+    }
+
+    function providerDotClass(name, extra = '') {
+        return 'w-2 h-2 rounded-full ' + extra + ' ' +
+            (providerIsConfigured(name) ? 'bg-primary shadow-[0_0_6px_#00FF41]' : 'bg-primary/20');
+    }
+
+    function refreshProviderStatusDots(providerName) {
+        updateNeuralProviderConfiguredOptions();
+        if (_activeProvider === providerName) {
+            const selectedDot = document.getElementById('provider-selected-dot');
+            if (selectedDot) selectedDot.className = providerDotClass(providerName, 'mr-3 transition-colors duration-300');
+            const activeDot = document.getElementById('active-provider-dot');
+            if (activeDot) activeDot.className = providerDotClass(providerName);
+        }
+        if (_portalDropdown) {
+            const row = _portalDropdown.querySelector('.provider-option[data-name="' + providerName + '"]');
+            const dot = row ? row.querySelector('.provider-option-dot') : null;
+            if (dot) dot.style.cssText = providerDotStyle(providerName);
+            const badge = row ? row.querySelector('.provider-option-badge') : null;
+            if (badge) {
+                badge.textContent = providerIsConfigured(providerName) ? 'configured' : '';
+                badge.style.display = providerIsConfigured(providerName) ? '' : 'none';
+            }
+        }
+    }
+
+    function setProviderOAuthLoggedIn(providerName, loggedIn) {
+        if (!_providerData[providerName]) return;
+        _providerData[providerName].oauthLoggedIn = !!loggedIn;
+        refreshProviderStatusDots(providerName);
+    }
+
+    function updateNeuralProviderConfiguredOptions() {
+        ['provider', 'preset_provider'].forEach((selectId) => {
+            const select = document.getElementById(selectId);
+            if (!select) return;
+            Array.from(select.options).forEach((option) => {
+                const name = option.value || '';
+                if (!name) return;
+                const baseLabel = providerDisplayName(name);
+                option.textContent = name !== 'auto' && providerIsConfigured(name)
+                    ? baseLabel + ' (configured)'
+                    : baseLabel;
+            });
+        });
+    }
+
+    // ── Combobox Portal Dropdown ──
+    // Build dropdown DOM once, appended to body (escapes all stacking contexts)
+    let _portalDropdown = null;
+    function _buildPortalDropdown() {
+        if (_portalDropdown) return;
+        const dd = document.createElement('div');
+        dd.id = 'provider-dropdown-portal';
+        dd.style.cssText = [
+            'position: fixed',
+            'z-index: 9999',
+            'background: rgb(3, 8, 3)',
+            'border: 1px solid rgba(0, 255, 65, 0.45)',
+            'box-shadow: 0 8px 40px rgba(0,0,0,0.9), 0 0 0 1px rgba(0,255,65,0.1)',
+            'max-height: 260px',
+            'overflow-y: auto',
+            'display: none',
+            'min-width: 200px',
+        ].join(';');
+
+        // Populate with all providers from _providerData
+        Object.entries(_providerData).forEach(([name, info]) => {
+            const row = document.createElement('div');
+            row.className = 'provider-option';
+            row.dataset.name = name;
+            row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:9px 16px;cursor:pointer;font-family:monospace;font-size:11px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;color:#00FF41;transition:background 0.12s;';
+            row.onmouseenter = () => row.style.background = 'rgba(0,255,65,0.12)';
+            row.onmouseleave = () => row.style.background = '';
+
+            const dot = document.createElement('span');
+            dot.className = 'provider-option-dot';
+            dot.style.cssText = providerDotStyle(name);
+            const label = document.createElement('span');
+            label.textContent = providerDisplayName(name);
+
+            row.appendChild(dot);
+            row.appendChild(label);
+
+            const badge = document.createElement('span');
+            badge.className = 'provider-option-badge';
+            badge.textContent = providerIsConfigured(name) ? 'configured' : '';
+            badge.style.cssText = 'margin-left:auto;font-size:9px;color:rgba(0,255,65,0.4);font-weight:400;letter-spacing:0.1em;' + (providerIsConfigured(name) ? '' : 'display:none;');
+            row.appendChild(badge);
+
+            row.onclick = () => selectProvider(name);
+            dd.appendChild(row);
+        });
+
+        // No results row
+        const noRes = document.createElement('div');
+        noRes.id = 'provider-no-results';
+        noRes.textContent = 'No providers matching...';
+        noRes.style.cssText = 'display:none;padding:10px 16px;font-size:11px;color:rgba(0,255,65,0.25);font-family:monospace;';
+        dd.appendChild(noRes);
+
+        document.body.appendChild(dd);
+        _portalDropdown = dd;
+    }
+
+    function _positionPortalDropdown() {
+        const wrap = document.getElementById('provider-picker-wrap');
+        if (!wrap || !_portalDropdown) return;
+        const rect = wrap.getBoundingClientRect();
+        _portalDropdown.style.top = (rect.bottom + 2) + 'px';
+        _portalDropdown.style.left = rect.left + 'px';
+        _portalDropdown.style.width = rect.width + 'px';
+        // Dynamic max-height: never go below viewport bottom (minus 20px margin)
+        const availableH = window.innerHeight - rect.bottom - 20;
+        _portalDropdown.style.maxHeight = Math.min(220, Math.max(80, availableH)) + 'px';
+    }
+
+    function openProviderDropdown() {
+        _buildPortalDropdown();
+        // Re-append to body as LAST child every open — ensures DOM order
+        // beats backdrop-filter stacking contexts on sibling section cards
+        document.body.appendChild(_portalDropdown);
+        _portalDropdown.style.zIndex = '2147483647';
+        _positionPortalDropdown();
+        _portalDropdown.style.display = 'block';
+        filterProviderDropdown();
+        // Reposition on scroll/resize
+        window._providerDropdownScrollHandler = () => _positionPortalDropdown();
+        window.addEventListener('scroll', window._providerDropdownScrollHandler, { passive: true, capture: true });
+        setTimeout(() => {
+            document.addEventListener('click', _closeOnOutside, { once: true });
+        }, 0);
+    }
+    function _closeOnOutside(e) {
+        const wrap = document.getElementById('provider-picker-wrap');
+        const isInWrap = wrap && wrap.contains(e.target);
+        const isInDrop = _portalDropdown && _portalDropdown.contains(e.target);
+        if (isInWrap || isInDrop) {
+            document.addEventListener('click', _closeOnOutside, { once: true });
+            return;
+        }
+        closeProviderDropdown();
+    }
+    function closeProviderDropdown() {
+        if (_portalDropdown) _portalDropdown.style.display = 'none';
+        if (window._providerDropdownScrollHandler) {
+            window.removeEventListener('scroll', window._providerDropdownScrollHandler, { capture: true });
+        }
+    }
+    function filterProviderDropdown() {
+        if (!_portalDropdown) return;
+        const normalizeSearch = (value) => String(value || '')
+            .toLowerCase()
+            .replace(/[_-]+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        const q = normalizeSearch(document.getElementById('provider-search-input')?.value || '');
+        let visible = 0;
+        _portalDropdown.querySelectorAll('.provider-option').forEach(el => {
+            const name = el.dataset.name || '';
+            const searchText = normalizeSearch(name + ' ' + providerDisplayName(name));
+            const show = !q || searchText.includes(q);
+            el.style.display = show ? 'flex' : 'none';
+            if (show) visible++;
+        });
+        const noRes = document.getElementById('provider-no-results');
+        if (noRes) noRes.style.display = visible > 0 ? 'none' : 'block';
+    }
+
+    function selectProvider(name) {
+        _activeProvider = name;
+        const data = _providerData[name] || { key: '', base: '', region: '', profile: '', hasKey: false };
+
+        // Update search input display
+        const searchInput = document.getElementById('provider-search-input');
+        if (searchInput) searchInput.value = name;
+        closeProviderDropdown();
+
+        // Status dot in search bar
+        const dot = document.getElementById('provider-selected-dot');
+        if (dot) {
+            dot.className = providerDotClass(name, 'mr-3 transition-colors duration-300');
+        }
+
+        // Fill active card
+        document.getElementById('active-provider-name').textContent = providerDisplayName(name);
+        const activeDot = document.getElementById('active-provider-dot');
+        if (activeDot) {
+            activeDot.className = providerDotClass(name);
+        }
+        document.getElementById('active-provider-key').value = data.key || '';
+        document.getElementById('active-provider-base').value = data.base || '';
+        const bedrockRegionEl = document.getElementById('active-bedrock-region');
+        const bedrockProfileEl = document.getElementById('active-bedrock-profile');
+        if (bedrockRegionEl) bedrockRegionEl.value = data.region || '';
+        if (bedrockProfileEl) bedrockProfileEl.value = data.profile || '';
+        document.getElementById('active-provider-model').value = '';
+
+        // Reset test state for this provider
+        const resultEl = document.getElementById('test-result-active');
+        if (resultEl) { resultEl.style.display = 'none'; resultEl.innerHTML = ''; }
+        const card = document.getElementById('provider-active-card');
+        if (card) { card.style.borderColor = ''; card.style.boxShadow = ''; }
+
+        // Show card, hide hint
+        if (card) card.classList.remove('hidden');
+        const hint = document.getElementById('provider-hint');
+        if (hint) hint.style.display = 'none';
+
+        // Refresh tested models
+        _refreshActiveTestedModels();
+
+        // Show/hide OAuth panel based on selected provider
+        oauthPanelUpdate(name);
+        bedrockPanelUpdate(name);
+    }
+    function syncActiveProvider(field) {
+        if (!_activeProvider) return;
+        const keyEl = document.getElementById('active-provider-key');
+        const baseEl = document.getElementById('active-provider-base');
+        const val = field === 'key' ? keyEl?.value : baseEl?.value;
+
+        // Keep hidden input in sync (so form POST includes the new value)
+        if (field === 'key') {
+            const h = document.getElementById('hidden-key-' + _activeProvider);
+            if (h) h.value = val || '';
+            if (_providerData[_activeProvider]) _providerData[_activeProvider].key = val || '';
+        } else {
+            const h = document.getElementById('hidden-base-' + _activeProvider);
+            if (h) h.value = val || '';
+            if (_providerData[_activeProvider]) _providerData[_activeProvider].base = val || '';
+        }
+        onProviderFieldChange(_activeProvider);
+    }
+    function syncBedrockProviderExtra(field) {
+        if (_activeProvider !== 'bedrock') return;
+        const value = field === 'region'
+            ? (document.getElementById('active-bedrock-region')?.value || '')
+            : (document.getElementById('active-bedrock-profile')?.value || '');
+        const hiddenId = field === 'region' ? 'hidden-bedrock-region' : 'hidden-bedrock-profile';
+        const hidden = document.getElementById(hiddenId);
+        if (hidden) hidden.value = value;
+        if (_providerData.bedrock) _providerData.bedrock[field] = value;
+    }
+    function bedrockPanelUpdate(providerName) {
+        const panel = document.getElementById('bedrock-provider-panel');
+        if (!panel) return;
+        if (providerName === 'bedrock') {
+            panel.classList.remove('hidden');
+        } else {
+            panel.classList.add('hidden');
+        }
+    }
+    function _refreshActiveTestedModels() {
+        if (!_activeProvider || !window._testedModelsCache) return;
+        const models = window._testedModelsCache[_activeProvider];
+        const wrap = document.getElementById('tested-models-active');
+        const list = document.getElementById('tested-models-list-active');
+        if (!wrap || !list) return;
+        if (models && models.length) {
+            list.innerHTML = '';
+            models.forEach(m => {
+                // Wrapper with relative positioning for delete btn
+                const badge = document.createElement('span');
+                badge.className = 'group relative inline-flex items-center';
+
+                // Fill button (model name label)
+                const fillBtn = document.createElement('button');
+                fillBtn.type = 'button';
+                fillBtn.textContent = m;
+                fillBtn.style.cssText = 'padding:2px 22px 2px 6px;border:1px solid rgba(0,255,65,0.3);font-size:9px;font-family:monospace;color:rgba(0,255,65,0.5);cursor:pointer;transition:all 0.15s;background:transparent;white-space:nowrap;';
+                fillBtn.onmouseenter = () => { fillBtn.style.color='#00FF41'; fillBtn.style.borderColor='rgba(0,255,65,0.8)'; };
+                fillBtn.onmouseleave = () => { fillBtn.style.color='rgba(0,255,65,0.5)'; fillBtn.style.borderColor='rgba(0,255,65,0.3)'; };
+                fillBtn.onclick = () => _fillActiveModel(m);
+
+                // Delete × button (appears on badge hover)
+                const delBtn = document.createElement('button');
+                delBtn.type = 'button';
+                delBtn.textContent = '×';
+                delBtn.title = 'Remove from history';
+                delBtn.style.cssText = 'position:absolute;right:2px;top:50%;transform:translateY(-50%);background:transparent;border:none;color:rgba(255,80,80,0);font-size:11px;line-height:1;cursor:pointer;padding:0 2px;transition:color 0.15s;';
+                // Show/hide × on badge hover
+                badge.onmouseenter = () => delBtn.style.color = 'rgba(255,80,80,0.7)';
+                badge.onmouseleave = () => delBtn.style.color = 'rgba(255,80,80,0)';
+                delBtn.onmouseenter = () => delBtn.style.color = 'rgba(255,80,80,1)';
+                delBtn.onclick = (e) => { e.stopPropagation(); deleteTestedModel(_activeProvider, m); };
+
+                badge.appendChild(fillBtn);
+                badge.appendChild(delBtn);
+                list.appendChild(badge);
+            });
+            wrap.style.display = '';
+        } else {
+            wrap.style.display = 'none';
+        }
+    }
+    function _fillActiveModel(m) {
+        const inp = document.getElementById('active-provider-model');
+        if (inp) { inp.value = m; testProvider(_activeProvider); }
+    }
+    async function deleteTestedModel(provider, model, rerenderAll = true) {
+        try {
+            await fetch('/config/tested-models', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider, model }),
+            });
+            // Remove from local cache and re-render
+            if (window._testedModelsCache && window._testedModelsCache[provider]) {
+                window._testedModelsCache[provider] = window._testedModelsCache[provider].filter(m => m !== model);
+                if (!window._testedModelsCache[provider].length) delete window._testedModelsCache[provider];
+            }
+            if (rerenderAll) {
+                _refreshActiveTestedModels();
+                _renderNeuralTestedModels();
+            }
+        } catch (e) {
+            console.warn('Failed to delete tested model:', e);
+        }
+    }
+
+    let testedModelsCache = {};
+
+    // Load tested models on page load
+    async function loadTestedModels() {
+        try {
+            const resp = await fetch('/config/tested-models');
+            testedModelsCache = await resp.json();
+            window._testedModelsCache = testedModelsCache;  // expose for combobox UI
+            // Refresh active provider card's tested models
+            _refreshActiveTestedModels();
+            // Also populate Neural Core tested models (all models from all providers)
+            _renderNeuralTestedModels();
+            _renderPresetTestedModels();
+            dreamModelRenderChips();
+        } catch (e) {
+            console.warn('Failed to load tested models:', e);
+        }
+    }
+
+    function _renderNeuralTestedModels() {
+        const cache = window._testedModelsCache || {};
+        const allModels = [...new Set(Object.values(cache).flat())];
+        const ncContainer = document.getElementById('model-tested-models');
+        const ncList = document.getElementById('model-tested-models-list');
+        if (allModels.length === 0) { ncContainer.style.display = 'none'; return; }
+        ncContainer.style.display = 'block';
+        ncList.innerHTML = '';
+        allModels.forEach(m => {
+            const badge = document.createElement('span');
+            badge.style.cssText = 'position:relative;display:inline-flex;align-items:center;';
+            const fillBtn = document.createElement('button');
+            fillBtn.type = 'button';
+            fillBtn.textContent = m;
+            fillBtn.style.cssText = 'padding:2px 22px 2px 6px;border:1px solid rgba(0,255,65,0.2);font-size:9px;font-family:monospace;color:rgba(0,255,65,0.6);cursor:pointer;transition:all 0.15s;background:transparent;white-space:nowrap;';
+            fillBtn.onmouseenter = () => { fillBtn.style.color='#00FF41'; fillBtn.style.borderColor='rgba(0,255,65,0.8)'; fillBtn.style.background='rgba(0,255,65,0.08)'; };
+            fillBtn.onmouseleave = () => { fillBtn.style.color='rgba(0,255,65,0.6)'; fillBtn.style.borderColor='rgba(0,255,65,0.2)'; fillBtn.style.background='transparent'; };
+            fillBtn.onclick = () => useTestedModelForNeural(m);
+            const delBtn = document.createElement('button');
+            delBtn.type = 'button';
+            delBtn.textContent = 'x';
+            delBtn.title = 'Remove from history';
+            delBtn.style.cssText = 'position:absolute;right:2px;top:50%;transform:translateY(-50%);background:transparent;border:none;color:rgba(255,80,80,0);font-size:11px;line-height:1;cursor:pointer;padding:0 2px;transition:color 0.15s;';
+            badge.onmouseenter = () => delBtn.style.color = 'rgba(255,80,80,0.7)';
+            badge.onmouseleave = () => delBtn.style.color = 'rgba(255,80,80,0)';
+            delBtn.onmouseenter = () => delBtn.style.color = 'rgba(255,80,80,1)';
+            delBtn.onclick = async (e) => {
+                e.stopPropagation();
+                const providers = Object.entries(cache).filter(([, ms]) => ms.includes(m)).map(([p]) => p);
+                for (const p of providers) await deleteTestedModel(p, m, false);
+                _renderNeuralTestedModels();
+            };
+            badge.appendChild(fillBtn);
+            badge.appendChild(delBtn);
+            ncList.appendChild(badge);
+        });
+    }
+
+    function useTestedModel(provider, model) {
+        // Click tested model badge → fill active card's Test Model input
+        if (_activeProvider === provider) {
+            const inp = document.getElementById('active-provider-model');
+            if (inp) inp.value = model;
+        } else {
+            selectProvider(provider);
+            setTimeout(() => {
+                const inp = document.getElementById('active-provider-model');
+                if (inp) inp.value = model;
+            }, 50);
+        }
+    }
+
+    function useTestedModelForNeural(model) {
+        const modelInput = document.getElementById('model');
+        if (modelInput && !modelInput.disabled) {
+            modelInput.value = model;
+        }
+    }
+
+    function updateReasoningEffortInput(presetDisabled = null) {
+        const select = document.getElementById('reasoning_effort_select');
+        const custom = document.getElementById('reasoning_effort_custom');
+        const hidden = document.getElementById('reasoning_effort');
+        if (!select || !custom || !hidden) return;
+
+        const disabled = presetDisabled === null ? !!(document.getElementById('model_preset')?.value || '') : presetDisabled;
+        const isCustom = select.value === '__custom__';
+        hidden.value = isCustom ? custom.value.trim() : select.value;
+        hidden.disabled = disabled;
+        select.disabled = disabled;
+        custom.disabled = disabled || !isCustom;
+        custom.classList.toggle('hidden', !isCustom);
+        [select, custom].forEach((el) => {
+            el.classList.toggle('opacity-50', disabled);
+            el.classList.toggle('cursor-not-allowed', disabled);
+        });
+    }
+
+    function updateModelPresetManualState() {
+        const preset = document.getElementById('model_preset')?.value || '';
+        const disabled = !!preset;
+        const effectiveEl = document.getElementById('model-preset-effective');
+        if (effectiveEl) {
+            const selected = preset ? (presetCrudParseRaw()[preset] || null) : null;
+            const provider = selected?.provider || '';
+            const model = selected?.model || '';
+            effectiveEl.textContent = selected && model
+                ? 'Using: ' + providerDisplayName(provider || 'auto') + ' · ' + model
+                : '';
+            effectiveEl.classList.toggle('hidden', !effectiveEl.textContent);
+        }
+        document.querySelectorAll('.neural-manual-field').forEach((el) => {
+            el.classList.toggle('hidden', disabled);
+        });
+        ['model', 'provider', 'temperature', 'max_tokens', 'context_window_tokens'].forEach((id) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.disabled = disabled;
+            el.classList.toggle('opacity-50', disabled);
+            el.classList.toggle('cursor-not-allowed', disabled);
+        });
+        updateReasoningEffortInput(disabled);
+        const btn = document.getElementById('btn-test-model');
+        if (btn) {
+            btn.disabled = disabled;
+            btn.classList.toggle('opacity-50', disabled);
+            btn.classList.toggle('cursor-not-allowed', disabled);
+        }
+        dreamModelMarkUntested();
+        dreamModelRenderChips();
+    }
+
+    function toggleUnifiedSession() {
+        const toggle = document.getElementById('unified_session_toggle');
+        const hidden = document.getElementById('unified_session');
+        const status = document.getElementById('unified-session-status');
+        const warning = document.getElementById('unified-session-warning');
+        const enabled = !!toggle?.checked;
+        if (hidden) hidden.value = enabled ? 'true' : 'false';
+        if (status) {
+            status.textContent = enabled ? 'Unified session' : 'Separate sessions';
+            status.classList.toggle('text-yellow-300', enabled);
+            status.classList.toggle('text-primary/40', !enabled);
+        }
+        if (warning) {
+            warning.classList.toggle('hidden', !enabled);
+            warning.classList.toggle('flex', enabled);
+        }
+    }
+
+    const _presetProviderOptions = {{ provider_options | tojson }};
+    const _presetReasoningOptions = {{ reasoning_effort_options | tojson }};
+    let _presetVerifiedSignature = null;
+    let _dreamVerifiedSignature = null;
+
+    function presetCrudSignature() {
+        const provider = document.getElementById('preset_provider')?.value || 'auto';
+        const credentialProfile = document.getElementById('preset_credential_profile')?.value || '';
+        const model = (document.getElementById('preset_model')?.value || '').trim();
+        return provider + '::' + credentialProfile + '::' + model;
+    }
+
+    function presetCrudSetSaveEnabled(enabled) {
+        const btn = document.getElementById('btn-save-preset');
+        if (!btn) return;
+        btn.disabled = !enabled;
+        btn.classList.toggle('opacity-40', !enabled);
+        btn.classList.toggle('cursor-not-allowed', !enabled);
+    }
+
+    function presetCrudMarkUntested() {
+        if (_presetVerifiedSignature !== presetCrudSignature()) {
+            presetCrudSetSaveEnabled(false);
+        }
+    }
+
+    function presetCrudParseRaw() {
+        const textarea = document.getElementById('model_presets_json');
+        if (!textarea) return {};
+        const raw = textarea.value.trim() || '{}';
+        try {
+            const parsed = JSON.parse(raw);
+            return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+        } catch (e) {
+            return {};
+        }
+    }
+
+    function presetCrudWriteRaw(presets) {
+        const textarea = document.getElementById('model_presets_json');
+        if (!textarea) return;
+        textarea.value = JSON.stringify(presets, null, 2);
+    }
+
+    function providerProfileParseRaw() {
+        const textarea = document.getElementById('provider_profiles_json');
+        if (!textarea) return {};
+        try {
+            const parsed = JSON.parse(textarea.value.trim() || '{}');
+            return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+        } catch (_) {
+            return {};
+        }
+    }
+
+    function providerProfileWriteRaw(profiles) {
+        const textarea = document.getElementById('provider_profiles_json');
+        if (!textarea) return;
+        textarea.value = JSON.stringify(profiles, null, 2);
+    }
+
+    function dashboardCrudStatus(id, message, kind = 'info') {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.style.display = 'block';
+        el.textContent = message;
+        el.className = 'text-[10px] font-mono ' + (
+            kind === 'error' ? 'text-red-400' :
+            kind === 'success' ? 'text-primary/80' :
+            'text-primary/50'
+        );
+    }
+
+    async function dashboardCrudPersist(endpoint, payload) {
+        const resp = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        let data = {};
+        try {
+            data = await resp.json();
+        } catch (_) {
+            data = {};
+        }
+        if (!resp.ok || !data.success) {
+            throw new Error(data.error || data.message || ('HTTP ' + resp.status));
+        }
+        refreshEffectiveRoute();
+        return data;
+    }
+
+    // ── Effective Route strip ──
+    async function refreshEffectiveRoute() {
+        const line = document.getElementById('effective-route-line');
+        const fbEl = document.getElementById('effective-route-fallbacks');
+        const warnBox = document.getElementById('effective-route-warnings');
+        if (!line) return;
+        try {
+            const resp = await fetch('/config/effective-route');
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error || 'unavailable');
+            const route = data.route || {};
+            const cred = route.credential || {};
+            let credText;
+            if (cred.source === 'profile') credText = 'named account: ' + cred.name;
+            else if (cred.source === 'oauth') credText = 'OAuth (' + (cred.provider || '') + ')';
+            else if (cred.source === 'global') credText = 'global account: ' + (cred.provider || '');
+            else if (cred.source === 'invalid') credText = 'credential error';
+            else credText = 'no credentials';
+            const label = route.mode === 'preset' ? route.preset_name : 'Custom';
+            const parts = [
+                (route.model || '?') + ' @ ' + providerDisplayName(route.provider || 'auto'),
+                'temp ' + route.temperature,
+                route.max_tokens + ' out',
+                route.context_window_tokens + ' ctx',
+            ];
+            if (route.reasoning_effort) parts.push('reasoning ' + route.reasoning_effort);
+            parts.push(credText);
+            line.innerHTML = '<span class="text-primary font-bold">' + escapeHtml(label || 'Custom') + '</span>'
+                + '<span class="text-primary/40"> · </span>' + escapeHtml(parts.join(' · '));
+            const chain = data.fallback_chain || [];
+            if (fbEl) {
+                if (chain.length) {
+                    fbEl.innerHTML = 'Fallback: ' + chain.map((entry) => {
+                        if (entry.status === 'missing_preset') {
+                            return '<span class="text-yellow-400/80">' + escapeHtml(entry.name) + ' ✗ missing</span>';
+                        }
+                        if (entry.status === 'same_as_primary') {
+                            return '<span class="text-yellow-400/80">' + escapeHtml(entry.name) + ' ✗ same as primary</span>';
+                        }
+                        return escapeHtml(entry.name + ' (' + (entry.model || '?') + ')');
+                    }).join('<span class="text-primary/30"> → </span>');
+                }
+                fbEl.classList.toggle('hidden', !chain.length);
+            }
+            if (warnBox) {
+                const warnings = data.warnings || [];
+                warnBox.innerHTML = warnings.map((w) =>
+                    '<div class="flex items-start gap-2 border border-yellow-400/40 bg-yellow-400/10 px-3 py-2 text-yellow-200/90">'
+                    + '<span class="material-symbols-outlined text-sm mt-0.5">warning</span>'
+                    + '<span class="text-[10px] leading-relaxed font-mono">' + escapeHtml(w) + '</span></div>'
+                ).join('');
+                warnBox.classList.toggle('hidden', !warnings.length);
+            }
+        } catch (e) {
+            line.innerHTML = '<span class="text-primary/40">unavailable — ' + escapeHtml(e.message || 'error') + '</span>';
+            if (fbEl) fbEl.classList.add('hidden');
+            if (warnBox) warnBox.classList.add('hidden');
+        }
+    }
+
+    function toggleMultiCredentialProfiles() {
+        const enabled = !!document.getElementById('multi_credential_profile_enabled')?.checked;
+        const panel = document.getElementById('provider-credential-profiles-panel');
+        const status = document.getElementById('multi-credential-profile-status');
+        if (panel) panel.classList.toggle('hidden', !enabled);
+        if (status) {
+            status.textContent = enabled ? 'Shown' : 'Hidden';
+            status.classList.toggle('text-primary', enabled);
+            status.classList.toggle('text-primary/40', !enabled);
+        }
+        if (!enabled) providerProfileCancel();
+    }
+
+    function toggleModelPresetsPanel() {
+        const enabled = !!document.getElementById('model_presets_panel_enabled')?.checked;
+        const panel = document.getElementById('model-presets-panel');
+        const status = document.getElementById('model-presets-panel-status');
+        if (panel) panel.classList.toggle('hidden', !enabled);
+        if (status) {
+            status.textContent = enabled ? 'Shown' : 'Hidden';
+            status.classList.toggle('text-primary', enabled);
+            status.classList.toggle('text-primary/40', !enabled);
+        }
+        if (!enabled) presetCrudCancel();
+    }
+
+    function providerProfileLabel(name, profile) {
+        return name + ' (' + (profile?.provider || 'unknown') + ')';
+    }
+
+    function providerProfileUsedBy(profileName) {
+        const presets = presetCrudParseRaw();
+        return Object.entries(presets)
+            .filter(([, preset]) => (preset?.credentialProfile || preset?.credential_profile || '') === profileName)
+            .map(([name]) => name);
+    }
+
+    function providerProfileRenderPresetOptions(selected = '') {
+        const select = document.getElementById('preset_credential_profile');
+        if (!select) return;
+        const profiles = providerProfileParseRaw();
+        select.innerHTML = '<option value="" style="background: #0a0a0a; color: #00FF41;">Use global account</option>';
+        Object.keys(profiles).sort().forEach((name) => {
+            const option = document.createElement('option');
+            option.value = name;
+            option.textContent = providerProfileLabel(name, profiles[name]);
+            option.style.background = '#0a0a0a';
+            option.style.color = '#00FF41';
+            select.appendChild(option);
+        });
+        select.value = Object.prototype.hasOwnProperty.call(profiles, selected) ? selected : '';
+        presetCrudUpdateProviderVisibility();
+    }
+
+    function providerProfileRender() {
+        const list = document.getElementById('provider-profile-list');
+        if (!list) return;
+        const profiles = providerProfileParseRaw();
+        const names = Object.keys(profiles).sort();
+        list.innerHTML = '';
+        if (!names.length) {
+            list.innerHTML = '<div class="dashboard-subtitle border border-primary/10 bg-black/20 px-4 py-3 text-[11px] font-mono">No named accounts configured.</div>';
+            providerProfileRenderPresetOptions();
+            return;
+        }
+        names.forEach((name) => {
+            const profile = profiles[name] || {};
+            const usedBy = providerProfileUsedBy(name);
+            const apiBaseLabel = profile.apiBase || profile.api_base || 'default API base';
+            const row = document.createElement('div');
+            row.className = 'provider-profile-row group grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2 items-center border border-primary/10 bg-black/30 px-3 py-2 transition-all duration-300 hover:border-primary/40 hover:bg-primary/[0.04]';
+            row.innerHTML =
+                '<div class="min-w-0">' +
+                '<div class="text-[11px] text-primary font-mono font-bold truncate">' + escapeHtml(name) + '</div>' +
+                '<div class="text-[10px] text-primary/50 group-hover:text-primary/90 font-mono truncate transition-colors duration-300">' + escapeHtml(profile.provider || '') + ' · ' + escapeHtml(apiBaseLabel) + '</div>' +
+                (providerProfileIsEnabledOAuth(profile.provider) ? '<div class="profile-codex-state text-[9px] text-primary/35 group-hover:text-primary/70 font-mono transition-colors duration-300" data-profile="' + escapeHtml(name) + '">checking OAuth status...</div>' : '') +
+                (usedBy.length ? '<div class="text-[9px] text-primary/35 group-hover:text-primary/65 font-mono transition-colors duration-300">used by: ' + escapeHtml(usedBy.join(', ')) + '</div>' : '') +
+                '</div>' +
+                '<div class="flex gap-2">' +
+                (providerProfileIsEnabledOAuth(profile.provider) ? '<button type="button" class="profile-codex-login hidden inline-flex h-7 w-14 items-center justify-center overflow-hidden whitespace-nowrap px-2 py-0 border border-primary/30 text-primary/70 text-[10px] uppercase leading-none tracking-wider hover:bg-primary/10">Login</button><button type="button" class="profile-codex-logout hidden inline-flex h-7 w-16 items-center justify-center overflow-hidden whitespace-nowrap px-2 py-0 border border-red-500/30 text-red-400/70 text-[10px] uppercase leading-none tracking-wider hover:bg-red-500/10">Logout</button>' : '') +
+                '<button type="button" class="profile-edit inline-flex h-7 w-16 items-center justify-center overflow-hidden whitespace-nowrap px-2 py-0 border border-primary/30 text-primary/70 text-[10px] uppercase leading-none tracking-wider hover:bg-primary/10">Edit</button>' +
+                '<button type="button" class="profile-delete inline-flex h-7 w-20 items-center justify-center overflow-hidden whitespace-nowrap px-2 py-0 border border-red-500/40 text-red-400/80 text-[10px] uppercase leading-none tracking-wider hover:bg-red-500/10">Delete</button>' +
+                '</div>';
+            const loginBtn = row.querySelector('.profile-codex-login');
+            if (loginBtn) loginBtn.onclick = () => providerProfileOAuthLogin(name, profile.provider);
+            const logoutBtn = row.querySelector('.profile-codex-logout');
+            if (logoutBtn) logoutBtn.onclick = () => providerProfileOAuthLogout(name, profile.provider);
+            row.querySelector('.profile-edit').onclick = () => providerProfileEdit(name);
+            row.querySelector('.profile-delete').onclick = () => providerProfileDelete(name);
+            list.appendChild(row);
+            if (providerProfileIsEnabledOAuth(profile.provider)) providerProfileOAuthRefreshRowStatus(name, profile.provider, row);
+        });
+        providerProfileRenderPresetOptions(document.getElementById('preset_credential_profile')?.value || '');
+        wizardOAuthRefresh();
+    }
+
+    function providerProfileShowForm() {
+        const form = document.getElementById('provider-profile-form');
+        if (form) form.classList.remove('hidden');
+    }
+
+    function providerProfileIsEnabledOAuth(providerName) {
+        return providerName === 'openai_codex' || providerName === 'github_copilot' || providerName === 'xai_oauth';
+    }
+
+    function providerProfileOAuthBasePath(providerName) {
+        if (providerName === 'openai_codex') return '/oauth/codex';
+        if (providerName === 'github_copilot') return '/oauth/copilot';
+        if (providerName === 'xai_oauth') return '/oauth/xai';
+        return '';
+    }
+
+    function providerProfileOAuthLabel(providerName) {
+        if (providerName === 'openai_codex') return 'Codex';
+        if (providerName === 'github_copilot') return 'Copilot';
+        if (providerName === 'xai_oauth') return 'xAI OAuth';
+        return 'OAuth';
+    }
+
+    function providerProfileProviderChanged() {
+        const provider = document.getElementById('provider_profile_provider')?.value || '';
+        const isOAuth = providerProfileIsEnabledOAuth(provider);
+        document.getElementById('provider-profile-api-key-wrap')?.classList.toggle('hidden', isOAuth);
+        document.getElementById('provider-profile-api-base-wrap')?.classList.toggle('hidden', isOAuth);
+        if (isOAuth) {
+            const keyInput = document.getElementById('provider_profile_api_key');
+            const baseInput = document.getElementById('provider_profile_api_base');
+            if (keyInput) keyInput.value = '';
+            if (baseInput) baseInput.value = '';
+        }
+    }
+

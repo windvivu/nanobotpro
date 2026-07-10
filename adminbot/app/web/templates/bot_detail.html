@@ -7,7 +7,7 @@
 <form class="bot-name-form" method="post" action="/bots/{{ bot.id }}/name" data-bot-name-form>
     <label class="sr-only" for="bot-name-input">Bot name</label>
     <input id="bot-name-input" name="name" type="text" value="{{ bot.name }}" maxlength="120" autocomplete="off" />
-    <button class="button button-small" type="submit" data-action-label="Apply"><span data-label>Apply</span></button>
+    <button class="button button-small" type="submit" data-action-label="Apply"><span class="material-symbols-outlined" aria-hidden="true">check</span><span data-label>Apply</span></button>
     <span class="inline-status" data-bot-name-status aria-live="polite"></span>
 </form>
 {% endblock %}
@@ -34,7 +34,7 @@
 <section class="detail-grid">
     <div class="panel">
         <div class="panel-header">
-            <h2>Overview</h2>
+            <h2><span class="material-symbols-outlined panel-icon" aria-hidden="true">info</span> Overview</h2>
             <span class="status status-{{ bot.status_tone }}">{{ bot.status }}</span>
         </div>
         <dl class="meta-list">
@@ -42,6 +42,8 @@
             <div><dt>Description</dt><dd>{{ bot.description or "-" }}</dd></div>
             <div><dt>Workspace</dt><dd class="mono">{{ bot.workspace }}</dd></div>
             <div><dt>Config</dt><dd class="mono">{{ bot.config_path }}</dd></div>
+        </dl>
+        <dl class="meta-list meta-list-compact">
             <div><dt>Web Port</dt><dd>{{ bot.web_port }}</dd></div>
             <div><dt>PID</dt><dd class="mono">{{ bot.pid }}</dd></div>
             <div><dt>Last Run</dt><dd class="mono">{{ bot.last_run_at }}</dd></div>
@@ -54,13 +56,13 @@
                 <span>Description</span>
                 <textarea name="description" rows="3" placeholder="Optional note about this bot's purpose">{{ bot.description }}</textarea>
             </label>
-            <button class="button button-small" type="submit">Save Description</button>
+            <button class="button button-small" type="submit"><span class="material-symbols-outlined" aria-hidden="true">save</span>Save Description</button>
         </form>
     </div>
 
     <div class="panel">
         <div class="panel-header">
-            <h2>Actions</h2>
+            <h2><span class="material-symbols-outlined panel-icon" aria-hidden="true">bolt</span> Actions</h2>
         </div>
         {% if bot.attention %}
         <div class="detail-alert">
@@ -70,22 +72,24 @@
         <div class="stack-actions">
             {% if bot.status == "running" %}
             <form method="post" action="/bots/{{ bot.id }}/stop" data-bot-action-form>
-                <button class="button" type="submit" data-action-label="Stop Bot"><span data-label>Stop Bot</span></button>
+                <button class="button" type="submit" data-action-label="Stop Bot"><span class="material-symbols-outlined" aria-hidden="true">stop_circle</span><span data-label>Stop Bot</span></button>
             </form>
-            <form method="post" action="/bots/{{ bot.id }}/restart" data-bot-action-form>
-                <button class="button" type="submit" data-action-label="Restart Bot"><span data-label>Restart Bot</span></button>
+            <form method="post" action="/bots/{{ bot.id }}/restart" data-bot-action-form data-cooldown-ms="5000">
+                <button class="button" type="submit" data-action-label="Restart Bot"><span class="material-symbols-outlined" aria-hidden="true">refresh</span><span data-label>Restart Bot</span></button>
             </form>
             {% else %}
             <form method="post" action="/bots/{{ bot.id }}/start" data-bot-action-form>
-                <button class="button button-primary" type="submit" data-action-label="Start Bot"><span data-label>Start Bot</span></button>
+                <button class="button button-primary" type="submit" data-action-label="Start Bot"><span class="material-symbols-outlined" aria-hidden="true">play_arrow</span><span data-label>Start Bot</span></button>
             </form>
             {% endif %}
+            {% if supports_shell %}
             <form method="post" action="/bots/{{ bot.id }}/shell">
-                <button class="button" type="submit">Open Workspace Shell</button>
+                <button class="button" type="submit"><span class="material-symbols-outlined" aria-hidden="true">terminal</span>Open Workspace Shell</button>
             </form>
-            <a class="button button-link" href="/bots/{{ bot.id }}/logs">View Logs</a>
+            {% endif %}
+            <a class="button button-link" href="/bots/{{ bot.id }}/logs"><span class="material-symbols-outlined" aria-hidden="true">description</span>View Logs</a>
             {% if bot.status == "running" %}
-            <a class="button button-link" href="{{ bot.dashboard_url }}" target="_blank" rel="noreferrer">Open Nanobot Dashboard</a>
+            <a class="button button-link" href="{{ bot.dashboard_url }}" target="_blank" rel="noreferrer"><span class="material-symbols-outlined" aria-hidden="true">open_in_new</span>Open Nanobot Dashboard</a>
             {% else %}
             <span class="button button-disabled" aria-disabled="true">Open Nanobot Dashboard</span>
             {% endif %}
@@ -93,10 +97,31 @@
                 {% if bot.status == "running" %}
                 <button class="button button-danger button-disabled" type="button" disabled>Delete Bot</button>
                 {% else %}
-                <button class="button button-danger" type="button" data-delete-bot-open>Delete Bot</button>
+                <button class="button button-danger" type="button" data-delete-bot-open><span class="material-symbols-outlined" aria-hidden="true">delete</span>Delete Bot</button>
                 {% endif %}
             </form>
         </div>
+
+        <details class="panel collapsible-panel bot-config-panel">
+            <summary class="collapsible-summary">
+                <div>
+                    <h2>Config</h2>
+                    <p class="field-help">Runtime settings applied to this bot's config.json.</p>
+                </div>
+            </summary>
+            <div class="collapsible-body">
+                <form class="stack-form" method="post" action="/bots/{{ bot.id }}/web-host">
+                    <label>
+                        <span>Dashboard Bind Host</span>
+                        <select name="host">
+                            <option value="127.0.0.1" {% if web_host == "127.0.0.1" %}selected{% endif %}>127.0.0.1 (localhost only)</option>
+                            <option value="0.0.0.0" {% if web_host == "0.0.0.0" %}selected{% endif %}>0.0.0.0 (all interfaces)</option>
+                        </select>
+                    </label>
+                    <button class="button button-small" type="submit"><span class="material-symbols-outlined" aria-hidden="true">save</span>Save Config</button>
+                </form>
+            </div>
+        </details>
     </div>
 </section>
 
@@ -109,6 +134,12 @@
         <p class="modal-copy">
             This removes the bot registration from Adminbot. The bot must be stopped before it can be deleted.
         </p>
+        <div class="stack-form">
+            <label>
+                <span>Confirm Admin Password</span>
+                <input form="delete-bot-form" name="password" type="password" required autocomplete="current-password" />
+            </label>
+        </div>
         <label class="danger-check">
             <input form="delete-bot-form" name="delete_workspace" type="checkbox" value="true" />
             <span>

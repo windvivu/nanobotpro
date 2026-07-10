@@ -92,6 +92,31 @@ def initialize_bot_config(
     sync_bot_runtime_config(config_path, workspace_path, web_port)
 
 
+WEB_BIND_HOST_CHOICES = ("127.0.0.1", "0.0.0.0")
+
+
+def get_web_bind_host(config_path: Path) -> str:
+    if not config_path.exists():
+        return WEB_BIND_HOST_CHOICES[0]
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    return config.get("gateway", {}).get("web", {}).get("host") or WEB_BIND_HOST_CHOICES[0]
+
+
+def update_web_bind_host(config_path: Path, host: str) -> None:
+    if host not in WEB_BIND_HOST_CHOICES:
+        raise ValueError(
+            f"Unsupported bind host '{host}'. Allowed: {', '.join(WEB_BIND_HOST_CHOICES)}."
+        )
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config not found: {config_path}")
+
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config.setdefault("gateway", {})
+    config["gateway"].setdefault("web", {})
+    config["gateway"]["web"]["host"] = host
+    atomic_write_json(config_path, config)
+
+
 def sync_bot_runtime_config(config_path: Path, workspace_path: Path, web_port: int) -> None:
     if not config_path.exists():
         raise FileNotFoundError(f"Config not found: {config_path}")

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Form, Request
@@ -91,6 +92,8 @@ def bot_detail(request: Request, bot_id: str):
         "record": bot,
         "message": request.query_params.get("message", ""),
         "error": request.query_params.get("error", ""),
+        "supports_shell": os.name == "nt",
+        "web_host": manager.get_bot_web_bind_host(bot_id),
     }
     return templates.TemplateResponse(request, "bot_detail.html", context)
 
@@ -162,12 +165,30 @@ def restart_bot(request: Request, bot_id: str):
 
 
 @router.post("/bots/{bot_id}/delete")
-def delete_bot(request: Request, bot_id: str, delete_workspace: bool = Form(False)):
+def delete_bot(
+    request: Request,
+    bot_id: str,
+    password: str = Form(...),
+    delete_workspace: bool = Form(False),
+):
+    if not request.app.state.auth_store.verify(password):
+        return _redirect(f"/bots/{bot_id}?error={quote_plus('Incorrect admin password.')}")
     manager = request.app.state.manager
     try:
         bot = manager.delete_bot(bot_id, delete_workspace=delete_workspace)
         suffix = " and workspace files" if delete_workspace else ""
         return _redirect(f"/?message={quote_plus(f'Deleted bot {bot.name}{suffix}.')}")
+    except Exception as exc:
+        return _redirect(f"/bots/{bot_id}?error={quote_plus(str(exc))}")
+
+
+@router.post("/bots/{bot_id}/web-host")
+def update_web_host(request: Request, bot_id: str, host: str = Form(...)):
+    manager = request.app.state.manager
+    try:
+        bot = manager.update_bot_web_bind_host(bot_id, host)
+        note = " Restart the bot to apply." if bot.process.status == "running" else ""
+        return _redirect(f"/bots/{bot.id}?message={quote_plus(f'Dashboard bind host set to {host}.{note}')}")
     except Exception as exc:
         return _redirect(f"/bots/{bot_id}?error={quote_plus(str(exc))}")
 

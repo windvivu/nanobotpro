@@ -69,7 +69,7 @@ class OpenAICodexProvider(LLMProvider):
 
         try:
             try:
-                content, tool_calls, finish_reason = await _request_codex(
+                content, tool_calls, finish_reason, usage = await _request_codex(
                     DEFAULT_CODEX_URL, headers, body, verify=True,
                     on_content_delta=on_content_delta,
                 )
@@ -77,11 +77,11 @@ class OpenAICodexProvider(LLMProvider):
                 if "CERTIFICATE_VERIFY_FAILED" not in str(e):
                     raise
                 logger.warning("SSL verification failed for Codex API; retrying with verify=False")
-                content, tool_calls, finish_reason = await _request_codex(
+                content, tool_calls, finish_reason, usage = await _request_codex(
                     DEFAULT_CODEX_URL, headers, body, verify=False,
                     on_content_delta=on_content_delta,
                 )
-            return LLMResponse(content=content, tool_calls=tool_calls, finish_reason=finish_reason)
+            return LLMResponse(content=content, tool_calls=tool_calls, finish_reason=finish_reason, usage=usage)
         except Exception as e:
             return LLMResponse(content=f"Error calling Codex: {e}", finish_reason="error")
 
@@ -130,7 +130,7 @@ async def _request_codex(
     body: dict[str, Any],
     verify: bool,
     on_content_delta: Callable[[str], Awaitable[None]] | None = None,
-) -> tuple[str, list[ToolCallRequest], str]:
+) -> tuple[str, list[ToolCallRequest], str, dict[str, int]]:
     async with httpx.AsyncClient(timeout=60.0, verify=verify) as client:
         async with client.stream("POST", url, headers=headers, json=body) as response:
             if response.status_code != 200:
@@ -256,11 +256,12 @@ async def _iter_sse(response: httpx.Response) -> AsyncGenerator[dict[str, Any], 
 async def _consume_sse(
     response: httpx.Response,
     on_content_delta: Callable[[str], Awaitable[None]] | None = None,
-) -> tuple[str, list[ToolCallRequest], str]:
+) -> tuple[str, list[ToolCallRequest], str, dict[str, int]]:
     content = ""
     tool_calls: list[ToolCallRequest] = []
     tool_call_buffers: dict[str, dict[str, Any]] = {}
     finish_reason = "stop"
+    usage: dict[str, int] = {}
 
     async for event in _iter_sse(response):
         event_type = event.get("type")
@@ -308,12 +309,32 @@ async def _consume_sse(
                     )
                 )
         elif event_type == "response.completed":
-            status = (event.get("response") or {}).get("status")
-            finish_reason = _map_finish_reason(status)
+            resp = event.get("response") or {}
+            finish_reason = _map_finish_reason(resp.get("status"))
+            usage = _extract_usage(resp.get("usage"))
         elif event_type in {"error", "response.failed"}:
             raise RuntimeError("Codex response failed")
 
-    return content, tool_calls, finish_reason
+    return content, tool_calls, finish_reason, usage
+
+
+def _extract_usage(raw: dict[str, Any] | None) -> dict[str, int]:
+    """Map Responses API usage to the LiteLLM-style keys used across nanobot."""
+    if not isinstance(raw, dict):
+        return {}
+    prompt = int(raw.get("input_tokens") or 0)
+    completion = int(raw.get("output_tokens") or 0)
+    if not prompt and not completion:
+        return {}
+    usage = {
+        "prompt_tokens": prompt,
+        "completion_tokens": completion,
+        "total_tokens": int(raw.get("total_tokens") or (prompt + completion)),
+    }
+    details = raw.get("input_tokens_details")
+    if isinstance(details, dict) and details.get("cached_tokens"):
+        usage["cached_tokens"] = int(details["cached_tokens"])
+    return usage
 
 
 _FINISH_REASON_MAP = {"completed": "stop", "incomplete": "length", "failed": "error", "cancelled": "error"}
