@@ -28,6 +28,8 @@ uv.lock
 .workspace/
 .claude/settings.local.json
 .agent/skills_antigravity/
+nanobot_symbolic_link/
+
 nanobots_docker/configs/nanox1/workspace/
 
 nanobots_docker/configs/nanox1/config.json.bak

@@ -9,6 +9,7 @@ import sys
 from nanobot import __version__
 from nanobot.bus.events import OutboundMessage
 from nanobot.command.router import CommandContext, CommandRouter
+from nanobot.session.goal_state import make_active_goal_state, sustained_goal_active
 from nanobot.utils.helpers import build_status_content
 from nanobot.utils.restart import set_restart_notice_to_env
 
@@ -110,6 +111,45 @@ async def cmd_new(ctx: CommandContext) -> OutboundMessage:
         channel=ctx.msg.channel, chat_id=ctx.msg.chat_id,
         content="New session started.",
         metadata=dict(ctx.msg.metadata or {})
+    )
+
+
+async def cmd_goal(ctx: CommandContext) -> OutboundMessage:
+    """Start an explicit sustained goal for the current session."""
+    objective = ctx.args.strip()
+    if not objective:
+        return OutboundMessage(
+            channel=ctx.msg.channel,
+            chat_id=ctx.msg.chat_id,
+            content="Usage: /goal <long-running task description>",
+            metadata={**dict(ctx.msg.metadata or {}), "render_as": "text"},
+        )
+
+    session = ctx.loop.sessions.get_or_create(ctx.key)
+    current = ctx.loop.sessions.get_goal_state(session)
+    if current and sustained_goal_active(session.metadata):
+        return OutboundMessage(
+            channel=ctx.msg.channel,
+            chat_id=ctx.msg.chat_id,
+            content=(
+                "Error: An active goal already exists. Use complete_goal before "
+                "starting a new /goal."
+            ),
+            metadata={**dict(ctx.msg.metadata or {}), "render_as": "text"},
+        )
+
+    state = make_active_goal_state(objective)
+    state["started_by"] = "command"
+    ctx.loop.sessions.set_goal_state(session, state)
+    return OutboundMessage(
+        channel=ctx.msg.channel,
+        chat_id=ctx.msg.chat_id,
+        content=(
+            f"Goal saved: {objective}\n\n"
+            "Future messages in this chat will use this goal as context. "
+            "Tell me to complete the goal when it is done."
+        ),
+        metadata={**dict(ctx.msg.metadata or {}), "render_as": "text"},
     )
 
 
@@ -328,6 +368,7 @@ def build_help_text() -> str:
         "/stop — Stop the current task",
         "/restart — Restart the bot",
         "/status — Show bot status",
+        "/goal <task> — Save a long-running goal for this chat",
         "/dream — Manually trigger Dream consolidation",
         "/dream-log — Show what the last Dream changed",
         "/dream-restore — Revert memory to a previous state",
@@ -343,6 +384,8 @@ def register_builtin_commands(router: CommandRouter) -> None:
     router.priority("/status", cmd_status)
     router.exact("/new", cmd_new)
     router.exact("/status", cmd_status)
+    router.exact("/goal", cmd_goal)
+    router.prefix("/goal ", cmd_goal)
     router.exact("/dream", cmd_dream)
     router.exact("/dream-log", cmd_dream_log)
     router.prefix("/dream-log ", cmd_dream_log)
