@@ -77,6 +77,8 @@
                                 <input type="password" id="web_password" name="web_password" value="{{ web_password }}"
                                     data-original="{{ web_password }}"
                                     placeholder="New password..."
+                                    autocomplete="new-password" data-bwignore="true" data-1p-ignore="true"
+                                    data-lpignore="true" data-form-type="other"
                                     class="w-full bg-black/60 border {% if web_password and web_password.startswith('nanobot@') %}border-yellow-500/60{% else %}border-primary/50{% endif %} focus:border-primary outline-none px-4 py-3 pr-10 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
                                 <button type="button"
                                     class="absolute right-2 top-1/2 -translate-y-1/2 text-primary/30 hover:text-primary transition-colors"
@@ -90,6 +92,8 @@
                             <!-- Repeat password -->
                             <div class="relative">
                                 <input type="password" id="web_password_confirm" placeholder="Repeat password..."
+                                    autocomplete="new-password" data-bwignore="true" data-1p-ignore="true"
+                                    data-lpignore="true" data-form-type="other"
                                     class="w-full bg-black/60 border border-primary/50 focus:border-primary outline-none px-4 py-3 pr-10 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
                                 <button type="button"
                                     class="absolute right-2 top-1/2 -translate-y-1/2 text-primary/30 hover:text-primary transition-colors"
