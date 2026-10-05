@@ -69,6 +69,11 @@ BUILTIN_MCP_PRESETS: dict[str, MCPPresetBundleConfig] = {
     ),
 }
 
+# The oldest Node.js major a built-in preset's servers run on (custom). Playwright MCP exits at once
+# on anything older than 20. The dashboard makes sure there is one before it installs or tests the
+# preset, downloading nanobot's own when the machine's will not do (nanobot/web/managed_node.py).
+MCP_PRESET_MIN_NODE: dict[str, int] = {"playwright_headless": 20, "playwright_visible": 20}
+
 
 def validate_preset_id(preset_id: str) -> str:
     """Validate and return a canonical MCP preset identifier."""

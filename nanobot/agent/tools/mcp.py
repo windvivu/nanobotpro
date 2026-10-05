@@ -6,7 +6,7 @@ import os
 import re
 import shutil
 from collections.abc import Mapping
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, suppress
 from dataclasses import asdict, dataclass
 from time import monotonic
 from typing import Any
@@ -209,6 +209,22 @@ def _normalize_schema_for_openai(schema: Any) -> dict[str, Any]:
     return normalized
 
 
+class _OwnedMCPConnection:
+    """Close an MCP transport from the task that originally opened it (from upstream)."""
+
+    def __init__(self, owner: asyncio.Task[None], close_requested: asyncio.Event) -> None:
+        self._owner = owner
+        self._close_requested = close_requested
+
+    async def aclose(self) -> None:
+        self._close_requested.set()
+        try:
+            await asyncio.shield(self._owner)
+        except asyncio.CancelledError:
+            if not self._owner.cancelled():
+                raise
+
+
 class MCPServerRuntime:
     """Owns one named MCP server session and its registered tools."""
 
@@ -222,7 +238,7 @@ class MCPServerRuntime:
         self.server_name = server_name
         self.cfg = cfg
         self.registry = registry
-        self._stack: AsyncExitStack | None = None
+        self._connection: _OwnedMCPConnection | None = None
         self._session: Any | None = None
         self._transport_type = ""
         self._registered_tool_names: set[str] = set()
@@ -234,21 +250,12 @@ class MCPServerRuntime:
         """Open a fresh session, list tools, and register wrappers for this server."""
         async with self._lock:
             await self._close_locked(unregister_tools=True)
-            stack = AsyncExitStack()
-            # The runtime owns the stack before anything is opened on it (custom): whatever fails
-            # below, _close_locked closes it here, in the task that opened it. It used to be handed
-            # over only after the session was up, so a server that died before `initialize`
-            # (Playwright MCP on Node 18) left its transport open; the garbage collector then closed
-            # it from another task, which anyio refuses, and the transport's cancel scope cancelled
-            # the task that had connected: the agent loop, and with it the whole gateway.
-            self._stack = stack
             try:
-                await stack.__aenter__()
                 logger.debug(
                     "MCP server='{}' tool='(none)' phase='initialize' retry_attempted=False",
                     self.server_name,
                 )
-                transport_type, session = await _open_mcp_session(self.cfg, stack)
+                transport_type, session = await self._open_owned_session()
                 self._session = session
                 self._transport_type = transport_type
                 logger.debug(
@@ -467,20 +474,76 @@ class MCPServerRuntime:
             registered_count,
         )
 
+    async def _open_owned_session(self) -> tuple[str, Any]:
+        """Open the session in a task of its own, which is also the task that closes it (custom).
+
+        The MCP transports are built on anyio cancel scopes, and anyio lets a scope be left only by
+        the task that entered it. A session used to be opened by whoever connected (the agent loop,
+        at start) and closed by whoever had to: a message's turn reconnecting after a failed call, a
+        dashboard request switching the server off, the garbage collector after a failed open.
+        Closed from another task, the transport cancelled the task that had opened it, and the
+        gateway stopped. Upstream keeps an owner task per server for the same reason.
+        """
+        opened: asyncio.Future[tuple[str, Any]] = asyncio.get_running_loop().create_future()
+        close_requested = asyncio.Event()
+
+        async def own_connection() -> None:
+            failure: BaseException | None = None
+            try:
+                async with AsyncExitStack() as stack:
+                    try:
+                        result = await _open_mcp_session(self.cfg, stack)
+                    except BaseException as exc:
+                        failure = exc  # the open's own error; closing the stack wraps it in a group
+                        raise
+                    if not opened.done():
+                        opened.set_result(result)
+                    await close_requested.wait()
+            except BaseException as exc:
+                if not opened.done():
+                    # Reported once everything is closed. A cancellation in here is the SDK's or the
+                    # loop's; the task waiting below was not cancelled, so it gets an error instead.
+                    failure = failure or exc
+                    opened.set_exception(
+                        failure
+                        if isinstance(failure, Exception)
+                        else ConnectionError(f"MCP connection ended while opening: {failure!r}")
+                    )
+                raise
+
+        owner = asyncio.create_task(own_connection(), name=f"mcp:{self.server_name}")
+        try:
+            result = await opened
+        except BaseException:
+            # The open failed, or this task was cancelled while it waited. Either way the owner is
+            # stopped and waited for, so nothing is still open when the caller hears about it.
+            close_requested.set()
+            owner.cancel()
+            with suppress(BaseException):
+                await asyncio.shield(owner)
+            raise
+        self._connection = _OwnedMCPConnection(owner, close_requested)
+        return result
+
     async def _close_locked(self, *, unregister_tools: bool) -> None:
         if unregister_tools:
             for tool_name in sorted(self._registered_tool_names):
                 self.registry.unregister(tool_name)
             self._registered_tool_names.clear()
-        if self._stack is not None:
-            try:
-                await self._stack.aclose()
-            except (RuntimeError, BaseExceptionGroup, asyncio.TimeoutError, asyncio.CancelledError):
-                pass
-            self._stack = None
+        connection, self._connection = self._connection, None
         self._session = None
         self._transport_type = ""
         self._tool_defs.clear()
+        if connection is not None:
+            try:
+                await connection.aclose()
+            except (Exception, BaseExceptionGroup) as exc:
+                # MCP SDK cleanup is noisy (a dead server, a transport already gone) but harmless
+                logger.debug(
+                    "MCP server='{}' cleanup error ignored: {}",
+                    self.server_name,
+                    type(exc).__name__,
+                )
 
 
 def _image_block_data_url(block: Any, types: Any) -> str | None:

@@ -276,7 +276,7 @@
                     <button onclick="mcpPresetToggle('{{ preset_id }}', {{ 'false' if preset.enabled else 'true' }})" class="text-[9px] uppercase text-primary/50 hover:text-primary">{{ 'Disable' if preset.enabled else 'Enable' }}</button>
                     <button onclick="mcpPresetUninstall('{{ preset_id }}')" class="text-[9px] uppercase text-red-400/50 hover:text-red-400">Uninstall</button>
                     {% else %}
-                    <button onclick="mcpPresetInstall('{{ preset_id }}')" class="text-[9px] uppercase text-primary/60 hover:text-primary">Install</button>
+                    <button onclick="mcpPresetInstall('{{ preset_id }}', this, {{ preset.min_node }})" class="text-[9px] uppercase text-primary/60 hover:text-primary">Install</button>
                     {% if preset.adoptable %}<button onclick="mcpPresetAdopt('{{ preset_id }}')" class="text-[9px] uppercase text-yellow-400/60 hover:text-yellow-400">Adopt Existing</button>{% endif %}
                     {% endif %}
                     {% if preset.source == 'custom' %}
@@ -890,12 +890,30 @@ async function mcpPresetRequest(url, body) {
     return data;
 }
 
-function mcpPresetInstall(presetId) {
-    hubModal('download', 'Install MCP Bundle', 'Install "' + presetId + '"? Existing server names will not be overwritten.', async function() {
+// A preset that runs on Node.js says which one it needs (minNode). The install route makes sure
+// there is one, downloading nanobot's own when the machine's is missing or too old; that can take
+// a minute, so the button shows it is working.
+function mcpPresetInstall(presetId, btn, minNode) {
+    var question = 'Install "' + presetId + '"? Existing server names will not be overwritten.';
+    if (minNode) question += ' It needs Node.js ' + minNode + ' or newer: if this machine has none, nanobot first downloads its own copy, which takes about a minute.';
+    hubModal('download', 'Install MCP Bundle', question, async function() {
+        var label = btn ? btn.innerHTML : '';
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="material-symbols-outlined text-[12px] animate-spin">progress_activity</span>Installing...';
+        }
         try {
-            await mcpPresetRequest('/skills/mcp/presets/' + encodeURIComponent(presetId) + '/install');
-            window.location.reload();
-        } catch (err) { hubModal('error', 'Install Failed', err.message, function(){}); }
+            var data = await mcpPresetRequest('/skills/mcp/presets/' + encodeURIComponent(presetId) + '/install');
+            if (data.node && data.node.downloaded) {
+                var found = data.node.system_version ? 'Node.js ' + data.node.system_version : 'no Node.js';
+                hubModal('check_circle', 'Installed', 'nanobot downloaded Node.js ' + data.node.version + ' for its own use (this machine has ' + found + '). Restart the gateway to connect.', function() { window.location.reload(); });
+            } else {
+                window.location.reload();
+            }
+        } catch (err) {
+            if (btn) { btn.disabled = false; btn.innerHTML = label; }
+            hubModal('error', 'Install Failed', err.message, function(){});
+        }
     });
 }
 

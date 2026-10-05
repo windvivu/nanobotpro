@@ -86,6 +86,7 @@ async def skills_list(request: Request):
     try:
         from nanobot.config.loader import load_config
         from nanobot.web.mcp_presets import (
+            MCP_PRESET_MIN_NODE,
             MCPPresetError,
             adopt_exact_builtin_preset,
             list_mcp_presets,
@@ -132,6 +133,7 @@ async def skills_list(request: Request):
                 "server_count": len(bundle.servers),
                 "server_names": list(bundle.servers),
                 "adoptable": adoptable,
+                "min_node": MCP_PRESET_MIN_NODE.get(preset_id, 0),
             }
         mcp_custom_preset_data = {
             preset_id: bundle.model_dump(mode="json")
@@ -718,15 +720,34 @@ async def tradingview_mcp_health_route():
 @router.post("/skills/mcp/presets/{preset_id}/install")
 async def mcp_preset_install(request: Request, preset_id: str):
     from nanobot.config.loader import load_config
-    from nanobot.web.mcp_presets import MCPPresetError, install_mcp_preset
+    from nanobot.web import managed_node
+    from nanobot.web.mcp_presets import MCP_PRESET_MIN_NODE, MCPPresetError, install_mcp_preset
 
     config = load_config()
+    node = None
     try:
+        min_node = MCP_PRESET_MIN_NODE.get(preset_id.strip())
+        if min_node:
+            # Refuse a preset that cannot be installed before the download, not after it
+            install_mcp_preset(config.tools.model_copy(deep=True), preset_id)
+            node = await asyncio.to_thread(managed_node.ensure_node, min_node)
+            config = load_config()  # a first download takes a minute: read the config again
         installation = install_mcp_preset(config.tools, preset_id)
     except MCPPresetError as exc:
         return _mcp_preset_error_response(exc)
+    except managed_node.ManagedNodeError as exc:
+        return JSONResponse({"success": False, "error": str(exc)}, status_code=502)
+    if node is not None:
+        for name in installation.server_names:
+            managed_node.use_node(config.tools.mcp_servers[name], node)
     _save_mcp_config(request, config)
-    return JSONResponse({"success": True, "server_names": installation.server_names})
+    return JSONResponse(
+        {
+            "success": True,
+            "server_names": installation.server_names,
+            "node": node.as_dict() if node is not None else None,
+        }
+    )
 
 
 @router.post("/skills/mcp/presets/{preset_id}/test")
@@ -734,7 +755,13 @@ async def mcp_preset_test(preset_id: str):
     """Inspect every server in a bundle without saving or registering tools."""
     from nanobot.agent.tools.mcp import inspect_mcp_server
     from nanobot.config.loader import load_config
-    from nanobot.web.mcp_presets import MCPPresetError, list_mcp_presets, validate_preset_id
+    from nanobot.web import managed_node
+    from nanobot.web.mcp_presets import (
+        MCP_PRESET_MIN_NODE,
+        MCPPresetError,
+        list_mcp_presets,
+        validate_preset_id,
+    )
 
     try:
         preset_id = validate_preset_id(preset_id)
@@ -745,9 +772,26 @@ async def mcp_preset_test(preset_id: str):
         return _mcp_preset_error_response(exc)
 
     bundle = item["bundle"]
+    node = None
+    min_node = MCP_PRESET_MIN_NODE.get(preset_id)
+    if min_node:
+        # With the Node.js an install would use; a test downloads nothing
+        node = await asyncio.to_thread(managed_node.find_node, min_node)
+        if node is None:
+            return JSONResponse(
+                {
+                    "success": False,
+                    "error": (
+                        f"This bundle needs Node.js {min_node} or newer and this machine has none. "
+                        "Install the bundle: nanobot then downloads its own copy."
+                    ),
+                }
+            )
     results = {}
     success = True
     for server_name, server in bundle.servers.items():
+        if node is not None:
+            managed_node.use_node(server, node)
         inspection = await inspect_mcp_server(server_name, server)
         results[server_name] = inspection.as_dict()
         success = success and inspection.success
