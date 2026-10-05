@@ -235,6 +235,13 @@ class MCPServerRuntime:
         async with self._lock:
             await self._close_locked(unregister_tools=True)
             stack = AsyncExitStack()
+            # The runtime owns the stack before anything is opened on it (custom): whatever fails
+            # below, _close_locked closes it here, in the task that opened it. It used to be handed
+            # over only after the session was up, so a server that died before `initialize`
+            # (Playwright MCP on Node 18) left its transport open; the garbage collector then closed
+            # it from another task, which anyio refuses, and the transport's cancel scope cancelled
+            # the task that had connected: the agent loop, and with it the whole gateway.
+            self._stack = stack
             try:
                 await stack.__aenter__()
                 logger.debug(
@@ -242,7 +249,6 @@ class MCPServerRuntime:
                     self.server_name,
                 )
                 transport_type, session = await _open_mcp_session(self.cfg, stack)
-                self._stack = stack
                 self._session = session
                 self._transport_type = transport_type
                 logger.debug(
