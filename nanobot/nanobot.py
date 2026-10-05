@@ -91,6 +91,9 @@ class Nanobot:
             session_ttl_minutes=defaults.session_ttl_minutes,
             image_generation_config=config.tools.image_generation,
             image_generation_provider_configs=image_gen_provider_configs(config),
+            trader_mode=config.trader_mode,
+            market_scanner_config=config.market_scanner,
+            brain_memory_config=config.brain_memory,
         )
         loop._active_preset = effective_model.preset_name
         loop._provider_snapshot = provider_snapshot_from_config(config)

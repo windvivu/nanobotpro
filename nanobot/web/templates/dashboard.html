@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard — Nanobot OS{% endblock %}
+{% block title %}{{ tr('nav.dashboard') }} — Nanobot OS{% endblock %}
 
 {% block content %}
 <!-- Sidebar -->
 <aside class="w-full lg:w-72 flex flex-col gap-6">
-    <div class="matrix-card p-6 flex flex-col items-center text-center gap-4">
+    <div class="ui-card p-6 flex flex-col items-center text-center gap-4">
         <div
             class="w-20 h-20 flex items-center justify-center text-primary glow-text border-2 border-primary/30 rounded-full relative">
             <div class="absolute inset-0 border border-primary animate-pulse rounded-full opacity-20"></div>
@@ -25,8 +25,8 @@
             </svg>
         </div>
         <div>
-            <h2 class="text-lg font-bold glow-text tracking-widest uppercase">Nanobot_Admin</h2>
-            <p class="text-[10px] text-primary/50 font-mono">UID: 00-FF-41-X9</p>
+            <h2 class="text-lg font-bold glow-text tracking-widest uppercase">{{ profile_name or 'Default' }}</h2>
+            <p class="text-[10px] text-primary/50 font-mono">{{ tr('dashboard.profile') }}: {{ profile_id or 'default' }}</p>
         </div>
     </div>
 
@@ -34,16 +34,16 @@
     {% include "_sidebar_nav.html" %}
 
     <!-- System Load mini widget -->
-    <div class="mt-auto matrix-card p-4 text-[10px] leading-relaxed text-primary/40 uppercase tracking-tighter">
+    <div class="mt-auto ui-card p-4 text-[10px] leading-relaxed text-primary/40 uppercase tracking-tighter">
         <div class="flex justify-between mb-1">
-            <span>Sessions_Count</span>
+            <span>{{ tr('dashboard.sessions_count') }}</span>
             <span class="text-primary/70">{{ sessions_count }}</span>
         </div>
         <div class="w-full bg-primary/10 h-1 mb-3">
-            <div class="bg-primary h-full shadow-[0_0_5px_#00FF41]" style="width: 20%"></div>
+            <div class="bg-primary h-full shadow-glow-5" style="width: 20%"></div>
         </div>
         <div class="flex justify-between mb-1">
-            <span>Provider</span>
+            <span>{{ tr('dashboard.provider') }}</span>
             <span class="text-primary/70">{{ provider }}</span>
         </div>
     </div>
@@ -54,30 +54,35 @@
     <!-- Top row: Neural Core (wide) + Active Nodes -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
         <!-- Neural Core -->
-        <div class="matrix-card p-6 md:col-span-2 relative overflow-hidden group">
+        <div class="ui-card p-6 md:col-span-2 relative overflow-hidden group">
             <div class="absolute top-0 right-0 p-2 opacity-10">
                 <span class="material-symbols-outlined text-6xl">psychology</span>
             </div>
             <div class="absolute top-4 right-4 z-10">
                 {% if unified_session %}
                 <div class="px-3 py-1 border border-yellow-400/60 bg-black/80 text-[10px] uppercase font-bold text-yellow-300 shadow-[0_0_14px_rgba(250,204,21,0.18)]">
-                    Session: Unified · unified:default
+                    {{ tr('dashboard.session_unified') }}
                 </div>
                 {% else %}
                 <div class="px-3 py-1 border border-primary/30 bg-black/70 text-[10px] uppercase font-bold text-primary/70">
-                    Session: Separate
+                    {{ tr('dashboard.session_separate') }}
                 </div>
                 {% endif %}
             </div>
             <div class="flex items-center gap-2 mb-4">
-                <span class="w-2 h-2 bg-primary rounded-full animate-pulse shadow-[0_0_5px_#00FF41]"></span>
-                <h3 class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/60">Main Neural Core</h3>
+                <span class="w-2 h-2 bg-primary rounded-full animate-pulse shadow-glow-5"></span>
+                <h3 class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/60">{{ tr('dashboard.main_neural_core') }}</h3>
             </div>
             <div class="flex flex-col">
                 <span class="text-3xl font-bold glow-text tracking-wider uppercase">{{ model }}</span>
-                <span class="text-xs text-primary/40 mt-1">STATUS: READY</span>
+                <span class="text-xs text-primary/40 mt-1">{{ tr('dashboard.status_ready') }}</span>
             </div>
-            <div class="mt-6 flex gap-4">
+            <div class="mt-6 flex flex-wrap gap-4">
+                <!-- Tool role, set in Settings > Tools Configuration > Tool_Role (agent/tool_roles.py) -->
+                <div class="px-3 py-1 border border-primary bg-primary/10 text-primary text-[10px] uppercase font-bold flex items-center gap-1"
+                    title="Vai trò tool: Thiết lập > Tools Configuration > Tool_Role">
+                    <span class="material-symbols-outlined text-[13px]">{{ tool_role_icon or 'build' }}</span>Vai trò: {{ tool_role_label or tool_preset }}
+                </div>
                 <div class="px-3 py-1 border border-primary/30 text-[10px] uppercase font-bold">Provider: {{ provider }}
                 </div>
                 {% if model_preset %}
@@ -86,32 +91,37 @@
                 {% endif %}
                 <div class="px-3 py-1 border border-primary/30 text-[10px] uppercase font-bold">Temp: {{ temperature }}
                 </div>
+                <!-- Brain Memory switches, set in Settings > Brain Memory (brain_memory/config.py) -->
+                <div class="px-3 py-1 border border-primary/30 text-[10px] uppercase font-bold"
+                    title="Brain Memory: Thiết lập > Brain Memory. Đọc = tra dữ kiện khi chat, Ghi = tự học từ hội thoại">
+                    Brain: {% if brain_enabled %}bật · đọc {{ 'bật' if brain_read else 'tắt' }} · ghi {{ 'bật' if brain_write else 'tắt' }}{% else %}tắt{% endif %}
+                </div>
             </div>
         </div>
 
         <!-- Active Nodes (Sessions) -->
-        <div class="matrix-card p-6 flex flex-col justify-center items-center text-center">
-            <h3 class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/60 mb-2">Active Sessions</h3>
+        <div class="ui-card p-6 flex flex-col justify-center items-center text-center">
+            <h3 class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/60 mb-2">{{ tr('dashboard.active_sessions') }}</h3>
             <div class="text-6xl font-bold glow-text">{{ sessions_count }}</div>
-            <span class="text-[10px] text-primary/40 mt-2 uppercase" id="uptime-label">Uptime: --</span>
+            <span class="text-[10px] text-primary/40 mt-2 uppercase" id="uptime-label">{{ tr('dashboard.uptime') }}</span>
         </div>
     </div>
 
     <!-- Bottom row: Parameters + Channels + Uptime -->
     <div class="grid grid-cols-1 xl:grid-cols-2 gap-8">
         <!-- System Parameters -->
-        <div class="matrix-card p-6">
+        <div class="ui-card p-6">
             <div class="flex items-center justify-between mb-8 border-b border-primary/20 pb-4">
                 <div class="flex items-center gap-3">
                     <span class="material-symbols-outlined glow-text">tune</span>
-                    <h3 class="text-xs font-bold uppercase tracking-widest glow-text">System Parameters</h3>
+                    <h3 class="text-xs font-bold uppercase tracking-widest glow-text">{{ tr('dashboard.system_parameters') }}</h3>
                 </div>
                 <span class="text-[10px] text-primary/30 font-mono">ID: PARM_REF_99</span>
             </div>
             <div class="space-y-4">
                 <div
                     class="flex justify-between items-center group cursor-pointer hover:bg-primary/5 p-2 -mx-2 transition-colors">
-                    <span class="text-sm uppercase tracking-wider text-primary/60">Temperature</span>
+                    <span class="text-sm uppercase tracking-wider text-primary/60">{{ tr('dashboard.temperature') }}</span>
                     <div class="flex items-center gap-4">
                         <span class="text-lg font-bold glow-text">{{ temperature }}</span>
                         <span class="material-symbols-outlined text-xs text-primary/40">chevron_right</span>
@@ -119,7 +129,7 @@
                 </div>
                 <div
                     class="flex justify-between items-center group cursor-pointer hover:bg-primary/5 p-2 -mx-2 transition-colors">
-                    <span class="text-sm uppercase tracking-wider text-primary/60">Max_Tokens</span>
+                    <span class="text-sm uppercase tracking-wider text-primary/60">{{ tr('dashboard.max_tokens') }}</span>
                     <div class="flex items-center gap-4">
                         <span class="text-lg font-bold glow-text">{{ max_tokens }}</span>
                         <span class="material-symbols-outlined text-xs text-primary/40">chevron_right</span>
@@ -127,7 +137,7 @@
                 </div>
                 <div
                     class="flex justify-between items-center group cursor-pointer hover:bg-primary/5 p-2 -mx-2 transition-colors">
-                    <span class="text-sm uppercase tracking-wider text-primary/60">Max_Iterations</span>
+                    <span class="text-sm uppercase tracking-wider text-primary/60">{{ tr('dashboard.max_iterations') }}</span>
                     <div class="flex items-center gap-4">
                         <span class="text-lg font-bold glow-text">{{ max_iterations }}</span>
                         <span class="material-symbols-outlined text-xs text-primary/40">chevron_right</span>
@@ -135,7 +145,7 @@
                 </div>
                 <div
                     class="flex justify-between items-center group cursor-pointer hover:bg-primary/5 p-2 -mx-2 transition-colors">
-                    <span class="text-sm uppercase tracking-wider text-primary/60">Context_Window_Tokens</span>
+                    <span class="text-sm uppercase tracking-wider text-primary/60">{{ tr('dashboard.context_window_tokens') }}</span>
                     <div class="flex items-center gap-4">
                         <span class="text-lg font-bold glow-text">{{ context_window_tokens }}</span>
                         <span class="material-symbols-outlined text-xs text-primary/40">chevron_right</span>
@@ -143,7 +153,7 @@
                 </div>
                 <div
                     class="flex justify-between items-center group cursor-pointer hover:bg-primary/5 p-2 -mx-2 transition-colors">
-                    <span class="text-sm uppercase tracking-wider text-primary/60">Reasoning_Depth</span>
+                    <span class="text-sm uppercase tracking-wider text-primary/60">{{ tr('dashboard.reasoning_depth') }}</span>
                     <div class="flex items-center gap-4">
                         <span class="text-lg font-bold glow-text">{{ reasoning_effort }}</span>
                         <span class="material-symbols-outlined text-xs text-primary/40">chevron_right</span>
@@ -157,19 +167,19 @@
                         <span class="material-symbols-outlined text-base text-primary glow-text">play_circle</span>
                         <span class="text-sm font-bold uppercase tracking-wider glow-text">{{ profile_name }}</span>
                     </div>
-                    <span class="px-1.5 py-0.5 border border-primary/40 text-[8px] font-bold uppercase tracking-wider text-primary/70 bg-primary/5">Active</span>
+                    <span class="px-1.5 py-0.5 border border-primary/40 text-[8px] font-bold uppercase tracking-wider text-primary/70 bg-primary/5">{{ tr('common.active') }}</span>
                 </div>
                 {% if profile_preview %}
                 <div class="text-[11px] text-primary/40 font-mono leading-relaxed whitespace-pre-line line-clamp-3 bg-black/30 p-3 border border-primary/10">{{ profile_preview }}</div>
                 {% endif %}
                 <div class="mt-3 flex items-center gap-4 text-[9px] text-primary/30">
                     {% if profile_created %}
-                    <span class="uppercase">Created: {{ profile_created }}</span>
+                    <span class="uppercase">{{ tr('dashboard.created') }}: {{ profile_created }}</span>
                     {% endif %}
                     {% if profile_has_memory %}
                     <span class="flex items-center gap-1">
                         <span class="material-symbols-outlined text-[10px] text-primary/50">database</span>
-                        Memory
+                        {{ tr('dashboard.memory') }}
                     </span>
                     {% endif %}
                 </div>
@@ -178,10 +188,10 @@
 
         <div class="flex flex-col gap-8">
             <!-- Active Channels -->
-            <div class="matrix-card p-6 flex-1">
+            <div class="ui-card p-6 flex-1">
                 <div class="flex items-center gap-3 mb-6">
                     <span class="material-symbols-outlined glow-text">hub</span>
-                    <h3 class="text-xs font-bold uppercase tracking-widest glow-text">Active Channels</h3>
+                    <h3 class="text-xs font-bold uppercase tracking-widest glow-text">{{ tr('dashboard.active_channels') }}</h3>
                 </div>
                 <div class="grid grid-cols-2 gap-4">
                     {% for ch in active_channels %}
@@ -191,35 +201,35 @@
                             class="absolute top-0 right-0 w-16 h-16 bg-primary/5 rotate-45 translate-x-8 -translate-y-8">
                         </div>
                         <span class="text-[10px] font-bold opacity-60">{{ ch.upper() }}_BOT</span>
-                        <span class="text-sm font-bold glow-text">CONNECTED</span>
-                        <span class="text-[8px] opacity-40">STATUS: ACTIVE</span>
+                        <span class="text-sm font-bold glow-text">{{ tr('common.connected') }}</span>
+                        <span class="text-[8px] opacity-40">{{ tr('common.status_active') }}</span>
                     </div>
                     {% else %}
                     <div
-                        class="bg-transparent border border-primary/20 p-4 flex flex-col gap-2 opacity-40 border-dashed col-span-2">
-                        <span class="text-[10px] font-bold">NO_CHANNELS</span>
-                        <span class="text-sm font-bold uppercase tracking-tighter">Standby</span>
+                        class="bg-transparent border border-primary/20 p-4 flex flex-col gap-2 border-dashed col-span-2">
+                        <span class="text-[10px] font-bold text-primary/40">{{ tr('common.no_channels') }}</span>
+                        <span class="text-sm font-bold uppercase tracking-tighter text-primary/50">{{ tr('common.standby') }}</span>
                     </div>
                     {% endfor %}
                 </div>
             </div>
 
             <!-- Tool Status -->
-            <div class="matrix-card p-6 flex-1">
+            <div class="ui-card p-6 flex-1">
                 <div class="flex items-center justify-between mb-4">
                     <div class="flex items-center gap-3">
                         <span class="material-symbols-outlined glow-text">build</span>
-                        <h3 class="text-xs font-bold uppercase tracking-widest glow-text">Tool Status</h3>
+                    <h3 class="text-xs font-bold uppercase tracking-widest glow-text">{{ tr('dashboard.tool_status') }}</h3>
                     </div>
                     <span class="px-2 py-0.5 border text-[9px] font-bold uppercase tracking-wider
                         {% if tool_preset == 'chatbot' %}border-yellow-500/50 text-yellow-400 bg-yellow-500/10{% elif tool_preset == 'custom' %}border-blue-400/50 text-blue-400 bg-blue-400/10{% else %}border-primary/50 text-primary bg-primary/10{% endif %}">
-                        {{ tool_preset }}
+                        {{ tool_role_label or tool_preset }}
                     </span>
                 </div>
                 <div class="grid grid-cols-2 gap-2">
                     {% for name, enabled in tool_status.items() %}
                     <div class="flex items-center gap-2 px-2 py-1.5 {{ 'bg-primary/5 border border-primary/20' if enabled else 'border border-primary/5 opacity-40' }}">
-                        <span class="w-1.5 h-1.5 rounded-full {{ 'bg-primary shadow-[0_0_4px_#00FF41]' if enabled else 'bg-primary/20' }}"></span>
+                        <span class="w-1.5 h-1.5 rounded-full {{ 'bg-primary shadow-glow-4' if enabled else 'bg-primary/20' }}"></span>
                         <span class="text-[10px] font-bold uppercase tracking-wider">{{ name }}</span>
                         <span class="ml-auto text-[8px] font-mono {{ 'text-primary/60' if enabled else 'text-primary/20' }}">{{ 'ON' if enabled else 'OFF' }}</span>
                     </div>
@@ -234,18 +244,18 @@
             </div>
 
             <!-- System Uptime -->
-            <div class="matrix-card p-6 flex-1 flex flex-col justify-center">
+            <div class="ui-card p-6 flex-1 flex flex-col justify-center">
                 <div class="flex items-center gap-3 mb-4">
                     <span class="material-symbols-outlined glow-text">schedule</span>
-                    <h3 class="text-xs font-bold uppercase tracking-widest glow-text">System Uptime</h3>
+                    <h3 class="text-xs font-bold uppercase tracking-widest glow-text">{{ tr('dashboard.system_uptime') }}</h3>
                 </div>
                 <div class="flex items-baseline gap-2">
                     <span class="text-4xl font-bold glow-text" id="uptime">--:--:--</span>
-                    <span class="text-[10px] text-primary/50 uppercase">since initialization</span>
+                    <span class="text-[10px] text-primary/50 uppercase">{{ tr('dashboard.since_initialization') }}</span>
                 </div>
                 <div class="mt-4 flex gap-1 h-1">
-                    <div class="flex-1 bg-primary shadow-[0_0_5px_#00FF41]"></div>
-                    <div class="flex-1 bg-primary shadow-[0_0_5px_#00FF41]"></div>
+                    <div class="flex-1 bg-primary shadow-glow-5"></div>
+                    <div class="flex-1 bg-primary shadow-glow-5"></div>
                     <div class="flex-1 bg-primary/20"></div>
                     <div class="flex-1 bg-primary/20"></div>
                     <div class="flex-1 bg-primary/20"></div>
@@ -257,7 +267,7 @@
     </div>
 
     <!-- Token Usage -->
-    <div class="matrix-card p-6">
+    <div class="ui-card p-6">
         <button type="button"
             class="w-full flex items-center justify-between border-b border-primary/20 pb-4 group"
             id="token-usage-toggle"
@@ -265,39 +275,39 @@
             aria-controls="token-usage-body">
             <span class="flex items-center gap-3">
                 <span class="material-symbols-outlined glow-text">query_stats</span>
-                <span class="text-xs font-bold uppercase tracking-widest glow-text">Token Usage</span>
+                <span class="text-xs font-bold uppercase tracking-widest glow-text">{{ tr('dashboard.token_usage') }}</span>
             </span>
             <span class="flex items-center gap-3">
-                <span class="text-[10px] text-primary/30 font-mono" id="token-usage-updated">Turn telemetry</span>
+                <span class="text-[10px] text-primary/30 font-mono" id="token-usage-updated">{{ tr('dashboard.turn_telemetry') }}</span>
                 <span class="material-symbols-outlined text-primary/50 group-hover:text-primary transition-colors" id="token-usage-toggle-icon">expand_more</span>
             </span>
         </button>
         <div id="token-usage-body" class="hidden pt-6">
             <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
                 <div class="border border-primary/15 bg-primary/5 p-3">
-                    <div class="text-[9px] text-primary/40 uppercase tracking-wider">Reported Turns</div>
+                    <div class="text-[9px] text-primary/40 uppercase tracking-wider">{{ tr('dashboard.reported_turns') }}</div>
                     <div class="text-2xl font-bold glow-text" id="usage-reported-turns">0</div>
                 </div>
                 <div class="border border-primary/15 bg-primary/5 p-3">
-                    <div class="text-[9px] text-primary/40 uppercase tracking-wider">Total Tokens</div>
+                    <div class="text-[9px] text-primary/40 uppercase tracking-wider">{{ tr('dashboard.total_tokens') }}</div>
                     <div class="text-2xl font-bold glow-text" id="usage-total-tokens">0</div>
                 </div>
                 <div class="border border-primary/15 bg-primary/5 p-3">
-                    <div class="text-[9px] text-primary/40 uppercase tracking-wider">Prompt</div>
+                    <div class="text-[9px] text-primary/40 uppercase tracking-wider">{{ tr('dashboard.prompt') }}</div>
                     <div class="text-2xl font-bold glow-text" id="usage-prompt-tokens">0</div>
                 </div>
                 <div class="border border-primary/15 bg-primary/5 p-3">
-                    <div class="text-[9px] text-primary/40 uppercase tracking-wider">Completion</div>
+                    <div class="text-[9px] text-primary/40 uppercase tracking-wider">{{ tr('dashboard.completion') }}</div>
                     <div class="text-2xl font-bold glow-text" id="usage-completion-tokens">0</div>
                 </div>
             </div>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                    <div class="text-[10px] text-primary/40 uppercase tracking-wider mb-2">By Provider</div>
+                    <div class="text-[10px] text-primary/40 uppercase tracking-wider mb-2">{{ tr('dashboard.by_provider') }}</div>
                     <div class="space-y-2" id="usage-by-provider"></div>
                 </div>
                 <div>
-                    <div class="text-[10px] text-primary/40 uppercase tracking-wider mb-2">Recent Turns</div>
+                    <div class="text-[10px] text-primary/40 uppercase tracking-wider mb-2">{{ tr('dashboard.recent_turns') }}</div>
                     <div class="space-y-2 max-h-40 overflow-y-auto pr-1" id="usage-recent-turns"></div>
                 </div>
             </div>
@@ -305,18 +315,18 @@
     </div>
 
     <!-- Terminal Log Footer -->
-    <div class="matrix-card p-4 font-mono text-[11px] leading-tight space-y-1">
+    <div class="ui-card p-4 font-mono text-[11px] leading-tight space-y-1">
         <div class="flex gap-2">
             <span class="text-primary/40">[SYS]</span>
-            <span class="text-primary">Initializing core sequence... <span class="text-white">SUCCESS</span></span>
+            <span class="text-primary">{{ tr('dashboard.initializing') }} <span class="text-white">SUCCESS</span></span>
         </div>
         <div class="flex gap-2">
             <span class="text-primary/40">[SYS]</span>
-            <span class="text-primary">Loading matrix parameters: model={{ model }}, temp={{ temperature }}</span>
+            <span class="text-primary">{{ theme_value('boot_line', 'Loading parameters') }}: model={{ model }}, temp={{ temperature }}</span>
         </div>
         <div class="flex gap-2">
             <span class="text-primary/40">[SYS]</span>
-            <span class="text-primary">Syncing with distributed nodes... <span class="blinking">_</span></span>
+            <span class="text-primary">{{ tr('dashboard.syncing_nodes') }} <span class="blinking ui-cursor">_</span></span>
         </div>
         <div class="flex gap-2 pt-2 border-t border-primary/10 mt-2">
             <span class="text-primary/60">$</span>
@@ -329,6 +339,8 @@
 
 {% block scripts %}
 <script>
+    const uiText = {{ ui_translations() | tojson }};
+    const tr = (key, fallback = key) => uiText[key] || fallback;
     const startTime = {{ request.app.state.start_time }};
     const initialTokenUsage = {{ token_usage | tojson }};
     const uptimeEl = document.getElementById('uptime');
@@ -346,7 +358,7 @@
         const secs = diff % 60;
         const pad = n => String(n).padStart(2, '0');
         uptimeEl.textContent = `${pad(days)}:${pad(hours)}:${pad(mins)}:${pad(secs)}`;
-        if (uptimeLabelEl) uptimeLabelEl.textContent = `Days:Hrs:Min:Sec`;
+        if (uptimeLabelEl) uptimeLabelEl.textContent = uiText['dashboard.days_hours'] || 'Days:Hrs:Min:Sec';
     }
     updateUptime();
     setInterval(updateUptime, 1000);
@@ -401,7 +413,7 @@
         const byProvider = [...(stats?.by_provider || [])]
             .sort((a, b) => (b.total_tokens || 0) - (a.total_tokens || 0))
             .slice(0, 5);
-        renderUsageList('usage-by-provider', byProvider, 'No provider usage yet', row => `
+        renderUsageList('usage-by-provider', byProvider, tr('dashboard.no_provider_usage'), row => `
             <div class="flex items-center justify-between border border-primary/10 bg-black/20 px-3 py-2">
                 <div class="min-w-0">
                     <div class="text-[11px] font-bold uppercase tracking-wider glow-text truncate">${escapeUsageHtml(row.key)}</div>
@@ -412,7 +424,7 @@
         `);
 
         const recent = [...(stats?.recent || [])].reverse().slice(0, 6);
-        renderUsageList('usage-recent-turns', recent, 'No turns recorded yet', row => `
+        renderUsageList('usage-recent-turns', recent, tr('dashboard.no_turns'), row => `
             <div class="border border-primary/10 bg-black/20 px-3 py-2">
                 <div class="flex items-center justify-between gap-3">
                     <div class="text-[10px] font-bold uppercase tracking-wider glow-text truncate">${escapeUsageHtml(row.model)}</div>
@@ -427,7 +439,7 @@
         `);
 
         const updated = document.getElementById('token-usage-updated');
-        if (updated) updated.textContent = `Updated ${new Date().toLocaleTimeString()}`;
+        if (updated) updated.textContent = tr('dashboard.updated', 'Updated {time}').replace('{time}', new Date().toLocaleTimeString());
     }
 
     async function refreshTokenUsage() {

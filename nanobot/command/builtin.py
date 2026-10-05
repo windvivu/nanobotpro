@@ -9,8 +9,40 @@ import sys
 from nanobot import __version__
 from nanobot.bus.events import OutboundMessage
 from nanobot.command.router import CommandContext, CommandRouter
+from nanobot.session.goal_state import make_active_goal_state, sustained_goal_active
 from nanobot.utils.helpers import build_status_content
 from nanobot.utils.restart import set_restart_notice_to_env
+
+# ── Who may run which command (custom, identity hardening) ──────────────────
+# Commands that act on the whole bot or its memory are for its admins: the people at its own entry
+# points (CLI, Web Chat behind the dashboard login, the fleet API behind its password, internal
+# system messages) and chat senders listed in channels.adminFrom as "channel:sender_id". allow_from
+# only lets people send messages: anyone allowed could otherwise /restart the bot or read /dream-log.
+_ADMIN_CHANNELS = frozenset({"cli", "webchat", "fleet", "system"})
+
+
+def _is_admin(ctx: CommandContext) -> bool:
+    if ctx.msg.channel in _ADMIN_CHANNELS:
+        return True
+    try:
+        from nanobot.config.loader import load_config
+
+        admins = {str(entry).strip() for entry in load_config().channels.admin_from}
+    except Exception:
+        return False
+    return f"{ctx.msg.channel}:{ctx.msg.sender_id}" in admins
+
+
+def _admin_only(handler):
+    """Run the command for the bot's admins only; anyone else gets a short refusal."""
+
+    async def guarded(ctx: CommandContext) -> OutboundMessage | None:
+        if _is_admin(ctx):
+            return await handler(ctx)
+        return OutboundMessage(channel=ctx.msg.channel, chat_id=ctx.msg.chat_id,
+                               content="This command is only for the bot's admins.")
+
+    return guarded
 
 
 async def cmd_stop(ctx: CommandContext) -> OutboundMessage:
@@ -110,6 +142,45 @@ async def cmd_new(ctx: CommandContext) -> OutboundMessage:
         channel=ctx.msg.channel, chat_id=ctx.msg.chat_id,
         content="New session started.",
         metadata=dict(ctx.msg.metadata or {})
+    )
+
+
+async def cmd_goal(ctx: CommandContext) -> OutboundMessage:
+    """Start an explicit sustained goal for the current session."""
+    objective = ctx.args.strip()
+    if not objective:
+        return OutboundMessage(
+            channel=ctx.msg.channel,
+            chat_id=ctx.msg.chat_id,
+            content="Usage: /goal <long-running task description>",
+            metadata={**dict(ctx.msg.metadata or {}), "render_as": "text"},
+        )
+
+    session = ctx.loop.sessions.get_or_create(ctx.key)
+    current = ctx.loop.sessions.get_goal_state(session)
+    if current and sustained_goal_active(session.metadata):
+        return OutboundMessage(
+            channel=ctx.msg.channel,
+            chat_id=ctx.msg.chat_id,
+            content=(
+                "Error: An active goal already exists. Use complete_goal before "
+                "starting a new /goal."
+            ),
+            metadata={**dict(ctx.msg.metadata or {}), "render_as": "text"},
+        )
+
+    state = make_active_goal_state(objective)
+    state["started_by"] = "command"
+    ctx.loop.sessions.set_goal_state(session, state)
+    return OutboundMessage(
+        channel=ctx.msg.channel,
+        chat_id=ctx.msg.chat_id,
+        content=(
+            f"Goal saved: {objective}\n\n"
+            "Future messages in this chat will use this goal as context. "
+            "Tell me to complete the goal when it is done."
+        ),
+        metadata={**dict(ctx.msg.metadata or {}), "render_as": "text"},
     )
 
 
@@ -328,6 +399,7 @@ def build_help_text() -> str:
         "/stop — Stop the current task",
         "/restart — Restart the bot",
         "/status — Show bot status",
+        "/goal <task> — Save a long-running goal for this chat",
         "/dream — Manually trigger Dream consolidation",
         "/dream-log — Show what the last Dream changed",
         "/dream-restore — Revert memory to a previous state",
@@ -338,14 +410,17 @@ def build_help_text() -> str:
 
 def register_builtin_commands(router: CommandRouter) -> None:
     """Register the default set of slash commands."""
+    # /stop, /new, /goal and /help act on the sender's own session; the rest only for admins (custom)
     router.priority("/stop", cmd_stop)
-    router.priority("/restart", cmd_restart)
-    router.priority("/status", cmd_status)
+    router.priority("/restart", _admin_only(cmd_restart))
+    router.priority("/status", _admin_only(cmd_status))
     router.exact("/new", cmd_new)
-    router.exact("/status", cmd_status)
-    router.exact("/dream", cmd_dream)
-    router.exact("/dream-log", cmd_dream_log)
-    router.prefix("/dream-log ", cmd_dream_log)
-    router.exact("/dream-restore", cmd_dream_restore)
-    router.prefix("/dream-restore ", cmd_dream_restore)
+    router.exact("/status", _admin_only(cmd_status))
+    router.exact("/goal", cmd_goal)
+    router.prefix("/goal ", cmd_goal)
+    router.exact("/dream", _admin_only(cmd_dream))
+    router.exact("/dream-log", _admin_only(cmd_dream_log))
+    router.prefix("/dream-log ", _admin_only(cmd_dream_log))
+    router.exact("/dream-restore", _admin_only(cmd_dream_restore))
+    router.prefix("/dream-restore ", _admin_only(cmd_dream_restore))
     router.exact("/help", cmd_help)

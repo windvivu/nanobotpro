@@ -33,12 +33,12 @@
 
     function providerDotStyle(name) {
         const configured = providerIsConfigured(name);
-        return `width:6px;height:6px;border-radius:50%;flex-shrink:0;background:${configured ? '#00FF41' : 'rgba(0,255,65,0.2)'};${configured ? 'box-shadow:0 0 5px #00FF41;' : ''}`;
+        return `width:6px;height:6px;border-radius:50%;flex-shrink:0;background:${configured ? 'rgb(var(--c-primary))' : 'rgb(var(--c-primary) / 0.2)'};${configured ? 'box-shadow:0 0 5px rgb(var(--c-accent) / var(--glow));' : ''}`;
     }
 
     function providerDotClass(name, extra = '') {
         return 'w-2 h-2 rounded-full ' + extra + ' ' +
-            (providerIsConfigured(name) ? 'bg-primary shadow-[0_0_6px_#00FF41]' : 'bg-primary/20');
+            (providerIsConfigured(name) ? 'bg-primary shadow-glow-6' : 'bg-primary/20');
     }
 
     function refreshProviderStatusDots(providerName) {
@@ -92,9 +92,9 @@
         dd.style.cssText = [
             'position: fixed',
             'z-index: 9999',
-            'background: rgb(3, 8, 3)',
-            'border: 1px solid rgba(0, 255, 65, 0.45)',
-            'box-shadow: 0 8px 40px rgba(0,0,0,0.9), 0 0 0 1px rgba(0,255,65,0.1)',
+            'background: rgb(var(--c-surface))',
+            'border: 1px solid rgb(var(--c-primary) / 0.45)',
+            'box-shadow: 0 8px 30px rgb(0 0 0 / 0.25), 0 0 0 1px rgb(var(--c-accent) / calc(0.1 * var(--glow)))',
             'max-height: 260px',
             'overflow-y: auto',
             'display: none',
@@ -106,8 +106,8 @@
             const row = document.createElement('div');
             row.className = 'provider-option';
             row.dataset.name = name;
-            row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:9px 16px;cursor:pointer;font-family:monospace;font-size:11px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;color:#00FF41;transition:background 0.12s;';
-            row.onmouseenter = () => row.style.background = 'rgba(0,255,65,0.12)';
+            row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:9px 16px;cursor:pointer;font-family:monospace;font-size:11px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;color:rgb(var(--c-primary));transition:background 0.12s;';
+            row.onmouseenter = () => row.style.background = 'rgb(var(--c-primary) / 0.12)';
             row.onmouseleave = () => row.style.background = '';
 
             const dot = document.createElement('span');
@@ -122,7 +122,7 @@
             const badge = document.createElement('span');
             badge.className = 'provider-option-badge';
             badge.textContent = providerIsConfigured(name) ? 'configured' : '';
-            badge.style.cssText = 'margin-left:auto;font-size:9px;color:rgba(0,255,65,0.4);font-weight:400;letter-spacing:0.1em;' + (providerIsConfigured(name) ? '' : 'display:none;');
+            badge.style.cssText = 'margin-left:auto;font-size:9px;color:rgb(var(--c-primary) / var(--text-alpha-40));font-weight:400;letter-spacing:0.1em;' + (providerIsConfigured(name) ? '' : 'display:none;');
             row.appendChild(badge);
 
             row.onclick = () => selectProvider(name);
@@ -133,7 +133,7 @@
         const noRes = document.createElement('div');
         noRes.id = 'provider-no-results';
         noRes.textContent = 'No providers matching...';
-        noRes.style.cssText = 'display:none;padding:10px 16px;font-size:11px;color:rgba(0,255,65,0.25);font-family:monospace;';
+        noRes.style.cssText = 'display:none;padding:10px 16px;font-size:11px;color:rgb(var(--c-primary) / var(--text-alpha-25));font-family:monospace;';
         dd.appendChild(noRes);
 
         document.body.appendChild(dd);
@@ -305,9 +305,9 @@
                 const fillBtn = document.createElement('button');
                 fillBtn.type = 'button';
                 fillBtn.textContent = m;
-                fillBtn.style.cssText = 'padding:2px 22px 2px 6px;border:1px solid rgba(0,255,65,0.3);font-size:9px;font-family:monospace;color:rgba(0,255,65,0.5);cursor:pointer;transition:all 0.15s;background:transparent;white-space:nowrap;';
-                fillBtn.onmouseenter = () => { fillBtn.style.color='#00FF41'; fillBtn.style.borderColor='rgba(0,255,65,0.8)'; };
-                fillBtn.onmouseleave = () => { fillBtn.style.color='rgba(0,255,65,0.5)'; fillBtn.style.borderColor='rgba(0,255,65,0.3)'; };
+                fillBtn.style.cssText = 'padding:2px 22px 2px 6px;border:1px solid rgb(var(--c-primary) / 0.3);font-size:9px;font-family:monospace;color:rgb(var(--c-primary) / var(--text-alpha-50));cursor:pointer;transition:all 0.15s;background:transparent;white-space:nowrap;';
+                fillBtn.onmouseenter = () => { fillBtn.style.color='rgb(var(--c-primary))'; fillBtn.style.borderColor='rgb(var(--c-primary) / 0.8)'; };
+                fillBtn.onmouseleave = () => { fillBtn.style.color='rgb(var(--c-primary) / 0.5)'; fillBtn.style.borderColor='rgb(var(--c-primary) / 0.3)'; };
                 fillBtn.onclick = () => _fillActiveModel(m);
 
                 // Delete × button (appears on badge hover)
@@ -389,9 +389,9 @@
             const fillBtn = document.createElement('button');
             fillBtn.type = 'button';
             fillBtn.textContent = m;
-            fillBtn.style.cssText = 'padding:2px 22px 2px 6px;border:1px solid rgba(0,255,65,0.2);font-size:9px;font-family:monospace;color:rgba(0,255,65,0.6);cursor:pointer;transition:all 0.15s;background:transparent;white-space:nowrap;';
-            fillBtn.onmouseenter = () => { fillBtn.style.color='#00FF41'; fillBtn.style.borderColor='rgba(0,255,65,0.8)'; fillBtn.style.background='rgba(0,255,65,0.08)'; };
-            fillBtn.onmouseleave = () => { fillBtn.style.color='rgba(0,255,65,0.6)'; fillBtn.style.borderColor='rgba(0,255,65,0.2)'; fillBtn.style.background='transparent'; };
+            fillBtn.style.cssText = 'padding:2px 22px 2px 6px;border:1px solid rgb(var(--c-primary) / 0.2);font-size:9px;font-family:monospace;color:rgb(var(--c-primary) / 0.6);cursor:pointer;transition:all 0.15s;background:transparent;white-space:nowrap;';
+            fillBtn.onmouseenter = () => { fillBtn.style.color='rgb(var(--c-primary))'; fillBtn.style.borderColor='rgb(var(--c-primary) / 0.8)'; fillBtn.style.background='rgb(var(--c-primary) / 0.08)'; };
+            fillBtn.onmouseleave = () => { fillBtn.style.color='rgb(var(--c-primary) / 0.6)'; fillBtn.style.borderColor='rgb(var(--c-primary) / 0.2)'; fillBtn.style.background='transparent'; };
             fillBtn.onclick = () => useTestedModelForNeural(m);
             const delBtn = document.createElement('button');
             delBtn.type = 'button';
@@ -615,7 +615,7 @@
             else if (cred.source === 'global') credText = 'global account: ' + (cred.provider || '');
             else if (cred.source === 'invalid') credText = 'credential error';
             else credText = 'no credentials';
-            const label = route.mode === 'preset' ? route.preset_name : 'Custom';
+            const label = route.mode === 'preset' ? route.preset_name : 'Manual';
             const parts = [
                 (route.model || '?') + ' @ ' + providerDisplayName(route.provider || 'auto'),
                 'temp ' + route.temperature,
@@ -624,7 +624,7 @@
             ];
             if (route.reasoning_effort) parts.push('reasoning ' + route.reasoning_effort);
             parts.push(credText);
-            line.innerHTML = '<span class="text-primary font-bold">' + escapeHtml(label || 'Custom') + '</span>'
+            line.innerHTML = '<span class="text-primary font-bold">' + escapeHtml(label || 'Manual') + '</span>'
                 + '<span class="text-primary/40"> · </span>' + escapeHtml(parts.join(' · '));
             const chain = data.fallback_chain || [];
             if (fbEl) {
@@ -698,13 +698,13 @@
         const select = document.getElementById('preset_credential_profile');
         if (!select) return;
         const profiles = providerProfileParseRaw();
-        select.innerHTML = '<option value="" style="background: #0a0a0a; color: #00FF41;">Use global account</option>';
+        select.innerHTML = '<option value="" style="background: rgb(var(--c-surface)); color: rgb(var(--c-primary));">Use global account</option>';
         Object.keys(profiles).sort().forEach((name) => {
             const option = document.createElement('option');
             option.value = name;
             option.textContent = providerProfileLabel(name, profiles[name]);
-            option.style.background = '#0a0a0a';
-            option.style.color = '#00FF41';
+            option.style.background = 'rgb(var(--c-surface))';
+            option.style.color = 'rgb(var(--c-primary))';
             select.appendChild(option);
         });
         select.value = Object.prototype.hasOwnProperty.call(profiles, selected) ? selected : '';

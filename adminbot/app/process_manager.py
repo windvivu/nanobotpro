@@ -6,7 +6,9 @@ import json
 import os
 import shutil
 import signal
+import socket
 import subprocess
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -17,6 +19,8 @@ from adminbot.app.utils import atomic_write_json, utc_now_iso
 
 MAX_LOG_BYTES = 5 * 1024 * 1024
 MAX_LOG_ARCHIVES = 3
+# A bot stopped just before (restart) may need a moment to release its port.
+PORT_RELEASE_WAIT_S = 5.0
 
 
 @dataclass(slots=True)
@@ -131,6 +135,24 @@ def get_process_identity(pid: int) -> ProcessIdentity | None:
         created_at=created_at,
         command_line=command_line,
     )
+
+
+def _port_in_use(port: int) -> bool:
+    """True if something already listens on this local port."""
+    try:
+        with socket.create_connection(("127.0.0.1", int(port)), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
+def _wait_port_free(port: int) -> bool:
+    deadline = time.monotonic() + PORT_RELEASE_WAIT_S
+    while _port_in_use(port):
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.5)
+    return True
 
 
 def _listener_pid_for_port(port: int) -> int | None:
@@ -267,9 +289,10 @@ class BotProcessManager:
             recovered = self._recover_running_process_from_port(bot)
             if recovered:
                 return self._mark_running_from_identity(bot, recovered)
-            process.status = "stopped"
-            process.exit_code = process.exit_code if process.exit_code is not None else -1
-            return bot
+            return self._mark_stopped(
+                bot,
+                exit_code=process.exit_code if process.exit_code is not None else -1,
+            )
 
         expected_created = process.created_at
         expected_executable = process.executable
@@ -277,18 +300,14 @@ class BotProcessManager:
             recovered = self._recover_running_process_from_port(bot)
             if recovered:
                 return self._mark_running_from_identity(bot, recovered)
-            process.status = "stopped"
-            process.exit_code = -1
-            return bot
+            return self._mark_stopped(bot, exit_code=-1)
         if expected_executable and current.executable and (
             Path(expected_executable).name.lower() != Path(current.executable).name.lower()
         ):
             recovered = self._recover_running_process_from_port(bot)
             if recovered:
                 return self._mark_running_from_identity(bot, recovered)
-            process.status = "stopped"
-            process.exit_code = -1
-            return bot
+            return self._mark_stopped(bot, exit_code=-1)
 
         process.status = "running"
         process.exit_code = None
@@ -298,6 +317,13 @@ class BotProcessManager:
         bot = self.refresh_status(bot)
         if bot.process.status == "running":
             raise RuntimeError(f"Bot '{bot.name}' is already running.")
+        # Adminbot does not track a bot started outside it (e.g. nanobot-single);
+        # its busy dashboard port is the sign, and a second copy would answer twice.
+        if not _wait_port_free(bot.web_port):
+            raise RuntimeError(
+                f"Port {bot.web_port} of bot '{bot.name}' is already in use. The bot may be "
+                "running outside Adminbot (e.g. nanobot-single); stop it there first."
+            )
 
         sync_bot_runtime_config(Path(bot.config_path), Path(bot.workspace), bot.web_port)
 

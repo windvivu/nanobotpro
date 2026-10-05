@@ -38,9 +38,10 @@ def _fleet_mcp_name(value: object) -> str:
 
 @router.get("/api/password-status")
 async def password_status(request: Request):
-    """Return whether web password is the auto-generated default (no auth needed)."""
+    """Whether the web password is still the generated default. Needs the dashboard login and never
+    returns the password: base.html shows the warning on every page, the login page included (custom)."""
     pwd = getattr(getattr(request.app.state.config.gateway, "web", None), "password", "") or ""
-    return JSONResponse({"is_default": pwd.startswith("nanobot@"), "password": pwd if pwd.startswith("nanobot@") else ""})
+    return JSONResponse({"is_default": pwd.startswith("nanobot@")})
 
 
 @router.get("/healthz")

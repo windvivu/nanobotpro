@@ -1,0 +1,78 @@
+/* Office 2010 theme: shared flat rules plus the Office look. Included at the end of the
+   Tailwind style block in base.html. */
+{% include "themes/_flat.css" %}
+{% include "themes/_light.css" %}
+
+/* Workspace: the blue gradient behind the document area */
+:root body { background: linear-gradient(180deg, #dfe8f5 0%, #c9d9ee 100%) fixed; }
+
+/* No upper-case labels: Office 2010 used title and sentence case */
+.uppercase { text-transform: none; }
+.tracking-widest, .tracking-wider { letter-spacing: 0.01em; }
+
+/* Ribbon: white-to-blue gradient under the Word 2010 blue title band */
+header.ui-card {
+    background-color: #dce6f4;
+    background-image: var(--office-ribbon);
+    backdrop-filter: none;
+    border-style: solid;
+    border-width: 4px 0 1px;
+    border-color: rgb(var(--c-accent)) transparent rgb(var(--office-border));
+}
+
+/* Panes: white with a faint gradient, blue-grey hairline, small radius */
+.ui-card {
+    background-color: rgb(var(--c-surface));
+    background-image: var(--office-pane);
+    border: 1px solid rgb(var(--office-border));
+    border-radius: 4px;
+    box-shadow: var(--card-shadow);
+}
+.ui-card:hover { border-color: rgb(var(--office-border)); }
+
+/* Navigation pane (Outlook 2010): gradient buttons, amber hover, amber selection */
+nav > a.ui-card {
+    background-image: var(--office-button);
+    border: 1px solid rgb(var(--office-border));
+    border-radius: 3px;
+    box-shadow: none;
+}
+nav > a.ui-card:hover {
+    background-image: var(--office-hover);
+    border-color: rgb(var(--office-hover-border));
+}
+.nav-active {
+    background: var(--office-selected) !important;
+    border-color: rgb(var(--office-selected-border)) !important;
+    border-left-width: 1px !important;
+}
+
+/* Text boxes: Windows 7 blue focus border */
+:root input:focus,
+:root textarea:focus,
+:root select:focus {
+    border-color: rgb(86 157 229);
+    box-shadow: 0 0 0 1px rgb(86 157 229 / 0.35);
+}
+
+/* Command buttons: Office gradient face, amber when hovered or pressed. Round icon buttons and
+   buttons filled or lettered in a status colour keep their own look; text colour is only forced on hover
+   because the amber face would hide light hover text. */
+:root button.border:not(.rounded-full):not(.bg-primary):not([class*="bg-red"]):not([class*="bg-yellow"]):not([class*="bg-green"]):not([class*="text-red"]):not([class*="text-orange"]):not([class*="text-yellow"]) {
+    background-color: #eef3fa;
+    background-image: var(--office-button);
+    border-color: rgb(var(--office-border));
+    border-radius: 3px;
+}
+:root button.border:not(.rounded-full):not(.bg-primary):not([class*="bg-red"]):not([class*="bg-yellow"]):not([class*="bg-green"]):not([class*="text-red"]):not([class*="text-orange"]):not([class*="text-yellow"]):hover,
+:root button.border:not(.rounded-full):not(.bg-primary):not([class*="bg-red"]):not([class*="bg-yellow"]):not([class*="bg-green"]):not([class*="text-red"]):not([class*="text-orange"]):not([class*="text-yellow"]):hover * {
+    color: rgb(var(--c-primary));
+}
+:root button.border:not(.rounded-full):not(.bg-primary):not([class*="bg-red"]):not([class*="bg-yellow"]):not([class*="bg-green"]):not([class*="text-red"]):not([class*="text-orange"]):not([class*="text-yellow"]):hover {
+    background-image: var(--office-hover);
+    border-color: rgb(var(--office-hover-border));
+}
+:root button.border:not(.rounded-full):not(.bg-primary):not([class*="bg-red"]):not([class*="bg-yellow"]):not([class*="bg-green"]):not([class*="text-red"]):not([class*="text-orange"]):not([class*="text-yellow"]):active {
+    background-image: var(--office-selected);
+    border-color: rgb(var(--office-selected-border));
+}

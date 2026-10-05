@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from dataclasses import replace
+from typing import Any, Awaitable, Callable
 
 from loguru import logger
 
@@ -15,6 +16,25 @@ from nanobot.utils.restart import consume_restart_notice_from_env, format_restar
 
 # Retry delays for message sending (exponential backoff: 1s, 2s, 4s)
 _SEND_RETRY_DELAYS = (1, 2, 4)
+
+# Seconds after start before telling chats about sub-agents a restart ended: the channels connect first
+_INTERRUPTED_NOTICE_DELAY_S = 5
+
+
+def _to_origin_chat(msg: OutboundMessage) -> OutboundMessage:
+    """A message for channel "system" names its chat as "channel:chat_id", parsed as the "system" branch
+    of AgentLoop._process_message does; it is sent there as a reply that comes after its turn."""
+    channel, chat_id = msg.chat_id.split(":", 1) if ":" in msg.chat_id else ("cli", msg.chat_id)
+    return replace(msg, channel=channel, chat_id=chat_id, metadata={**msg.metadata, "_late_reply": True})
+
+
+def _interrupted_notice(labels: list[str]) -> str:
+    names = ", ".join(f'"{label}"' for label in labels)
+    if len(labels) == 1:
+        return (f"⚠️ Gateway vừa khởi động lại nên tác vụ nền {names} bị dừng giữa chừng và sẽ không có "
+                "kết quả. Nếu vẫn cần, hãy yêu cầu lại.")
+    return (f"⚠️ Gateway vừa khởi động lại nên {len(labels)} tác vụ nền bị dừng giữa chừng và sẽ không có "
+            f"kết quả: {names}. Nếu vẫn cần, hãy yêu cầu lại.")
 
 
 class ChannelManager:
@@ -31,6 +51,9 @@ class ChannelManager:
         self.config = config
         self.bus = bus
         self.channels: dict[str, BaseChannel] = {}
+        # Destinations that take outbound messages for a name but are not channels, e.g. Web Chat
+        # (web/cli.py registers it): name -> async callable(OutboundMessage) (custom)
+        self.outbound_sinks: dict[str, Callable[[OutboundMessage], Awaitable[None]]] = {}
         self._dispatch_task: asyncio.Task | None = None
 
         self._init_channels()
@@ -119,12 +142,14 @@ class ChannelManager:
 
     async def start_all(self) -> None:
         """Start all channels and the outbound dispatcher."""
+        # Start outbound dispatcher, also with no channel enabled: Web Chat takes the bot's late replies
+        # (a sub-agent's result) through outbound_sinks (custom)
+        self._dispatch_task = asyncio.create_task(self._dispatch_outbound())
+        self._notify_interrupted_subagents()
+
         if not self.channels:
             logger.warning("No channels enabled")
             return
-
-        # Start outbound dispatcher
-        self._dispatch_task = asyncio.create_task(self._dispatch_outbound())
 
         # Start channels
         tasks = []
@@ -153,6 +178,40 @@ class ChannelManager:
                 content=format_restart_completed_message(notice.started_at_raw),
             ),
         ))
+
+    def _notify_interrupted_subagents(self) -> None:
+        """Sub-agents the last restart or shutdown ended never report back: tell their chats, a few
+        seconds in so the channels are up (custom)."""
+        from nanobot.agent.subagent import take_interrupted_subagents
+
+        try:
+            ended = take_interrupted_subagents(self.config.workspace_path)
+        except Exception as e:
+            logger.warning("Could not read the interrupted sub-agents: {}", e)
+            return
+        by_chat: dict[tuple[str, str], list[str]] = {}
+        for rec in ended:
+            if rec.get("channel") and rec.get("chat_id"):
+                by_chat.setdefault((rec["channel"], str(rec["chat_id"])), []).append(rec.get("label") or "?")
+        if not by_chat:
+            return
+
+        async def _send_later() -> None:
+            await asyncio.sleep(_INTERRUPTED_NOTICE_DELAY_S)
+            told = 0
+            for (channel, chat_id), labels in by_chat.items():
+                if channel not in self.channels and channel not in self.outbound_sinks:
+                    logger.debug("Interrupted sub-agents of {}:{} not reported: no such channel", channel, chat_id)
+                    continue
+                await self.bus.publish_outbound(OutboundMessage(
+                    channel=channel, chat_id=chat_id, content=_interrupted_notice(labels),
+                    # _notice: not saved in the session, so Web Chat shows it even after a reload
+                    metadata={"_late_reply": True, "_notice": True},
+                ))
+                told += 1
+            logger.info("Told {} chat(s) about sub-agents a restart ended", told)
+
+        self._interrupted_notice_task = asyncio.create_task(_send_later())  # kept: not garbage-collected
 
     async def stop_all(self) -> None:
         """Stop all channels and the dispatcher."""
@@ -208,9 +267,19 @@ class ChannelManager:
                     msg, extra_pending = self._coalesce_stream_deltas(msg)
                     pending.extend(extra_pending)
 
+                # Channel "system" is a turn a sub-agent's result started (its error notice, for one):
+                # the chat it belongs to is in chat_id as "channel:chat_id" (custom)
+                if msg.channel == "system":
+                    msg = _to_origin_chat(msg)
+
                 channel = self.channels.get(msg.channel)
                 if channel:
                     await self._send_with_retry(channel, msg)
+                elif (sink := self.outbound_sinks.get(msg.channel)) is not None:
+                    try:
+                        await sink(msg)
+                    except Exception as e:
+                        logger.warning("Outbound sink '{}' failed: {}", msg.channel, e)
                 else:
                     logger.warning("Unknown channel: {}", msg.channel)
 

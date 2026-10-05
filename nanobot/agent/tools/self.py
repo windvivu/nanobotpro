@@ -9,6 +9,7 @@ from loguru import logger
 
 from nanobot.agent.subagent import SubagentStatus
 from nanobot.agent.tools.base import Tool
+from nanobot.agent.tools.turn_state import TurnLocal
 
 if TYPE_CHECKING:
     from nanobot.agent.tools.runtime_state import RuntimeState
@@ -82,11 +83,17 @@ class MyTool(Tool):
 
     _MAX_RUNTIME_KEYS = 64
 
+    # One instance serves every session: the chat it answers for is per turn (custom)
+    _channel = TurnLocal()
+    _chat_id = TurnLocal()
+    _session_key = TurnLocal()
+
     def __init__(self, loop: RuntimeState, modify_allowed: bool = True) -> None:
         self._loop = loop
         self._modify_allowed = modify_allowed
         self._channel = ""
         self._chat_id = ""
+        self._session_key: str | None = None  # this chat's session: its own sub-agents only (custom)
 
     def __deepcopy__(self, memo: dict[int, Any]) -> MyTool:
         cls = self.__class__
@@ -96,11 +103,13 @@ class MyTool(Tool):
         result._modify_allowed = self._modify_allowed
         result._channel = self._channel
         result._chat_id = self._chat_id
+        result._session_key = self._session_key
         return result
 
-    def set_context(self, channel: str, chat_id: str) -> None:
+    def set_context(self, channel: str, chat_id: str, session_key: str | None = None) -> None:
         self._channel = channel
         self._chat_id = chat_id
+        self._session_key = session_key or f"{channel}:{chat_id}"
 
     @property
     def name(self) -> str:
@@ -124,6 +133,9 @@ class MyTool(Tool):
             "- User asks about your model, settings, or token usage → check that key.\n"
             "- A tool fails or behaves unexpectedly → check the related config to diagnose.\n"
             "- User asks you to remember a preference for this session → set to store it in your scratchpad.\n"
+            "- User asks how a sub-agent is doing → check 'subagents': this chat's running sub-agents "
+            "(phase, iteration, recent tools, elapsed time). A finished one leaves the list; "
+            "its result comes back to this chat as a message.\n"
             "- About to start a large task → check context_window_tokens and max_iterations first."
         )
         if not self._modify_allowed:
@@ -304,6 +316,8 @@ class MyTool(Tool):
     def _inspect(self, key: str | None) -> str:
         if not key:
             return self._inspect_all()
+        if key in ("subagents", "subagents._task_statuses"):
+            return self._subagents_here()
         top = key.split(".")[0]
         if top in self._DENIED_ATTRS or top.startswith("__"):
             return f"Error: '{top}' is not accessible"
@@ -331,9 +345,11 @@ class MyTool(Tool):
         for k in self.RESTRICTED:
             parts.append(self._format_value(getattr(loop, k, None), k))
         # Other useful top-level keys shown in description
-        for k in ("workspace", "provider_retry_mode", "max_tool_result_chars", "_current_iteration", "web_config", "exec_config", "subagents"):
+        for k in ("workspace", "provider_retry_mode", "max_tool_result_chars", "_current_iteration", "web_config", "exec_config"):
             if _has_real_attr(loop, k):
                 parts.append(self._format_value(getattr(loop, k, None), k))
+        if _has_real_attr(loop, "subagents"):
+            parts.append(self._subagents_here())
         # Token usage
         usage = loop._last_usage
         if usage:
@@ -342,6 +358,14 @@ class MyTool(Tool):
         if rv:
             parts.append(self._format_value(rv, "scratchpad"))
         return "\n".join(parts)
+
+    def _subagents_here(self) -> str:
+        """This chat's running sub-agents only, never other chats' (as upstream) (custom)."""
+        manager = getattr(self._loop, "subagents", None)
+        mine = manager.statuses_for_session(self._session_key) if hasattr(manager, "statuses_for_session") else {}
+        if not isinstance(mine, dict) or not mine:
+            return "subagents: none running in this chat"
+        return self._format_value(mine, "subagents")
 
     # -- modify --
 

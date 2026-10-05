@@ -82,6 +82,7 @@ async def skills_list(request: Request):
     mcp_servers = {}
     mcp_presets = {}
     mcp_custom_preset_data = {}
+    trader_mode_enabled = False
     try:
         from nanobot.config.loader import load_config
         from nanobot.web.mcp_presets import (
@@ -91,6 +92,7 @@ async def skills_list(request: Request):
         )
 
         cfg = load_config()
+        trader_mode_enabled = bool(getattr(cfg, "trader_mode", False))
         preset_state = list_mcp_presets(cfg.tools)
         ownership = {
             server_name: preset_id
@@ -143,7 +145,9 @@ async def skills_list(request: Request):
         "workspace": str(workspace),
         "mcp_servers": mcp_servers,
         "mcp_presets": mcp_presets,
-        "mcp_custom_preset_data": mcp_custom_preset_data})
+        "mcp_custom_preset_data": mcp_custom_preset_data,
+        "trader_mode_enabled": trader_mode_enabled,
+    })
 
 
 @router.post("/skills/{name}/toggle")
@@ -173,6 +177,44 @@ async def toggle_skill(request: Request, name: str):
     action = "enabled" if enabled else "disabled"
     logger.info("[Skills] Skill '{}' {} via web dashboard", name, action)
     return JSONResponse({"success": True, "enabled": enabled, "skill": name})
+
+
+@router.get("/skills/trader-mode")
+async def trader_mode_state(request: Request):
+    """Return the persisted Trader Mode state."""
+    from nanobot.config.loader import load_config
+
+    config = load_config()
+    return JSONResponse({"success": True, "enabled": bool(config.trader_mode)})
+
+
+@router.post("/skills/trader-mode")
+async def set_trader_mode(request: Request):
+    """Persist Trader Mode and refresh the live agent's gated tools."""
+    from nanobot.config.loader import load_config, save_config
+
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    enabled = payload.get("enabled") if isinstance(payload, dict) else None
+    if not isinstance(enabled, bool):
+        return JSONResponse(
+            {"success": False, "error": "enabled must be a boolean"},
+            status_code=400,
+        )
+
+    config = load_config()
+    config.trader_mode = enabled
+    save_config(config)
+    request.app.state.config = config
+
+    agent = getattr(request.app.state, "agent", None)
+    if agent is not None and hasattr(agent, "_reload_config"):
+        agent._reload_config()
+
+    logger.info("[Skills] Trader Mode {} via web dashboard", "enabled" if enabled else "disabled")
+    return JSONResponse({"success": True, "enabled": enabled})
 
 
 @router.get("/skills/{name}", response_class=HTMLResponse)

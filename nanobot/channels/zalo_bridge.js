@@ -7,7 +7,11 @@
  *     {"event":"ready",       "userId":"..."}
  *     {"event":"message",     "threadId":"...", "threadType":"User"|"Group", "content":"...", "senderId":"...", "senderName":"...",
  *                             "mediaUrl":"...", "mediaThumb":"...", "mediaType":"photo"|"video"|"voice"|"gif"|"file"|null}
- *     {"event":"disconnected","reason":"..."}   — only when auto-reconnect gives up
+ *     {"event":"sent",        "cmdId":"...", "threadId":"..."}                 — ack for a command that carried a cmdId
+ *     {"event":"send_error",  "cmdId":"...", "threadId":"...", "message":"..."}
+ *     {"event":"disconnected","reason":"max_reconnect_reached"} — retries exhausted, session kept (Python restarts bridge)
+ *     {"event":"disconnected","reason":"auth_expired"}          — server rejected the saved session, QR needed (bridge exits)
+ *     {"event":"disconnected","reason":"duplicate_connection"}  — account opened in Zalo Web/PC elsewhere (bridge exits)
  *     {"event":"error",       "message":"..."}
  *
  *   stdin ← Python:
@@ -44,14 +48,33 @@ const MAX_RECONNECT_ATTEMPTS = 5;
 const BASE_RECONNECT_DELAY_MS = 5000; // 5 s, doubles each attempt (max ~2.5 min)
 const MIN_STABLE_CONNECTION_MS = 10000; // connection must stay alive 10s before we consider it "real"
 
-// ── Keepalive/idle state ───────────────────────────────────────────────
+// ── Liveness ───────────────────────────────────────────────────────────
+// zca-js pings at the application level; on top we send WebSocket pings, which
+// the server must answer with a pong (RFC 6455). Any inbound frame, pong or
+// successful send counts as activity, so a healthy but quiet chat is never
+// restarted. Only a connection silent this long (e.g. dropped by a NAT/router
+// without a close) is terminated → "closed" → scheduleReconnect().
 let lastActivityAt = Date.now();
-let keepaliveTimer = null;
-const KEEPALIVE_INTERVAL_MS    = 2 * 60 * 1000; // check every 2 min
-const IDLE_RESTART_THRESHOLD_MS = 5 * 60 * 1000; // proactive restart after 5 min idle
+let heartbeatTimer = null;
+const HEARTBEAT_INTERVAL_MS     = 60 * 1000;     // ping + check every minute
+const IDLE_RESTART_THRESHOLD_MS = 5 * 60 * 1000; // no traffic/pong this long = dead
+
+// Close codes (zca-js CloseReason) meaning the account was opened in another
+// Zalo Web/PC session — only one web listener per account. Reconnecting at once
+// would kick that session back (ping-pong): yield, Python retries much later.
+const YIELD_CLOSE_CODES = [3000, 3003]; // DuplicateConnection, KickConnection
+
+// Re-save credentials periodically: every API call can refresh cookies in the
+// in-memory jar, and a restart should log in with the freshest ones.
+const CREDS_REFRESH_INTERVAL_MS = 30 * 60 * 1000;
+let credsRefreshTimer = null;
+let lastSavedCreds = "";
 
 // Credentials file path (same dir as bridge script)
 const CREDS_FILE = path.join(__dirname, "credentials.json");
+// Rejected credentials are moved here instead of being deleted, so a wrong
+// "expired" verdict can still be undone by renaming the file back.
+const REJECTED_CREDS_FILE = path.join(__dirname, "credentials.rejected.json");
 
 function saveCredentials(api) {
     try {
@@ -61,13 +84,53 @@ function saveCredentials(api) {
             imei: ctx.imei,
             cookie: cookieJar.toJSON(),
             userAgent: ctx.userAgent,
-            savedAt: new Date().toISOString(),
         };
-        fs.writeFileSync(CREDS_FILE, JSON.stringify(creds, null, 2));
+        const snapshot = JSON.stringify(creds);
+        if (snapshot === lastSavedCreds) return; // nothing new to persist
+        const body = JSON.stringify({ ...creds, savedAt: new Date().toISOString() }, null, 2);
+        // Write-then-rename, so a crash or power cut mid-write never leaves a torn file.
+        const tmpFile = CREDS_FILE + ".tmp";
+        fs.writeFileSync(tmpFile, body);
+        try {
+            fs.renameSync(tmpFile, CREDS_FILE);
+        } catch (_) {
+            fs.writeFileSync(CREDS_FILE, body); // e.g. target briefly locked on Windows
+            try { fs.unlinkSync(tmpFile); } catch (_) {}
+        }
+        lastSavedCreds = snapshot;
         logErr("Credentials saved to " + CREDS_FILE);
     } catch (err) {
         logErr("Warning: Could not save credentials: " + err.message);
     }
+}
+
+function markActivity() {
+    lastActivityAt = Date.now();
+}
+
+/** Start (or restart) the listener and watch its socket for liveness signals. */
+function startListener() {
+    api.listener.start();
+    markActivity();
+    const ws = api.listener.ws; // the `ws` WebSocket zca-js just created
+    if (ws && typeof ws.on === "function") {
+        ws.on("message", markActivity);
+        ws.on("pong", markActivity);
+    }
+}
+
+function heartbeat() {
+    const ws = api && api.listener && api.listener.ws;
+    // Handshake/closing, or a reconnect already pending: the reconnect logic owns
+    // this phase — do not pile a restart on top of it.
+    if (!ws || ws.readyState !== ws.OPEN || reconnectTimer) return;
+    const idleMs = Date.now() - lastActivityAt;
+    if (idleMs > IDLE_RESTART_THRESHOLD_MS) {
+        logErr(`Idle watchdog: no traffic or pong for ${Math.round(idleMs / 1000)}s — terminating dead connection`);
+        ws.terminate(); // → "closed" → scheduleReconnect()
+        return;
+    }
+    try { ws.ping(); } catch (_) {}
 }
 
 function loadCredentials() {
@@ -86,42 +149,46 @@ function loadCredentials() {
     }
 }
 
-function deleteCredentials() {
+function quarantineCredentials() {
     try {
         if (fs.existsSync(CREDS_FILE)) {
-            fs.unlinkSync(CREDS_FILE);
-            logErr("Deleted saved credentials");
+            fs.renameSync(CREDS_FILE, REJECTED_CREDS_FILE);
+            logErr("Moved rejected credentials to " + REJECTED_CREDS_FILE);
         }
     } catch (err) {
-        logErr("Warning: Could not delete credentials: " + err.message);
+        logErr("Warning: Could not move rejected credentials: " + err.message);
+        // Never leave a rejected session in place: it would be retried forever.
+        try { fs.unlinkSync(CREDS_FILE); } catch (_) {}
     }
 }
 
-// ── Auth error detection ──────────────────────────────────────────────
-
-const AUTH_ERROR_KEYWORDS = [
-    "invalid", "expired", "unauthorized", "logged out",
-    "kicked", "logged_out", "session", "revoked",
-    "another device", "thiết bị khác",
-];
-
-function isAuthError(errMsg) {
-    const lower = (errMsg || "").toLowerCase();
-    return AUTH_ERROR_KEYWORDS.some((kw) => lower.includes(kw));
+/** Emit a final event, then exit once it is flushed (pipe writes can be async on Windows). */
+function emitAndExit(obj, code) {
+    process.stdout.write(JSON.stringify(obj) + "\n", () => process.exit(code));
+    setTimeout(() => process.exit(code), 2000); // safety net if the write never completes
 }
 
-/** Immediately give up reconnection, clear creds, and notify Python. */
-function abortWithAuthExpired(detail) {
-    logErr(`Auth-related failure detected (${detail}) — aborting reconnect`);
-    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-    deleteCredentials();
-    emit({ event: "disconnected", reason: "auth_expired" });
+// ── Session rejection detection ───────────────────────────────────────
+
+// zca-js reports a cookie login refused by the Zalo server as ZaloApiError
+// "Đăng nhập thất bại" (no session data returned). The English words cover other
+// zca-js versions and HTTP 401. Network failures ("fetch failed", timeouts, 5xx)
+// never match, so they are retried instead of costing the saved session.
+const SESSION_REJECTED_PATTERNS = [
+    "đăng nhập thất bại", "khởi tạo ngữ cảnh thất bại",
+    "invalid", "expired", "unauthorized", "logged out",
+];
+
+function isSessionRejected(err) {
+    const lower = ((err && err.message) || "").toLowerCase();
+    return SESSION_REJECTED_PATTERNS.some((p) => lower.includes(p));
 }
 
 // ── Cleanup helper ────────────────────────────────────────────────────
 
 function cleanup() {
-    if (keepaliveTimer) { clearInterval(keepaliveTimer); keepaliveTimer = null; }
+    if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+    if (credsRefreshTimer) { clearInterval(credsRefreshTimer); credsRefreshTimer = null; }
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
     if (stableResetTimer) { clearTimeout(stableResetTimer); stableResetTimer = null; }
     if (api && api.listener) {
@@ -136,8 +203,9 @@ function scheduleReconnect() {
 
     if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
         logErr(`Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached — giving up`);
-        // Notify Python: user must reconnect manually via dashboard
-        emit({ event: "disconnected", reason: "max_reconnect_reached" });
+        // Python restarts the bridge process (session kept, no QR); this one is done.
+        cleanup();
+        emitAndExit({ event: "disconnected", reason: "max_reconnect_reached" }, 0);
         return;
     }
 
@@ -149,16 +217,12 @@ function scheduleReconnect() {
         reconnectTimer = null;
         try {
             logErr(`Reconnecting listener (attempt ${reconnectAttempts})...`);
-            api.listener.start();
+            startListener();
             logErr("Listener restarted, waiting for 'connected' event...");
             // reconnectAttempts will be reset to 0 on the "connected" event
         } catch (err) {
             logErr(`Reconnect attempt failed: ${err.message}`);
-            if (isAuthError(err.message)) {
-                abortWithAuthExpired(err.message);
-            } else {
-                scheduleReconnect(); // doubles the backoff delay
-            }
+            scheduleReconnect(); // doubles the backoff delay
         }
     }, delay);
 }
@@ -166,17 +230,35 @@ function scheduleReconnect() {
 async function main() {
     logErr("Starting Zalo bridge...");
 
+    // Read commands before logging in, so a "stop" command or a closed stdin
+    // (Python gone) ends this process in every phase — never an orphan bridge.
+    startCommandReader();
+
     const zalo = new Zalo();
 
     // Try login with saved credentials first
     const savedCreds = loadCredentials();
+    if (!savedCreds && fs.existsSync(CREDS_FILE)) {
+        // Unusable session file (e.g. torn write on power loss): handle it like a
+        // rejected session instead of silently starting an unattended QR login.
+        logErr("Saved credentials unusable — QR re-login required");
+        quarantineCredentials();
+        emitAndExit({ event: "disconnected", reason: "auth_expired" }, 0);
+        return;
+    }
     if (savedCreds) {
-        // Retry saved-session login a few times on transient (non-auth) errors
-        // before giving up. Without this, a single network/server hiccup would
-        // fall straight through to loginQR() and silently hang waiting for a
-        // human scan, leaving Python stuck in CONNECTING forever.
+        // Retry the saved-session login: right after a reboot the network or the
+        // Zalo server is often not ready yet. Only a login the server refuses
+        // several times IN A ROW counts as an expired session — one odd response
+        // must never cost the saved session.
         const MAX_SAVED_LOGIN_ATTEMPTS = 4;
-        let authExpired = false;
+        const REJECTIONS_TO_EXPIRE = 3;
+        // zca-js also reports a server-side refusal with HTTP 200 (rate limit,
+        // anti-bot, maintenance) as "Đăng nhập thất bại", so rejections are spread
+        // over ~2 minutes before the session is declared dead. Python's connect
+        // watchdog (240s) outlasts this sequence.
+        const REJECTION_RETRY_DELAYS_MS = [30000, 90000];
+        let rejections = 0;
         for (let attempt = 1; attempt <= MAX_SAVED_LOGIN_ATTEMPTS; attempt++) {
             try {
                 logErr(`Attempting login with saved credentials (attempt ${attempt}/${MAX_SAVED_LOGIN_ATTEMPTS})...`);
@@ -191,47 +273,44 @@ async function main() {
                 break;
             } catch (err) {
                 logErr("Saved credentials login failed: " + err.message);
-                // Only delete credentials on clear auth errors (expired/invalid session).
-                // Keep the file for network errors so next start can retry.
-                const errMsg = (err.message || "").toLowerCase();
-                const isAuthError = errMsg.includes("invalid") || errMsg.includes("expired")
-                    || errMsg.includes("unauthorized") || errMsg.includes("logged out");
                 api = null;
-                if (isAuthError) {
-                    logErr("Auth error detected — clearing saved credentials");
-                    deleteCredentials();
-                    // Notify Python that re-authentication (QR scan) is required
-                    emit({ event: "disconnected", reason: "auth_expired" });
-                    authExpired = true;
-                    break;
+                if (isSessionRejected(err)) {
+                    rejections++;
+                    if (rejections >= REJECTIONS_TO_EXPIRE) {
+                        // The session is really dead. Set the file aside and exit:
+                        // the QR flow must only start from an explicit Connect —
+                        // zca-js would otherwise regenerate an unattended QR every
+                        // 100s forever.
+                        logErr(`Session rejected ${rejections} times in a row — QR re-login required`);
+                        quarantineCredentials();
+                        emitAndExit({ event: "disconnected", reason: "auth_expired" }, 0);
+                        return;
+                    }
+                } else {
+                    rejections = 0; // a transient error breaks the streak
                 }
-                // Non-auth (transient) error — back off and retry.
-                logErr("Non-auth error — keeping saved credentials for retry");
                 if (attempt < MAX_SAVED_LOGIN_ATTEMPTS) {
-                    const delay = BASE_RECONNECT_DELAY_MS * Math.pow(2, attempt - 1);
+                    const delay = rejections > 0
+                        ? REJECTION_RETRY_DELAYS_MS[rejections - 1]
+                        : BASE_RECONNECT_DELAY_MS * Math.pow(2, attempt - 1);
                     logErr(`Retrying saved-session login in ${Math.round(delay / 1000)}s...`);
                     await new Promise((r) => setTimeout(r, delay));
                 }
             }
         }
 
-        // On auth error, credentials were cleared above. Fall through to
-        // loginQR() below (same as before) so a fresh QR is generated in this
-        // same process — the dashboard shows it without the user re-clicking
-        // Connect.
-        if (!authExpired && !api) {
-            // Exhausted all transient-error retries WITHOUT an auth error. Do NOT
-            // silently fall through to loginQR() — that would hang invisibly,
-            // leaving Python stuck in CONNECTING. The session is likely still
-            // valid, so tell Python to restart the bridge; a fresh process may
-            // succeed once the network/server recovers.
+        if (!api) {
+            // Retries exhausted without a consistent rejection — most likely the
+            // network/server is down. Keep the session and let Python restart the
+            // bridge with backoff. Do NOT fall through to loginQR(): it would hang
+            // invisibly waiting for a human scan.
             logErr("Saved-session login exhausted all retries — asking Python to restart bridge");
-            emit({ event: "disconnected", reason: "max_reconnect_reached" });
-            process.exit(0);
+            emitAndExit({ event: "disconnected", reason: "max_reconnect_reached" }, 0);
+            return;
         }
     }
 
-    // Fallback to QR login if credential login failed or no saved creds
+    // No saved session: QR login (needs a human to scan)
     if (!api) {
         try {
             logErr("Waiting for QR code scan...");
@@ -239,11 +318,12 @@ async function main() {
                 qrPath: undefined,
             });
             logErr("QR Login successful!");
-            // Save credentials for next time
+            // Save credentials for next time; a previously rejected session is obsolete now
             saveCredentials(api);
+            try { fs.unlinkSync(REJECTED_CREDS_FILE); } catch (_) {}
         } catch (err) {
-            emit({ event: "error", message: `Login failed: ${err.message}` });
-            process.exit(1);
+            emitAndExit({ event: "error", message: `Login failed: ${err.message}` }, 1);
+            return;
         }
     }
 
@@ -382,15 +462,13 @@ async function main() {
 
     // Handle listener events
     api.listener.on("error", (err) => {
-        logErr(`Listener error: ${err.message}`);
-        if (isAuthError(err.message)) {
-            // Session invalidated (e.g. user logged out on phone / Zalo kicked)
-            // → stop retrying immediately, notify Python to request QR re-scan
-            abortWithAuthExpired(err.message);
-            try { api.listener.stop(); } catch (_) {}
-            return;
-        }
-        emit({ event: "error", message: err.message });
+        // Never judge the session from listener errors: zca-js also reports
+        // per-message decode failures here (e.g. "Invalid time value"). A revoked
+        // session closes the socket instead; reconnects then run out and the
+        // restarted bridge's saved-session login gives the real verdict.
+        const message = (err && err.message) || String(err);
+        logErr(`Listener error: ${message}`);
+        emit({ event: "error", message });
     });
 
     api.listener.on("connected", () => {
@@ -410,42 +488,53 @@ async function main() {
         }, MIN_STABLE_CONNECTION_MS);
     });
 
-    api.listener.on("closed", () => {
-        logErr("Listener closed — scheduling auto-reconnect");
+    api.listener.on("closed", (code, reason) => {
         // Cancel the "stable connection" timer — this connection wasn't real
         if (stableResetTimer) { clearTimeout(stableResetTimer); stableResetTimer = null; }
+        if (YIELD_CLOSE_CODES.includes(code)) {
+            logErr(`Listener closed (code ${code}): account opened in another Zalo Web/PC session — yielding`);
+            cleanup();
+            emitAndExit({ event: "disconnected", reason: "duplicate_connection", code }, 0);
+            return;
+        }
+        logErr(`Listener closed (code ${code}${reason ? `, ${reason}` : ""}) — scheduling auto-reconnect`);
         // Do NOT emit "disconnected" to Python yet.
         // scheduleReconnect() will only give up (and emit) after MAX_RECONNECT_ATTEMPTS.
         scheduleReconnect();
     });
 
     // Start listening
-    api.listener.start();
-    lastActivityAt = Date.now();
+    startListener();
     logErr("Listener started, waiting for messages...");
 
-    // ── Keepalive: proactively restart if idle too long ──
-    // Some NAT/router setups silently drop idle WebSocket connections.
-    // If no activity for IDLE_RESTART_THRESHOLD_MS, stop → "closed" → scheduleReconnect().
-    keepaliveTimer = setInterval(() => {
-        const idleMs = Date.now() - lastActivityAt;
-        if (idleMs > IDLE_RESTART_THRESHOLD_MS) {
-            logErr(`Connection idle for ${Math.round(idleMs / 1000)}s — proactive listener restart`);
-            try { api.listener.stop(); } catch (_) {}
-            // "closed" event fires → scheduleReconnect() handles the rest
-        }
-    }, KEEPALIVE_INTERVAL_MS);
+    heartbeatTimer = setInterval(heartbeat, HEARTBEAT_INTERVAL_MS);
+    credsRefreshTimer = setInterval(() => saveCredentials(api), CREDS_REFRESH_INTERVAL_MS);
+}
 
-    // ── Read commands from stdin (Python → Node.js) ──
+/** Tell Python how a send command ended (only commands that asked for an ack). */
+function ack(cmd, errorMessage) {
+    if (!cmd || !cmd.cmdId) return; // fire-and-forget command, e.g. the progress hint
+    if (errorMessage) {
+        emit({ event: "send_error", cmdId: cmd.cmdId, threadId: cmd.threadId || "", message: errorMessage });
+    } else {
+        emit({ event: "sent", cmdId: cmd.cmdId, threadId: cmd.threadId });
+    }
+}
+
+// ── Read commands from stdin (Python → Node.js) ──
+// Started at the top of main(), before login, and kept for the process lifetime.
+function startCommandReader() {
     const rl = readline.createInterface({ input: process.stdin });
 
     rl.on("line", async (line) => {
+        let cmd = null;
         try {
-            const cmd = JSON.parse(line);
+            cmd = JSON.parse(line);
 
             if (cmd.action === "send") {
                 if (!api) {
                     logErr("Cannot send: API not ready");
+                    ack(cmd, "API not ready");
                     return;
                 }
                 const threadType =
@@ -457,10 +546,13 @@ async function main() {
                     threadType
                 );
                 logErr(`Sent message to ${cmd.threadId}`);
+                markActivity();
+                ack(cmd);
 
             } else if (cmd.action === "send_media") {
                 if (!api) {
                     logErr("Cannot send media: API not ready");
+                    ack(cmd, "API not ready");
                     return;
                 }
                 const threadType = cmd.threadType === "Group" ? ThreadType.Group : ThreadType.User;
@@ -518,13 +610,17 @@ async function main() {
                         );
                         logErr(`Sent ${mType} to ${cmd.threadId}`);
                     }
+                    markActivity();
+                    ack(cmd);
                 } catch (err) {
                     logErr(`Failed to send media (${mType}): ${err.message}`);
+                    ack(cmd, err.message || `Failed to send media (${mType})`);
                     // Do not re-throw: media send errors should not kill the bridge
                 }
 
             } else if (cmd.action === "stop") {
                 logErr("Stop command received, shutting down...");
+                if (api) saveCredentials(api); // freshest cookies for the next start
                 cleanup();
                 process.exit(0);
             } else {
@@ -532,6 +628,7 @@ async function main() {
             }
         } catch (err) {
             logErr(`Error handling command: ${err.message}`);
+            ack(cmd, err.message || "Error handling command");
         }
     });
 
@@ -556,7 +653,6 @@ process.on("SIGINT", () => {
 });
 
 main().catch((err) => {
-    emit({ event: "error", message: err.message });
     logErr(`Fatal error: ${err.stack}`);
-    process.exit(1);
+    emitAndExit({ event: "error", message: err.message }, 1);
 });

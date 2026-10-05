@@ -5,22 +5,12 @@ PORT="${1:-8900}"
 HOST="${2:-${ADMINBOT_HOST:-127.0.0.1}}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
+# Reuses venv/ or .venv/; creates venv/ and installs nanobot on the first run.
+bash "$SCRIPT_DIR/scripts/ensure-venv.sh"
 if [[ -x "$SCRIPT_DIR/venv/bin/python" ]]; then
   PYTHON="$SCRIPT_DIR/venv/bin/python"
-elif [[ -x "$SCRIPT_DIR/.venv/bin/python" ]]; then
-  PYTHON="$SCRIPT_DIR/.venv/bin/python"
 else
-  echo "Missing local venv Python." >&2
-  echo "Expected one of:" >&2
-  echo "  $SCRIPT_DIR/venv/bin/python" >&2
-  echo "  $SCRIPT_DIR/.venv/bin/python" >&2
-  echo "" >&2
-  echo "Create and install the environment first:" >&2
-  echo "  python3 -m venv venv" >&2
-  echo "  source venv/bin/activate" >&2
-  echo "  python -m pip install -U pip" >&2
-  echo "  python -m pip install -e '.[web,dev]'" >&2
-  exit 1
+  PYTHON="$SCRIPT_DIR/.venv/bin/python"
 fi
 
 echo ""
@@ -35,4 +25,8 @@ echo "Press Ctrl+C to stop Adminbot."
 echo ""
 
 cd "$SCRIPT_DIR"
+# Opens the dashboard in the browser once it answers (desktop only; NANOBOT_NO_BROWSER=1 to skip).
+BROWSER_HOST="$HOST"
+[[ "$HOST" == "0.0.0.0" || "$HOST" == "::" ]] && BROWSER_HOST="127.0.0.1"
+bash "$SCRIPT_DIR/scripts/open-browser.sh" "http://${BROWSER_HOST}:${PORT}" &
 exec "$PYTHON" -m adminbot.app.main web --port "$PORT" --host "$HOST"

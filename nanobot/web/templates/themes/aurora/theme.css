@@ -1,0 +1,147 @@
+/* Aurora theme: shared flat and light-background rules plus aurora light, frosted glass and soft
+   colour. Included at the end of the Tailwind style block in base.html. */
+{% include "themes/_flat.css" %}
+{% include "themes/_light.css" %}
+
+/* Aurora light: large soft colour fields drifting slowly behind the app, plus sparkles */
+.aurora {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+.aurora-blob {
+    position: absolute;
+    width: 62vmax;
+    height: 62vmax;
+    border-radius: 50%;
+    opacity: 0.9;
+    will-change: transform;
+    animation: aurora-drift 34s ease-in-out infinite alternate;
+}
+.aurora-blob--violet { top: -22vmax; left: -14vmax; background: radial-gradient(circle, rgb(167 139 250 / 0.55) 0%, transparent 62%); }
+.aurora-blob--sky { top: -18vmax; right: -20vmax; background: radial-gradient(circle, rgb(56 189 248 / 0.45) 0%, transparent 62%); animation-duration: 41s; animation-delay: -9s; }
+.aurora-blob--pink { bottom: -26vmax; left: 18vw; background: radial-gradient(circle, rgb(244 114 182 / 0.42) 0%, transparent 62%); animation-duration: 38s; animation-delay: -17s; }
+.aurora-blob--mint { bottom: -24vmax; right: -12vmax; background: radial-gradient(circle, rgb(45 212 191 / 0.35) 0%, transparent 62%); animation-duration: 46s; animation-delay: -4s; }
+@keyframes aurora-drift {
+    0% { transform: translate(0, 0) scale(1); }
+    50% { transform: translate(8vw, 5vh) scale(1.12); }
+    100% { transform: translate(-6vw, -4vh) scale(0.95); }
+}
+.aurora-sparkle {
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #ffffff 0%, rgb(196 181 253 / 0.9) 45%, transparent 70%);
+    box-shadow: 0 0 10px 2px rgb(196 181 253 / 0.6);
+    opacity: 0;
+    animation: aurora-twinkle 6s ease-in-out infinite;
+}
+@keyframes aurora-twinkle {
+    0%, 100% { opacity: 0; transform: scale(0.6); }
+    50% { opacity: 1; transform: scale(1.15); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .aurora-blob, .aurora-sparkle { animation: none; }
+    .aurora-sparkle { opacity: 0.6; }
+}
+
+/* Frosted-glass cards with generous rounding and soft violet depth */
+.ui-card {
+    background-color: var(--aurora-glass);
+    background-image: none;
+    backdrop-filter: blur(18px) saturate(1.4);
+    -webkit-backdrop-filter: blur(18px) saturate(1.4);
+    border: 1px solid var(--aurora-glass-border);
+    border-radius: 18px;
+    box-shadow: var(--card-shadow);
+}
+.ui-card:hover {
+    border-color: var(--aurora-glass-border);
+    box-shadow: 0 14px 40px rgb(124 58 237 / 0.14), 0 1px 2px rgb(30 27 75 / 0.06);
+}
+header.ui-card {
+    background-color: rgb(255 255 255 / 0.55);
+    backdrop-filter: blur(16px) saturate(1.4);
+    -webkit-backdrop-filter: blur(16px) saturate(1.4);
+    border-width: 0 0 1px;
+    border-color: var(--aurora-glass-border);
+    border-radius: 0;
+    box-shadow: 0 4px 24px rgb(124 58 237 / 0.08);
+}
+#theme-menu { border-radius: 14px; }
+
+/* Gradient title */
+header h1 {
+    background: var(--aurora-gradient);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+/* Sidebar: soft pills; the active one gets the aurora tint */
+nav > a.ui-card {
+    border-radius: 14px;
+    background-color: transparent;
+    border-color: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+}
+nav > a.ui-card:hover { background-color: rgb(124 58 237 / 0.08); }
+.nav-active {
+    background: var(--aurora-pill) !important;
+    border-color: var(--aurora-glass-border) !important;
+    border-left-width: 1px !important;
+    box-shadow: 0 6px 18px rgb(124 58 237 / 0.15);
+}
+.nav-active span,
+.nav-active .nav-label { color: rgb(var(--c-accent)); }
+
+/* Rounded inputs */
+:root main input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+:root main textarea,
+:root main select { border-radius: 10px; }
+
+/* Buttons in the page body: glass at rest, aurora gradient when hovered. Round icon buttons and
+   buttons filled or lettered in a status colour keep their look. */
+:root main button.border:not(.rounded-full):not(.bg-primary):not([class*="bg-red"]):not([class*="bg-yellow"]):not([class*="bg-green"]):not([class*="text-red"]):not([class*="text-orange"]):not([class*="text-yellow"]) {
+    background-color: rgb(255 255 255 / 0.7);
+    border-color: rgb(124 58 237 / 0.28);
+    border-radius: 10px;
+}
+:root main button.border:not(.rounded-full):not(.bg-primary):not([class*="bg-red"]):not([class*="bg-yellow"]):not([class*="bg-green"]):not([class*="text-red"]):not([class*="text-orange"]):not([class*="text-yellow"]):hover,
+:root main button.border:not(.rounded-full):not(.bg-primary):not([class*="bg-red"]):not([class*="bg-yellow"]):not([class*="bg-green"]):not([class*="text-red"]):not([class*="text-orange"]):not([class*="text-yellow"]):hover * {
+    color: #ffffff;
+}
+:root main button.border:not(.rounded-full):not(.bg-primary):not([class*="bg-red"]):not([class*="bg-yellow"]):not([class*="bg-green"]):not([class*="text-red"]):not([class*="text-orange"]):not([class*="text-yellow"]):hover {
+    background-image: var(--aurora-gradient);
+    border-color: transparent;
+    box-shadow: 0 8px 20px rgb(124 58 237 / 0.28);
+}
+
+/* Header buttons: round glass */
+header button.rounded-full {
+    background-color: rgb(255 255 255 / 0.6);
+    border-color: rgb(124 58 237 / 0.2);
+}
+
+/* Scroll bars and selection in the accent colour */
+::-webkit-scrollbar-thumb { background: rgb(124 58 237 / 0.35); }
+::-webkit-scrollbar-thumb:hover { background: rgb(124 58 237 / 0.55); }
+::-webkit-scrollbar-track { background: transparent; }
+* { scrollbar-color: rgb(124 58 237 / 0.35) transparent; }
+::selection { background: rgb(124 58 237 / 0.85); color: #ffffff; }
+
+/* Status button: glass pill, aurora gradient on hover */
+#server-status-btn {
+    border-radius: 999px;
+    border-color: rgb(124 58 237 / 0.35);
+    background-color: rgb(255 255 255 / 0.6);
+}
+#server-status-btn:hover {
+    background-image: var(--aurora-gradient);
+    border-color: transparent;
+    color: #ffffff;
+}

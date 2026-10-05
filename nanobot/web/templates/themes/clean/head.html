@@ -1,0 +1,25 @@
+{#- Clean theme: flat, neutral dark UI with a single blue accent. Same token contract as
+    themes/matrix/head.html; component overrides live in theme.css. #}
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+    :root {
+        --c-canvas: 13 17 23;       /* page background */
+        --c-primary: 201 209 217;   /* main ink: text, borders, fills (neutral) */
+        --c-accent: 88 166 255;     /* highlights: active nav, focus, checked controls */
+        --c-surface: 22 27 34;      /* cards, dropdown options */
+        --c-black: 8 11 16;         /* Tailwind "black": inset inputs, dark panels, text on primary */
+        --c-white: 240 246 252;     /* Tailwind "white" */
+        --c-success: 63 185 80;
+        --c-warning: 210 153 34;
+        --c-danger: 248 81 73;
+        --c-danger-soft: 255 123 114;
+        --glow: 0;                  /* no glows */
+        --text-floor: 0.5;          /* faint text never goes below this (base.html): subtext stays readable */
+        --c-red-400: 248 118 118;   /* a touch lighter: 4.5:1 for faint red text on the cards */
+        --c-red-500: 244 120 120;     /* a touch lighter: 4.5:1 for faint red text on the cards */
+        --font-ui: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+        --logo-filter: grayscale(1);
+        --card-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+        color-scheme: dark;         /* native controls and scrollbars */
+    }
+</style>

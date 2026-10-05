@@ -1,6 +1,7 @@
 """Config editor route — view and edit config.json."""
 
 import json
+import re
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -376,7 +377,7 @@ async def get_effective_route():
     active_preset = (defaults.model_preset or "").strip()
     if active_preset and active_preset not in config.model_presets:
         warnings.append(
-            f"Active route '{active_preset}' is not defined — running Custom (agents.defaults) instead."
+            f"Active route '{active_preset}' is not defined — running Manual (agents.defaults) instead."
         )
 
     effective = config.resolve_effective_model_config()
@@ -493,6 +494,9 @@ async def save_provider(request: Request):
     p.api_key = api_key if api_key else ""
     p.api_base = api_base if api_base else None
     save_config(config)
+    # The dashboard's own copy follows, as in the other save routes: the chat page reads it to know
+    # whether Groq has a key before it offers Groq voice recognition
+    request.app.state.config = config
 
     logger.info("[Config] Saved provider={} key={}...{}", provider_name,
                 api_key[:4] if len(api_key) > 4 else "****",
@@ -762,6 +766,46 @@ async def test_brave_key(request: Request):
     return await _test_search_api_key("brave", api_key)
 
 
+@router.post("/config/test-voice-key")
+async def test_voice_key(request: Request):
+    """Check a Groq key for voice recognition in Web Chat: Groq must accept it and offer the
+    Whisper model. It asks Groq for its model list, which costs none of the key's speech quota."""
+    import httpx
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"success": False, "error": "Invalid JSON"}, status_code=400)
+    api_key = (body.get("api_key") or "").strip() if isinstance(body, dict) else ""
+    if not api_key:
+        return JSONResponse({"success": False, "error": "Chưa nhập key"})
+
+    config = request.app.state.config
+    # Where the recordings go (providers.groq.apiBase, else Groq itself), without the transcription path
+    base = re.sub(r"(/audio)?/transcriptions$", "", (config.providers.groq.api_base or "").rstrip("/"))
+    base = base or "https://api.groq.com/openai/v1"
+    model = (config.transcription.model if config.get_transcription_provider_name() == "groq" else None) \
+        or "whisper-large-v3"
+    try:
+        async with httpx.AsyncClient(proxy=config.tools.web.proxy or None, timeout=10.0) as client:
+            r = await client.get(f"{base}/models", headers={"Authorization": f"Bearer {api_key}"})
+    except Exception as e:
+        logger.error("[Config] Test Groq voice key failed: {}", e)
+        return JSONResponse({"success": False, "error": f"Không kết nối được tới Groq: {e}"})
+    if r.status_code in (401, 403):
+        return JSONResponse({"success": False, "error": f"Key không hợp lệ (HTTP {r.status_code})"})
+    if r.status_code != 200:
+        return JSONResponse({"success": False, "error": f"Groq trả về HTTP {r.status_code}"})
+    try:
+        offered = {m.get("id") for m in r.json().get("data", []) if isinstance(m, dict)}
+    except Exception:
+        offered = set()
+    if model not in offered:
+        return JSONResponse({"success": False, "key_valid": True,
+                             "error": f"Key hợp lệ, nhưng Groq không liệt kê model {model} cho key này"})
+    return JSONResponse({"success": True, "message": f"Key hợp lệ, dùng được model {model}"})
+
+
 @router.post("/config/test-telegram-token")
 async def test_telegram_token(request: Request):
     """Test a Telegram bot token by calling getMe API."""
@@ -824,6 +868,52 @@ _CHANNEL_NAMES = [
     "telegram", "discord", "slack", "whatsapp", "feishu", "dingtalk",
     "mochat", "email", "qq", "matrix", "wecom", "weixin", "zalo",
 ]
+# Channels offered in the "+ channels" dropdown: the ones this project supports today.
+# Add a name here once another channel is supported. A channel already enabled in the
+# config keeps its settings card either way.
+_OFFERED_CHANNELS = ("telegram", "zalo")
+
+
+def _tool_role_context(config) -> dict:
+    """What the Tool_Role cards and the custom dialog show (agent/tool_roles.py)."""
+    from nanobot.agent.tool_roles import (
+        ROLE_ICONS,
+        ROLES,
+        TOOL_SECTIONS,
+        mcp_server_visible,
+        normalize_role,
+        role_summary,
+        role_tools,
+    )
+
+    tools_config = config.tools
+    legacy = dict(
+        enable_file_tools=tools_config.enable_file_tools,
+        enable_web_tools=tools_config.enable_web_tools,
+        enable_spawn=tools_config.enable_spawn,
+        enable_cron=tools_config.enable_cron,
+    )
+    custom_selected = role_tools("custom", custom_tools=tools_config.custom_tools, **legacy)
+    return {
+        "tool_role": normalize_role(tools_config.tool_preset),
+        "tool_roles": [
+            {"id": role.id, "label": role.label, "description": role.description, "icon": ROLE_ICONS[role.id]}
+            for role in ROLES.values()
+        ],
+        "tool_sections": [[title, note, [list(tool) for tool in tools]] for title, note, tools in TOOL_SECTIONS],
+        "custom_selected": custom_selected,
+        "custom_mcp_servers": [
+            {"name": name, "visible": mcp_server_visible("custom", server), "enabled": server.enabled}
+            for name, server in tools_config.mcp_servers.items()
+        ],
+        "tool_role_data": {
+            "summaries": {role_id: role_summary(role_id) for role_id in ROLES},
+            "tools": {role_id: role_tools(role_id) for role_id in ROLES if role_id != "custom"},
+            "mcp": {role_id: "mcp" in role.groups for role_id, role in ROLES.items() if role_id != "custom"},
+            "traderMode": bool(getattr(config, "trader_mode", False)),
+        },
+        "trader_mode": bool(getattr(config, "trader_mode", False)),
+    }
 
 
 @router.get("/config", response_class=HTMLResponse)
@@ -837,6 +927,8 @@ async def config_page(
     config = app_state.config
 
     import json
+
+    from nanobot.web.routes.chat import _voice_settings
 
     defaults = config.agents.defaults
     effective_model = config.resolve_effective_model_config()
@@ -883,10 +975,12 @@ async def config_page(
                         fields[field_name] = ", ".join(str(v) for v in val)
             channels_data.append({"name": name, "fields": fields})
 
-    # Disabled channels (for enable dropdown)
+    # Disabled channels (for enable dropdown), limited to the supported ones (_OFFERED_CHANNELS)
     # Includes: channels with enabled=False AND channels not yet in config (ch=None)
     disabled_channels = []
     for name in _CHANNEL_NAMES:
+        if name not in _OFFERED_CHANNELS:
+            continue
         ch = getattr(config.channels, name, None)
         if ch is None:
             # Not yet configured → show in enable dropdown so user can set it up
@@ -962,6 +1056,8 @@ async def config_page(
         "web_port": web_cfg.port,
         "web_host": web_cfg.host,
         "web_password": web_cfg.password,
+        # Voice in Web Chat: voice_recognition, voice_language, voice_groq_key
+        **{f"voice_{name}": value for name, value in _voice_settings(config).items()},
         # Providers
         "providers": providers_data,
         "bedrock_region": getattr(config.providers.bedrock, "region", "") or "",
@@ -984,6 +1080,7 @@ async def config_page(
         "workspace_subdir": tools_config.exec.workspace_subdir,
         "allowed_dirs": tools_config.exec.allowed_dirs,
         "tool_preset": tools_config.tool_preset,
+        **_tool_role_context(config),
         "enable_file_tools": tools_config.enable_file_tools,
         "enable_web_tools": tools_config.enable_web_tools,
         "enable_spawn": tools_config.enable_spawn,
@@ -1175,6 +1272,12 @@ async def config_save(request: Request):
         web_password = form.get("web_password")
         if web_password is not None:
             config.gateway.web.password = web_password.strip()
+        # Voice in Web Chat: how speech is recognised and in which language (web/routes/chat.py)
+        if form.get("voice_recognition") in ("browser", "groq"):
+            config.gateway.web.voice.recognition = form.get("voice_recognition")
+        voice_language = (form.get("voice_language") or "").strip()
+        if re.fullmatch(r"[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*", voice_language):  # a tag such as vi-VN
+            config.gateway.web.voice.language = voice_language
 
         # --- Providers ---
         for name in _PROVIDER_NAMES:
@@ -1255,15 +1358,33 @@ async def config_save(request: Request):
                     allowed_dirs.append(val)
         config.tools.exec.allowed_dirs = allowed_dirs
 
-        # Tool preset
+        # Tool role (agent/tool_roles.py); "developer" is the all-on preset from before roles
+        from nanobot.agent.tool_roles import ALL_TOOLS, GROUP_TOOLS, ROLES, set_custom_visibility
+
         tool_preset = form.get("tool_preset", "developer").strip()
-        if tool_preset in ("developer", "coder", "chatbot", "custom"):
+        if tool_preset in ROLES or tool_preset == "developer":
             config.tools.tool_preset = tool_preset
-        config.tools.enable_file_tools = form.get("enable_file_tools") == "on"
-        config.tools.enable_web_tools = form.get("enable_web_tools") == "on"
-        config.tools.enable_spawn = form.get("enable_spawn") == "on"
-        config.tools.enable_cron = form.get("enable_cron") == "on"
-        config.tools.enable_mcp = form.get("enable_mcp") == "on"
+        if form.get("custom_tools_present") == "1":
+            # The custom dialog: tools picked one by one. "message" is always on; keeping it in the
+            # list marks the list as chosen even when nothing else is picked.
+            picked = [name for name in dict.fromkeys(form.getlist("custom_tool")) if name in ALL_TOOLS]
+            config.tools.custom_tools = ["message", *(name for name in picked if name != "message")]
+            chosen = set(picked)
+            config.tools.enable_file_tools = bool(chosen & {*GROUP_TOOLS["file_read"], *GROUP_TOOLS["file_write"]})
+            config.tools.enable_web_tools = bool(chosen & set(GROUP_TOOLS["web"]))
+            config.tools.enable_spawn = "spawn" in chosen
+            config.tools.enable_cron = "cron" in chosen
+            config.tools.enable_mcp = form.get("enable_mcp") == "on"
+            if form.get("custom_mcp_present") == "1":
+                shown = set(form.getlist("custom_mcp"))
+                for server_name, server in config.tools.mcp_servers.items():
+                    set_custom_visibility(server, server_name in shown)
+        else:  # a page from before roles: the five group switches
+            config.tools.enable_file_tools = form.get("enable_file_tools") == "on"
+            config.tools.enable_web_tools = form.get("enable_web_tools") == "on"
+            config.tools.enable_spawn = form.get("enable_spawn") == "on"
+            config.tools.enable_cron = form.get("enable_cron") == "on"
+            config.tools.enable_mcp = form.get("enable_mcp") == "on"
 
         # --- Channels global ---
         config.channels.send_progress = form.get("send_progress") == "on"
@@ -1355,9 +1476,12 @@ async def config_restart(request: Request):
 @router.get("/restarting", response_class=HTMLResponse)
 async def restarting_page(request: Request, next: str = "/"):
     """Show a browser-facing restart progress page."""
+    # Sub-agents still running end with the process: the page asks first (custom)
+    subagents = getattr(getattr(request.app.state, "agent", None), "subagents", None)
+    running = subagents.running_labels() if hasattr(subagents, "running_labels") else []
     return request.app.state.templates.TemplateResponse(
         request,
         "restarting.html",
-        {"next_url": _safe_restart_next_url(next)},
+        {"next_url": _safe_restart_next_url(next), "running_subagents": running},
     )
 

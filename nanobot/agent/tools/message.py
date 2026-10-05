@@ -6,7 +6,11 @@ from typing import Any, Awaitable, Callable
 
 from nanobot.agent.tools.base import Tool, tool_parameters
 from nanobot.agent.tools.schema import ArraySchema, StringSchema, tool_parameters_schema
+from nanobot.agent.tools.turn_state import TurnLocal
 from nanobot.bus.events import OutboundMessage
+
+# Stop reason of a turn the bot ended by sending its reply with files to the current chat (custom)
+ANSWERED_WITH_FILES = "answered_with_files"
 
 
 @tool_parameters(
@@ -28,6 +32,16 @@ from nanobot.bus.events import OutboundMessage
 class MessageTool(Tool):
     """Tool to send messages to users on chat channels."""
 
+    # One instance serves every session: the target chat and the "sent" flag are per turn (custom)
+    _default_channel = TurnLocal()
+    _default_chat_id = TurnLocal()
+    _default_message_id = TurnLocal()
+    _default_metadata = TurnLocal()
+    _sent_in_turn = TurnLocal()
+    # Files sent to the current chat are the turn's reply: the turn ends there (custom, answer with files)
+    _answered_with_files = TurnLocal()
+    _answer_content = TurnLocal()
+
     def __init__(
         self,
         send_callback: Callable[[OutboundMessage], Awaitable[None]] | None = None,
@@ -35,6 +49,8 @@ class MessageTool(Tool):
         default_chat_id: str = "",
         default_message_id: str | None = None,
         working_dir: str | None = None,
+        allowed_dir: Path | None = None,
+        extra_allowed_dirs: list[Path] | None = None,
     ):
         self._send_callback = send_callback
         self._default_channel = default_channel
@@ -42,7 +58,12 @@ class MessageTool(Tool):
         self._default_message_id = default_message_id
         self._default_metadata: dict[str, Any] = {}
         self._sent_in_turn: bool = False
+        self._answered_with_files: bool = False
+        self._answer_content: str = ""
         self._working_dir = Path(working_dir) if working_dir else None
+        # Where attachments may come from: the bot's file scope (custom, see _resolve_media_paths)
+        self._allowed_dir = allowed_dir
+        self._extra_allowed_dirs = extra_allowed_dirs
 
     def set_context(
         self,
@@ -64,6 +85,8 @@ class MessageTool(Tool):
     def start_turn(self) -> None:
         """Reset per-turn send tracking."""
         self._sent_in_turn = False
+        self._answered_with_files = False
+        self._answer_content = ""
 
     @property
     def name(self) -> str:
@@ -76,7 +99,9 @@ class MessageTool(Tool):
             "WARNING: Do NOT use this tool to reply in normal conversation — just return text directly instead. "
             "Only use this tool when you need to: (1) send files/media via the 'media' parameter, "
             "or (2) send a message to a DIFFERENT chat/channel than the current one. "
-            "Never call this tool more than once per turn for the same chat_id."
+            "Never call this tool more than once per turn for the same chat_id. "
+            "Sending files to the current chat IS your reply and ends your turn: write your complete "
+            "answer in 'content' and send it as the last step, once the files are ready."
         )
 
     async def execute(
@@ -110,11 +135,17 @@ class MessageTool(Tool):
         if not self._send_callback:
             return "Error: Message sending not configured"
 
-        resolved_media = self._resolve_media_paths(media or [])
+        try:
+            resolved_media = self._resolve_media_paths(media or [])
+        except PermissionError as exc:
+            return f"Error: {exc}"
         metadata = self._build_metadata(message_id, kwargs)
         if channel == self._default_channel and chat_id == self._default_chat_id:
             if "thread_type" not in metadata and "thread_type" in self._default_metadata:
                 metadata["thread_type"] = self._default_metadata["thread_type"]
+            # Sent while answering a sub-agent's result: a late reply, which Web Chat pushes (custom)
+            if self._default_metadata.get("_late_reply"):
+                metadata["_late_reply"] = True
         msg = OutboundMessage(
             channel=channel,
             chat_id=chat_id,
@@ -128,21 +159,26 @@ class MessageTool(Tool):
             await self._send_callback(msg)
             if channel == self._default_channel and chat_id == self._default_chat_id:
                 self._sent_in_turn = True
+                if resolved_media:
+                    self._answered_with_files = True
+                    self._answer_content = content
             media_info = f" with {len(media)} attachments" if media else ""
             return f"Message sent to {channel}:{chat_id}{media_info}"
         except Exception as e:
             return f"Error sending message: {str(e)}"
 
     def _resolve_media_paths(self, media: list[str]) -> list[str]:
+        """Attachments must be files the bot may read: its sandbox, allowedDirs or the media folder, as
+        for read_file. Otherwise anyone chatting with the bot could have it send any file on the
+        machine, config.json included (custom, identity hardening)."""
+        from nanobot.agent.tools.filesystem import _resolve_path
+
         result = []
         for m in media:
-            p = Path(m)
-            if p.is_absolute():
-                result.append(m)
-            elif self._working_dir and (self._working_dir / m).exists():
-                result.append(str((self._working_dir / m).resolve()))
-            else:
-                result.append(str(p.resolve()))
+            p = Path(m).expanduser()
+            if not p.is_absolute() and self._working_dir:
+                p = self._working_dir / p
+            result.append(str(_resolve_path(str(p), self._working_dir, self._allowed_dir, self._extra_allowed_dirs)))
         return result
 
     @staticmethod

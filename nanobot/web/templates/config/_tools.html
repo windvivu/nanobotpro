@@ -1,7 +1,7 @@
         <!-- ============================================================ -->
         <!-- Section: Tools Configuration -->
         <!-- ============================================================ -->
-        <div class="matrix-card p-6">
+        <div class="ui-card p-6">
             <div class="flex items-center justify-between mb-4 border-b border-primary/20 pb-4 cursor-pointer"
                 onclick="toggleSection('tools-body')">
                 <div class="flex items-center gap-3">
@@ -30,7 +30,7 @@
                                     Max_Tool_Result_Chars</label>
                                 <input type="number" id="max_tool_result_chars" name="max_tool_result_chars"
                                     value="{{ max_tool_result_chars }}" min="1000" max="64000" step="1000"
-                                    class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                                    class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-glow-15-30 outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
                                 <span class="text-[9px] text-primary/30">Giới hạn ký tự giữ lại từ mỗi tool result trước khi đưa lại vào model. Range: 1,000-64,000.</span>
                             </div>
                             <div class="flex flex-col justify-end gap-2 text-[9px] text-primary/35 font-mono leading-relaxed">
@@ -45,7 +45,7 @@
                             Exec_Timeout</label>
                         <input type="number" id="exec_timeout" name="exec_timeout" value="{{ exec_timeout }}" min="5"
                             max="600"
-                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-glow-15-30 outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
                     </div>
                     <div class="flex flex-col gap-2">
                         <label for="exec_path_append"
@@ -53,27 +53,27 @@
                             Exec_Path_Append</label>
                         <input type="text" id="exec_path_append" name="exec_path_append" value="{{ exec_path_append }}"
                             placeholder="none"
-                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-glow-15-30 outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
                     </div>
                     <div class="flex flex-col gap-2">
                         <label for="web_proxy"
                             class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
                             Web_Proxy</label>
                         <input type="text" id="web_proxy" name="web_proxy" value="{{ web_proxy }}" placeholder="none"
-                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-glow-15-30 outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
                     </div>
                     <div class="flex flex-col gap-2">
                         <label for="search_provider"
                             class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
                             Search_Provider</label>
                         <select id="search_provider" name="search_provider" onchange="updateSearchProviderFields()"
-                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm transition-all duration-300 appearance-none cursor-pointer">
-                            <option value="duckduckgo" {% if search_provider == 'duckduckgo' %}selected{% endif %} style="background: #0a0a0a; color: #00FF41;">DuckDuckGo — no key needed</option>
-                            <option value="brave" {% if search_provider == 'brave' %}selected{% endif %} style="background: #0a0a0a; color: #00FF41;">Brave Search</option>
-                            <option value="tavily" {% if search_provider == 'tavily' %}selected{% endif %} style="background: #0a0a0a; color: #00FF41;">Tavily</option>
-                            <option value="searxng" {% if search_provider == 'searxng' %}selected{% endif %} style="background: #0a0a0a; color: #00FF41;">SearXNG</option>
-                            <option value="jina" {% if search_provider == 'jina' %}selected{% endif %} style="background: #0a0a0a; color: #00FF41;">Jina</option>
-                            <option value="kagi" {% if search_provider == 'kagi' %}selected{% endif %} style="background: #0a0a0a; color: #00FF41;">Kagi</option>
+                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-glow-15-30 outline-none px-4 py-3 text-primary font-mono text-sm transition-all duration-300 appearance-none cursor-pointer">
+                            <option value="duckduckgo" {% if search_provider == 'duckduckgo' %}selected{% endif %} style="background: rgb(var(--c-surface)); color: rgb(var(--c-primary));">DuckDuckGo — no key needed</option>
+                            <option value="brave" {% if search_provider == 'brave' %}selected{% endif %} style="background: rgb(var(--c-surface)); color: rgb(var(--c-primary));">Brave Search</option>
+                            <option value="tavily" {% if search_provider == 'tavily' %}selected{% endif %} style="background: rgb(var(--c-surface)); color: rgb(var(--c-primary));">Tavily</option>
+                            <option value="searxng" {% if search_provider == 'searxng' %}selected{% endif %} style="background: rgb(var(--c-surface)); color: rgb(var(--c-primary));">SearXNG</option>
+                            <option value="jina" {% if search_provider == 'jina' %}selected{% endif %} style="background: rgb(var(--c-surface)); color: rgb(var(--c-primary));">Jina</option>
+                            <option value="kagi" {% if search_provider == 'kagi' %}selected{% endif %} style="background: rgb(var(--c-surface)); color: rgb(var(--c-primary));">Kagi</option>
                         </select>
                     </div>
                     <div id="search-api-key-wrap" class="flex flex-col gap-2">
@@ -90,11 +90,11 @@
                             <span id="brave-test-result" class="text-[10px] font-mono" style="display: none;"></span>
                         </div>
                         <div class="relative">
-                            <input type="password" id="search_api_key" name="search_api_key"
-                                autocomplete="off" data-bwignore="true" data-1p-ignore="true"
+                            <input type="text" id="search_api_key" name="search_api_key"
+                                autocomplete="off" spellcheck="false" data-bwignore="true" data-1p-ignore="true"
                                 data-lpignore="true" data-form-type="other"
                                 value="{{ search_api_key }}"
-                                class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300 pr-10" />
+                                class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-glow-15-30 outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300 pr-10 secret-field" />
                             <button type="button" onclick="toggleReveal(this)"
                                 class="absolute right-3 top-1/2 -translate-y-1/2 text-primary/30 hover:text-primary transition-colors">
                                 <span class="material-symbols-outlined text-[16px]">visibility</span>
@@ -107,7 +107,7 @@
                             SearXNG_Base_URL</label>
                         <input type="text" id="search_base_url" name="search_base_url"
                             value="{{ search_base_url }}" placeholder="https://search.example.com"
-                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-glow-15-30 outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
                     </div>
                     <div class="md:col-span-2 -mt-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                         <div class="text-[10px] text-primary/35 font-mono" id="search-provider-help">
@@ -135,7 +135,7 @@
                                     <div class="relative">
                                         <input type="checkbox" id="image_generation_enabled" name="image_generation_enabled" {% if image_generation_enabled %}checked{% endif %} class="sr-only peer" />
                                         <div class="w-14 h-7 bg-black/60 border border-primary/50 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300"></div>
-                                        <div class="absolute top-[3px] left-[3px] w-5 h-5 bg-primary/40 peer-checked:bg-primary peer-checked:shadow-[0_0_10px_#00FF41] peer-checked:translate-x-7 transition-all duration-300"></div>
+                                        <div class="absolute top-[3px] left-[3px] w-5 h-5 bg-primary/40 peer-checked:bg-primary peer-checked:shadow-glow-10 peer-checked:translate-x-7 transition-all duration-300"></div>
                                     </div>
                                     <span class="text-sm font-bold glow-text uppercase" id="image-generation-label">{{ "ENABLED" if image_generation_enabled else "DISABLED" }}</span>
                                 </label>
@@ -145,110 +145,167 @@
                             <div class="flex flex-col gap-2">
                                 <label for="image_generation_provider" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt; Provider</label>
                                 <input type="text" id="image_generation_provider" name="image_generation_provider" value="{{ image_generation_provider }}"
-                                    class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                                    class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-glow-15-30 outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
                             </div>
                             <div class="flex flex-col gap-2">
                                 <label for="image_generation_model" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt; Model</label>
                                 <input type="text" id="image_generation_model" name="image_generation_model" value="{{ image_generation_model }}"
-                                    class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                                    class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-glow-15-30 outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
                             </div>
                             <div class="flex flex-col gap-2">
                                 <label for="image_generation_default_aspect_ratio" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt; Default_Aspect_Ratio</label>
                                 <input type="text" id="image_generation_default_aspect_ratio" name="image_generation_default_aspect_ratio" value="{{ image_generation_default_aspect_ratio }}"
-                                    class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                                    class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-glow-15-30 outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
                             </div>
                             <div class="flex flex-col gap-2">
                                 <label for="image_generation_default_image_size" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt; Default_Image_Size</label>
                                 <input type="text" id="image_generation_default_image_size" name="image_generation_default_image_size" value="{{ image_generation_default_image_size }}"
-                                    class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                                    class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-glow-15-30 outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
                             </div>
                             <div class="flex flex-col gap-2">
                                 <label for="image_generation_max_images_per_turn" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt; Max_Images_Per_Turn</label>
                                 <input type="number" id="image_generation_max_images_per_turn" name="image_generation_max_images_per_turn" value="{{ image_generation_max_images_per_turn }}" min="1" max="8"
-                                    class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                                    class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-glow-15-30 outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
                             </div>
                             <div class="flex flex-col gap-2">
                                 <label for="image_generation_save_dir" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt; Save_Dir</label>
                                 <input type="text" id="image_generation_save_dir" name="image_generation_save_dir" value="{{ image_generation_save_dir }}"
-                                    class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                                    class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-glow-15-30 outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
                             </div>
                             </div>
                         </div>
                     </div>
-                    <!-- Tool Preset -->
+                    <!-- Tool role (agent/tool_roles.py): which tools the bot has. Exec_Sandbox below decides where. -->
+                    <style>
+                        #tool-dialog { width: min(960px, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); overflow: auto;
+                            padding: 1rem 1.25rem; border: 1px solid rgb(var(--c-primary) / 0.4);
+                            background: rgb(var(--c-surface)); color: rgb(var(--c-primary)); }
+                        #tool-dialog::backdrop { background: rgb(var(--c-canvas) / 0.8); }
+                        /* Theme colours instead of the forms plugin's blue box on white */
+                        #tool-dialog input[type="checkbox"] { color: rgb(var(--c-primary)); background-color: transparent;
+                            border-color: rgb(var(--c-primary) / 0.5); border-radius: 2px; }
+                        #tool-dialog input[type="checkbox"]:checked,
+                        #tool-dialog input[type="checkbox"]:indeterminate { background-color: rgb(var(--c-primary)); border-color: rgb(var(--c-primary)); }
+                        #tool-dialog input[type="checkbox"]:focus { box-shadow: none; outline: 1px solid rgb(var(--c-primary) / 0.6); outline-offset: 1px; }
+                    </style>
+                    <script id="tool-roles-data" type="application/json">{{ tool_role_data | tojson }}</script>
                     <div class="flex flex-col gap-3 md:col-span-2 border-t border-primary/10 pt-4 mt-2">
                         <span class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
-                            Tool_Preset</span>
-                        <div class="flex flex-wrap gap-2">
-                            {% for preset, label, icon in [
-                                ('developer', 'Developer', 'code'),
-                                ('coder', 'Coder', 'terminal'),
-                                ('chatbot', 'Chatbot', 'smart_toy'),
-                                ('custom', 'Custom', 'tune')
-                            ] %}
+                            Tool_Role</span>
+                        <div id="tool-role-cards" class="grid grid-cols-2 md:grid-cols-4 gap-2">
+                            {% for role in tool_roles %}
                             <label
-                                class="flex items-center gap-2 px-3 py-2 border cursor-pointer transition-all duration-300
-                                       {{ 'border-primary bg-primary/15 text-primary' if tool_preset == preset else 'border-primary/20 text-primary/50 hover:border-primary/50' }}">
-                                <input type="radio" name="tool_preset" value="{{ preset }}"
-                                    {{ 'checked' if tool_preset == preset else '' }}
+                                class="flex flex-col gap-1 px-3 py-2 border cursor-pointer transition-all duration-300
+                                       {{ 'border-primary bg-primary/15 text-primary' if tool_role == role.id else 'border-primary/20 text-primary/50 hover:border-primary/50' }}">
+                                <input type="radio" name="tool_preset" value="{{ role.id }}"
+                                    {{ 'checked' if tool_role == role.id else '' }}
                                     class="sr-only" onchange="onToolPresetChange()" />
-                                <span class="material-symbols-outlined text-[14px]">{{ icon }}</span>
-                                <span class="text-[10px] font-bold uppercase tracking-wider">{{ label }}</span>
+                                <span class="flex items-center gap-2">
+                                    <span class="material-symbols-outlined text-[14px]">{{ role.icon }}</span>
+                                    <span class="text-[10px] font-bold uppercase tracking-wider">{{ role.label }}</span>
+                                </span>
+                                <span class="text-[10px] leading-snug opacity-80">{{ role.description }}</span>
                             </label>
                             {% endfor %}
                         </div>
-                        <!-- Preset summary (Developer/Chatbot) -->
-                        <div id="preset-summary" class="{{ 'hidden' if tool_preset == 'custom' else '' }}">
-                            <span id="preset-summary-text" class="text-[10px] text-primary/50 flex items-center gap-1">
-                                <span class="material-symbols-outlined text-[12px]">info</span>
-                                <span id="preset-summary-content-legacy" class="hidden">
-                                    {% if tool_preset == 'chatbot' %}
-                                    Chỉ Message + Web + MCP — File, Exec, Spawn, Cron tắt
-                                    {% elif tool_preset == 'coder' %}
-                                    File, Exec, Web, MCP báº­t â€” Spawn vÃ  Cron táº¯t
-                                    {% else %}
-                                    Tất cả tools bật (File, Exec, Web, Spawn, Cron, MCP)
-                                    {% endif %}
-                                </span>
-                                <span id="preset-summary-content">
-                                    {% if tool_preset == 'chatbot' %}
-                                    Message + Web + MCP only - File, Exec, Spawn, Cron off
-                                    {% elif tool_preset == 'coder' %}
-                                    File, Exec, Web, MCP on - Spawn and Cron off
-                                    {% else %}
-                                    All tools on (File, Exec, Web, Spawn, Cron, MCP)
-                                    {% endif %}
-                                </span>
-                            </span>
+                        <div id="preset-summary" class="text-[10px] text-primary/50 flex items-start gap-1 {{ 'hidden' if tool_role == 'custom' else '' }}">
+                            <span class="material-symbols-outlined text-[12px]">info</span>
+                            <span id="preset-summary-content">{{ tool_role_data.summaries[tool_role] }}</span>
                         </div>
-                        <!-- Custom toggles -->
-                        <div id="preset-custom-toggles" class="{{ '' if tool_preset == 'custom' else 'hidden' }}">
-                            <div class="flex flex-wrap gap-x-6 gap-y-3">
-                                {% for flag, label_text in [
-                                    ('enable_file_tools', 'File Tools'),
-                                    ('enable_web_tools', 'Web Tools'),
-                                    ('enable_spawn', 'Spawn'),
-                                    ('enable_cron', 'Cron'),
-                                    ('enable_mcp', 'MCP Servers')
-                                ] %}
-                                <label class="flex items-center gap-3 cursor-pointer">
-                                    <div class="relative">
-                                        <input type="checkbox" name="{{ flag }}"
-                                            {% if flag == 'enable_file_tools' and enable_file_tools %}checked{% endif %}
-                                            {% if flag == 'enable_web_tools' and enable_web_tools %}checked{% endif %}
-                                            {% if flag == 'enable_spawn' and enable_spawn %}checked{% endif %}
-                                            {% if flag == 'enable_cron' and enable_cron %}checked{% endif %}
-                                            {% if flag == 'enable_mcp' and enable_mcp %}checked{% endif %}
-                                            class="sr-only peer" />
-                                        <div class="w-10 h-5 bg-black/60 border border-primary/30 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300"></div>
-                                        <div class="absolute top-[2px] left-[2px] w-4 h-4 bg-primary/30 peer-checked:bg-primary peer-checked:shadow-[0_0_8px_#00FF41] peer-checked:translate-x-5 transition-all duration-300"></div>
-                                    </div>
-                                    <span class="text-[10px] font-bold uppercase tracking-wider text-primary/60 peer-checked:text-primary">{{ label_text }}</span>
-                                </label>
-                                {% endfor %}
+                        <div id="trader-mode-note" class="text-[10px] text-yellow-400 flex items-center gap-1 {{ '' if tool_role == 'trader' and not trader_mode else 'hidden' }}">
+                            <span class="material-symbols-outlined text-[12px]">warning</span>
+                            Trader Mode đang tắt: vai trò Trader chưa có tool trading cho tới khi bật Trader Mode.
+                        </div>
+                        <!-- Custom role: tools picked one by one in a dialog, saved with the page's Save button -->
+                        <div id="preset-custom-toggles" class="flex flex-wrap items-center gap-3 {{ '' if tool_role == 'custom' else 'hidden' }}">
+                            <button type="button" onclick="openToolDialog()"
+                                class="px-3 py-1.5 border border-primary/40 text-primary/80 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/10 hover:border-primary hover:text-primary transition-all duration-300 flex items-center gap-1">
+                                <span class="material-symbols-outlined text-[14px]">tune</span>
+                                <span>Tuỳ chỉnh chi tiết</span>
+                            </button>
+                            <span class="text-[10px] text-primary/50"><span class="tool-count">{{ custom_selected | length }}</span> tool đang bật, chưa kể tool MCP</span>
+                        </div>
+                        <dialog id="tool-dialog" aria-labelledby="tool-dialog-title">
+                            <input type="hidden" name="custom_tools_present" value="1" />
+                            <input type="hidden" name="custom_tool" value="message" />
+                            <div class="flex items-center justify-between gap-3 border-b border-primary/20 pb-3">
+                                <h3 id="tool-dialog-title" class="text-xs font-bold uppercase tracking-widest">Tuỳ chỉnh chi tiết</h3>
+                                <button type="button" onclick="closeToolDialog()" aria-label="Đóng"
+                                    class="px-1.5 py-1 text-primary/60 hover:text-primary hover:bg-primary/10 transition-all">
+                                    <span class="material-symbols-outlined text-[18px]">close</span>
+                                </button>
                             </div>
-                            <span class="text-[9px] text-primary/30 mt-1 block">Exec kiểm soát bởi Sandbox bên dưới. Message luôn bật.</span>
-                        </div>
+                            <div class="flex flex-wrap items-center gap-2 py-3">
+                                <label for="tool-dialog-start" class="text-[10px] font-bold uppercase tracking-wider text-primary/70">Bắt đầu từ vai trò</label>
+                                <select id="tool-dialog-start"
+                                    class="bg-black/60 border border-primary/30 focus:border-primary outline-none px-2 py-1 text-primary text-[11px]">
+                                    {% for role in tool_roles if role.id != 'custom' %}
+                                    <option value="{{ role.id }}">{{ role.label }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button type="button" onclick="fillToolsFromRole()"
+                                    class="px-2 py-1 border border-primary/40 text-primary/70 text-[9px] font-bold uppercase tracking-wider hover:bg-primary/10 hover:border-primary hover:text-primary transition-all duration-300">
+                                    Điền theo vai trò
+                                </button>
+                            </div>
+                            <div class="grid md:grid-cols-2 gap-3">
+                                {% for title, note, tools in tool_sections %}
+                                <fieldset class="tool-section border border-primary/20 px-3 py-2">
+                                    <legend class="px-1">
+                                        <label class="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider cursor-pointer">
+                                            <input type="checkbox" class="tool-section-toggle" onchange="toggleToolSection(this)" />
+                                            <span>{{ title }}</span>
+                                        </label>
+                                    </legend>
+                                    {% for tool, desc in tools %}
+                                    <label class="flex items-center gap-2 py-0.5 cursor-pointer text-[11px]">
+                                        <input type="checkbox" name="custom_tool" value="{{ tool }}"
+                                            {{ 'checked' if tool in custom_selected else '' }} onchange="updateToolCount()" />
+                                        <code class="text-primary/90">{{ tool }}</code>
+                                        <span class="text-primary/50">{{ desc }}</span>
+                                    </label>
+                                    {% endfor %}
+                                    {% if note %}<p class="text-[9px] text-primary/40 mt-1">{{ note }}</p>{% endif %}
+                                    {% if title == 'Trading' %}<p class="text-[9px] text-primary/40">Trader Mode đang {{ 'bật' if trader_mode else 'tắt' }}.</p>{% endif %}
+                                </fieldset>
+                                {% endfor %}
+                                <fieldset class="border border-primary/20 px-3 py-2">
+                                    <legend class="px-1 text-[10px] font-bold uppercase tracking-wider">Giao tiếp</legend>
+                                    <label class="flex items-center gap-2 py-0.5 text-[11px] opacity-70">
+                                        <input type="checkbox" checked disabled />
+                                        <code class="text-primary/90">message</code>
+                                        <span class="text-primary/50">Gửi tin, gửi tệp (luôn bật)</span>
+                                    </label>
+                                    <p class="text-[9px] text-primary/40 mt-1">Tạo ảnh bật/tắt ở mục Image_Generation phía trên.</p>
+                                </fieldset>
+                                <fieldset class="border border-primary/20 px-3 py-2">
+                                    <legend class="px-1">
+                                        <label class="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider cursor-pointer">
+                                            <input type="checkbox" name="enable_mcp" {{ 'checked' if enable_mcp else '' }} />
+                                            <span>MCP servers</span>
+                                        </label>
+                                    </legend>
+                                    <input type="hidden" name="custom_mcp_present" value="1" />
+                                    {% for server in custom_mcp_servers %}
+                                    <label class="flex items-center gap-2 py-0.5 cursor-pointer text-[11px]">
+                                        <input type="checkbox" name="custom_mcp" value="{{ server.name }}" {{ 'checked' if server.visible else '' }} />
+                                        <code class="text-primary/90">{{ server.name }}</code>
+                                        {% if not server.enabled %}<span class="text-primary/40">(server đang tắt)</span>{% endif %}
+                                    </label>
+                                    {% else %}
+                                    <p class="text-[10px] text-primary/40">Chưa có MCP server nào.</p>
+                                    {% endfor %}
+                                    <p class="text-[9px] text-primary/40 mt-1">Chọn server nào hiện tool trong vai trò Tuỳ chỉnh. Các vai trò khác không đổi.</p>
+                                </fieldset>
+                            </div>
+                            <div class="flex flex-wrap items-center justify-between gap-3 border-t border-primary/20 pt-3 mt-3">
+                                <span class="text-[10px] text-primary/60"><span class="tool-count">{{ custom_selected | length }}</span> tool đang bật, chưa kể tool MCP. Bấm Save ở cuối trang để lưu.</span>
+                                <button type="button" onclick="closeToolDialog()"
+                                    class="px-3 py-1.5 border border-primary text-primary text-[10px] font-bold uppercase tracking-wider hover:bg-primary/10 transition-all duration-300">
+                                    Xong
+                                </button>
+                            </div>
+                        </dialog>
                     </div>
                     <!-- Exec Sandbox -->
                     <div class="flex flex-col gap-3 md:col-span-2 border-t border-primary/10 pt-4 mt-2">

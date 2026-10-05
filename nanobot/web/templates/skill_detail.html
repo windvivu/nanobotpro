@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 
-{% block title %}{{ name }} — Skills — Nanobot OS{% endblock %}
+{% block title %}{{ name }} — {{ tr('nav.skills') }} — Nanobot OS{% endblock %}
 
 {% block content %}
 <!-- Sidebar -->
 <aside class="w-full lg:w-72 flex flex-col gap-6">
-    <div class="matrix-card p-6 flex flex-col items-center text-center gap-4">
+    <div class="ui-card p-6 flex flex-col items-center text-center gap-4">
         <div
             class="w-20 h-20 flex items-center justify-center text-primary glow-text border-2 border-primary/30 rounded-full relative">
             <div class="absolute inset-0 border border-primary animate-pulse rounded-full opacity-20"></div>
@@ -27,7 +27,7 @@
 <div class="flex-1 flex flex-col gap-4">
 
     <!-- Header -->
-    <div class="matrix-card p-4 flex items-center justify-between gap-3">
+    <div class="ui-card p-4 flex items-center justify-between gap-3">
         <div class="flex items-center gap-3">
             <span class="material-symbols-outlined glow-text text-sm">description</span>
             <h3 class="text-xs font-bold uppercase tracking-widest glow-text">SKILL.md</h3>
@@ -60,19 +60,19 @@
     </div>
 
     <!-- Content -->
-    <div class="matrix-card p-4">
+    <div class="ui-card p-4">
         {% if has_workspace %}
         <textarea id="skill-content" spellcheck="false"
             class="w-full text-xs text-primary/90 bg-transparent font-mono leading-relaxed resize-none outline-none overflow-y-auto"
-            style="height: calc(100vh - 280px); scrollbar-width: thin; scrollbar-color: #00FF41 transparent;">{{ content }}</textarea>
+            style="height: calc(100vh - 280px); scrollbar-width: thin; scrollbar-color: rgb(var(--c-primary)) transparent;">{{ content }}</textarea>
         {% else %}
         <pre class="text-xs text-primary/80 font-mono leading-relaxed whitespace-pre-wrap break-words overflow-y-auto"
-            style="max-height: calc(100vh - 280px); scrollbar-width: thin; scrollbar-color: #00FF41 transparent;">{{ content }}</pre>
+            style="max-height: calc(100vh - 280px); scrollbar-width: thin; scrollbar-color: rgb(var(--c-primary)) transparent;">{{ content }}</pre>
         {% endif %}
     </div>
 
     <!-- Terminal Footer -->
-    <div class="matrix-card p-4 font-mono text-[11px] leading-tight space-y-1 mt-auto">
+    <div class="ui-card p-4 font-mono text-[11px] leading-tight space-y-1 mt-auto">
         <div class="flex gap-2">
             <span class="text-primary/40">[SKL]</span>
             <span class="text-primary">Loaded: {{ name }}/SKILL.md</span>
@@ -104,7 +104,7 @@
         position: fixed;
         inset: 0;
         z-index: 9999;
-        background: rgba(0, 0, 0, 0.75);
+        background: rgb(var(--c-black) / 0.75);
         backdrop-filter: blur(4px);
         align-items: center;
         justify-content: center;
@@ -113,9 +113,9 @@
         display: flex;
     }
     #skill-modal .modal-box {
-        border: 1px solid var(--color-primary, #00FF41);
-        box-shadow: 0 0 24px rgba(0,255,65,0.2);
-        background: #0a0a0a;
+        border: 1px solid var(--color-primary, rgb(var(--c-primary)));
+        box-shadow: 0 0 24px rgb(var(--c-accent) / calc(0.2 * var(--glow)));
+        background: rgb(var(--c-surface));
         min-width: 320px;
         max-width: 440px;
         animation: modal-in 0.15s ease;

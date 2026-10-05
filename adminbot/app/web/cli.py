@@ -25,4 +25,9 @@ def start_web(port: int = 8900, host: str = "127.0.0.1") -> None:
             timeout_graceful_shutdown=3,
         )
     )
-    server.run()
+    try:
+        server.run()
+    except KeyboardInterrupt:
+        # Ctrl+C: uvicorn has already shut down cleanly ("Finished server process")
+        # and re-raises the signal for its caller; uvicorn.run() swallows it too.
+        pass

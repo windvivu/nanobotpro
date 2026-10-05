@@ -13,7 +13,7 @@
         }
         if (result) {
             result.style.display = 'inline';
-            result.innerHTML = '<span style="color: #00FF41;">⟳ Saving...</span>';
+            result.innerHTML = '<span style="color: rgb(var(--c-primary));">⟳ Saving...</span>';
         }
 
         try {
@@ -27,15 +27,15 @@
             });
             const data = await response.json();
             if (data.success) {
-                if (result) result.innerHTML = '<span style="color: #00FF41;">✓ ' + (data.message || 'Configuration saved') + '</span>';
+                if (result) result.innerHTML = '<span style="color: rgb(var(--c-primary));">✓ ' + (data.message || 'Configuration saved') + '</span>';
                 const pwd = document.getElementById('web_password');
                 if (pwd) pwd.dataset.original = pwd.value || '';
                 refreshEffectiveRoute();
             } else {
-                if (result) result.innerHTML = '<span style="color: #ff6b6b;">✗ ' + (data.error || 'Save failed') + '</span>';
+                if (result) result.innerHTML = '<span style="color: rgb(var(--c-danger-soft));">✗ ' + (data.error || 'Save failed') + '</span>';
             }
         } catch (e) {
-            if (result) result.innerHTML = '<span style="color: #ff6b6b;">✗ Network error</span>';
+            if (result) result.innerHTML = '<span style="color: rgb(var(--c-danger-soft));">✗ Network error</span>';
         } finally {
             if (btn) {
                 btn.disabled = false;
@@ -63,39 +63,18 @@
             }
         });
     }
-    // ── Tool Preset ──
+    // ── Tool role (agent/tool_roles.py) ──
+    const TOOL_ROLE_DATA = (() => {
+        try { return JSON.parse(document.getElementById('tool-roles-data')?.textContent || '{}'); }
+        catch (e) { return {}; }
+    })();
     function onToolPresetChange() {
-        const preset = document.querySelector('input[name="tool_preset"]:checked')?.value || 'developer';
-        const summary = document.getElementById('preset-summary');
-        const toggles = document.getElementById('preset-custom-toggles');
-        if (preset === 'custom') {
-            if (summary) summary.classList.add('hidden');
-            if (toggles) toggles.classList.remove('hidden');
-        } else {
-            if (summary) summary.classList.remove('hidden');
-            if (toggles) toggles.classList.add('hidden');
-            /* legacy summary removed
-                const summaryText = {
-                    chatbot: 'Chá»‰ Message + Web + MCP â€” File, Exec, Spawn, Cron táº¯t',
-                    coder: 'File, Exec, Web, MCP báº­t â€” Spawn vÃ  Cron táº¯t',
-                    developer: 'Táº¥t cáº£ tools báº­t (File, Exec, Web, Spawn, Cron, MCP)',
-                };
-                content.textContent = summaryText[preset] || summaryText.developer;
-            } else if (false) {
-                content.textContent = preset === 'chatbot'
-                    ? 'Chỉ Message + Web + MCP — File, Exec, Spawn, Cron tắt'
-                    : 'Tất cả tools bật (File, Exec, Web, Spawn, Cron, MCP)';
-            */
-        }
-        const liveContent = document.getElementById('preset-summary-content');
-        if (preset !== 'custom' && liveContent) {
-            const liveSummaryText = {
-                chatbot: 'Message + Web + MCP only - File, Exec, Spawn, Cron off',
-                coder: 'File, Exec, Web, MCP on - Spawn and Cron off',
-                developer: 'All tools on (File, Exec, Web, Spawn, Cron, MCP)',
-            };
-            liveContent.textContent = liveSummaryText[preset] || liveSummaryText.developer;
-        }
+        const role = document.querySelector('input[name="tool_preset"]:checked')?.value || 'full';
+        document.getElementById('preset-summary')?.classList.toggle('hidden', role === 'custom');
+        document.getElementById('preset-custom-toggles')?.classList.toggle('hidden', role !== 'custom');
+        const content = document.getElementById('preset-summary-content');
+        if (content && TOOL_ROLE_DATA.summaries) content.textContent = TOOL_ROLE_DATA.summaries[role] || '';
+        document.getElementById('trader-mode-note')?.classList.toggle('hidden', !(role === 'trader' && !TOOL_ROLE_DATA.traderMode));
         document.querySelectorAll('input[name="tool_preset"]').forEach(radio => {
             const lbl = radio.closest('label');
             if (!lbl) return;
@@ -108,6 +87,45 @@
             }
         });
     }
+    // The custom dialog: tools picked one by one, saved with the page's Save button
+    function openToolDialog() {
+        const dialog = document.getElementById('tool-dialog');
+        if (dialog && !dialog.open) dialog.showModal();
+        updateToolCount();
+    }
+    function closeToolDialog() {
+        document.getElementById('tool-dialog')?.close();
+    }
+    function toolBoxes() {
+        return [...document.querySelectorAll('#tool-dialog input[name="custom_tool"][type="checkbox"]')];
+    }
+    function updateToolCount() {
+        const count = toolBoxes().filter((box) => box.checked).length + 1;  // + message, always on
+        document.querySelectorAll('.tool-count').forEach((el) => { el.textContent = count; });
+        document.querySelectorAll('#tool-dialog .tool-section').forEach((section) => {
+            const boxes = [...section.querySelectorAll('input[name="custom_tool"]')];
+            const toggle = section.querySelector('.tool-section-toggle');
+            if (!toggle || !boxes.length) return;
+            const on = boxes.filter((box) => box.checked).length;
+            toggle.checked = on === boxes.length;
+            toggle.indeterminate = on > 0 && on < boxes.length;
+        });
+    }
+    function toggleToolSection(toggle) {
+        toggle.closest('.tool-section').querySelectorAll('input[name="custom_tool"]').forEach((box) => {
+            box.checked = toggle.checked;
+        });
+        updateToolCount();
+    }
+    function fillToolsFromRole() {
+        const role = document.getElementById('tool-dialog-start')?.value;
+        const tools = new Set((TOOL_ROLE_DATA.tools || {})[role] || []);
+        toolBoxes().forEach((box) => { box.checked = tools.has(box.value); });
+        const mcp = document.querySelector('#tool-dialog input[name="enable_mcp"]');
+        if (mcp) mcp.checked = (TOOL_ROLE_DATA.mcp || {})[role] !== false;
+        updateToolCount();
+    }
+    updateToolCount();
     let _adIdx = {{ allowed_dirs | length }};
     function addAllowedDir() {
         const list = document.getElementById('allowed-dirs-list');
@@ -136,10 +154,10 @@
     function _setValidated(input, valid, btnEl) {
         input.dataset.validated = valid ? 'true' : 'false';
         if (valid) {
-            input.style.borderColor = '#00FF41';
-            input.style.boxShadow = '0 0 8px rgba(0,255,65,0.2)';
+            input.style.borderColor = 'rgb(var(--c-primary))';
+            input.style.boxShadow = '0 0 8px rgb(var(--c-accent) / calc(0.2 * var(--glow)))';
         } else {
-            input.style.borderColor = '#ff6b6b';
+            input.style.borderColor = 'rgb(var(--c-danger-soft))';
             input.style.boxShadow = '0 0 8px rgba(255,107,107,0.2)';
         }
         // Update the check button appearance
@@ -147,17 +165,17 @@
             const iconEl = btnEl.querySelector('.material-symbols-outlined');
             if (iconEl) {
                 iconEl.textContent = valid ? 'check_circle' : 'error';
-                iconEl.style.color = valid ? '#00FF41' : '#ff6b6b';
+                iconEl.style.color = valid ? 'rgb(var(--c-primary))' : 'rgb(var(--c-danger-soft))';
             }
             // Update button border & bg
             if (valid) {
-                btnEl.style.borderColor = '#00FF41';
-                btnEl.style.background = 'rgba(0,255,65,0.1)';
-                btnEl.style.color = '#00FF41';
+                btnEl.style.borderColor = 'rgb(var(--c-primary))';
+                btnEl.style.background = 'rgb(var(--c-primary) / 0.1)';
+                btnEl.style.color = 'rgb(var(--c-primary))';
             } else {
-                btnEl.style.borderColor = '#ff6b6b';
+                btnEl.style.borderColor = 'rgb(var(--c-danger-soft))';
                 btnEl.style.background = 'rgba(255,107,107,0.1)';
-                btnEl.style.color = '#ff6b6b';
+                btnEl.style.color = 'rgb(var(--c-danger-soft))';
             }
         }
     }
@@ -197,12 +215,12 @@
         if (!subdir) {
             _setValidated(input, true, btn);
             result.style.display = 'inline';
-            result.innerHTML = '<span style="color: #00FF41;">✓ Mặc định sandbox root</span>';
+            result.innerHTML = '<span style="color: rgb(var(--c-primary));">✓ Mặc định sandbox root</span>';
             return;
         }
         const fullPath = '{{ workspace }}' + '/sandbox/' + subdir;
         result.style.display = 'inline';
-        result.innerHTML = '<span style="color: #00FF41;">⟳ ...</span>';
+        result.innerHTML = '<span style="color: rgb(var(--c-primary));">⟳ ...</span>';
         try {
             const resp = await fetch('/config/check-path', {
                 method: 'POST',
@@ -213,14 +231,14 @@
             if (data.valid) {
                 _setValidated(input, true, btn);
                 const note = data.exists ? '✓ Hợp lệ (đã tồn tại)' : '✓ Hợp lệ (sẽ tự tạo)';
-                result.innerHTML = '<span style="color: #00FF41;">' + note + '</span>';
+                result.innerHTML = '<span style="color: rgb(var(--c-primary));">' + note + '</span>';
             } else {
                 _setValidated(input, false, btn);
-                result.innerHTML = '<span style="color: #ff6b6b;">✗ ' + data.error + '</span>';
+                result.innerHTML = '<span style="color: rgb(var(--c-danger-soft));">✗ ' + data.error + '</span>';
             }
         } catch (e) {
             _setValidated(input, false, btn);
-            result.innerHTML = '<span style="color: #ff6b6b;">✗ Lỗi kết nối</span>';
+            result.innerHTML = '<span style="color: rgb(var(--c-danger-soft));">✗ Lỗi kết nối</span>';
         }
     }
 
@@ -260,16 +278,94 @@
         }
     })();
 
-    // Reveal/hide password fields
+    // Secret fields (API keys, tokens, dashboard password) are type="text" masked by the shared
+    // .secret-field CSS rule, so password managers do not mistake this form for a login and keep
+    // offering to "save this login" on every page. Browsers without CSS masking keep the password input type.
+    const SECRET_MASK_SUPPORTED = !!(window.CSS && CSS.supports('-webkit-text-security', 'disc'));
+    if (!SECRET_MASK_SUPPORTED) {
+        document.querySelectorAll('input.secret-field').forEach(function (input) { input.type = 'password'; });
+    }
+    function isSecretRevealed(input) {
+        return SECRET_MASK_SUPPORTED ? input.classList.contains('is-revealed') : input.type !== 'password';
+    }
+    function setSecretRevealed(input, revealed) {
+        if (!input) return;
+        if (SECRET_MASK_SUPPORTED) {
+            input.classList.toggle('is-revealed', revealed);
+        } else {
+            input.type = revealed ? 'text' : 'password';
+        }
+    }
+
+    // Reveal/hide secret fields
     function toggleReveal(btn) {
         const input = btn.parentElement.querySelector('input');
         const icon = btn.querySelector('.material-symbols-outlined');
-        if (input.type === 'password') {
-            input.type = 'text';
-            icon.textContent = 'visibility_off';
-        } else {
-            input.type = 'password';
-            icon.textContent = 'visibility';
+        const revealed = !isSecretRevealed(input);
+        setSecretRevealed(input, revealed);
+        icon.textContent = revealed ? 'visibility_off' : 'visibility';
+    }
+
+    // ── Voice in Web Chat (Gateway Configuration) ──
+    // Under the recognition choice only what belongs to it shows: its description and, for Groq, the
+    // key field and the missing-key warning.
+    function voiceChoiceChanged() {
+        const choice = document.getElementById('voice_recognition').value;
+        document.querySelectorAll('[data-voice-for]').forEach((el) => el.classList.toggle('hidden', el.dataset.voiceFor !== choice));
+        const warning = document.getElementById('voice-groq-warning');
+        if (warning && document.getElementById('voice_groq_key').value.trim()) warning.classList.add('hidden');
+    }
+
+    // The key typed here is the Groq key of Accounts: keep that section's form field and card in step
+    function voiceGroqKeyChanged(input) {
+        const key = input.value.trim();
+        const hidden = document.getElementById('hidden-key-groq');
+        if (hidden) hidden.value = key;
+        if (typeof _providerData !== 'undefined' && _providerData.groq) _providerData.groq.key = key;
+        const card = document.getElementById('active-provider-key');
+        if (card && typeof _activeProvider !== 'undefined' && _activeProvider === 'groq') card.value = key;
+        voiceChoiceChanged();
+    }
+
+    // ...and a key changed in Accounts meanwhile shows here
+    function voiceGroqKeyFocus(input) {
+        const hidden = document.getElementById('hidden-key-groq');
+        if (hidden && hidden.value !== input.value.trim()) input.value = hidden.value;
+    }
+
+    // Test: the server asks Groq whether the key works (POST /config/test-voice-key). A key that
+    // works is saved at once, as the Test button in Accounts does.
+    async function testVoiceGroqKey() {
+        const input = document.getElementById('voice_groq_key');
+        const btn = document.getElementById('voice-groq-test');
+        const result = document.getElementById('voice-groq-result');
+        const show = (text, tone) => {
+            result.textContent = text;
+            result.className = 'text-[10px] font-mono ' + tone;
+        };
+        const key = input.value.trim();
+        if (!key) return show('✗ Chưa nhập key', 'text-red-400');
+        btn.disabled = true;
+        show('Đang thử key…', 'text-primary/60');
+        try {
+            const resp = await fetch('/config/test-voice-key', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ api_key: key }),
+            });
+            const data = await resp.json();
+            if (!data.success) {
+                return show((data.key_valid ? '⚠ ' : '✗ ') + (data.error || 'Không thử được key'), data.key_valid ? 'text-yellow-400' : 'text-red-400');
+            }
+            const base = document.getElementById('hidden-base-groq');
+            const saved = await autoSaveProvider('groq', key, base ? base.value : '');
+            const choiceSaved = document.getElementById('voice_recognition').dataset.saved === 'groq';
+            show('✓ ' + data.message + (saved ? '. Đã lưu key' : '. Chưa lưu được key, hãy bấm Save Configuration')
+                + (choiceSaved ? '.' : '; bấm Save Configuration để lưu lựa chọn Groq.'), 'text-primary');
+        } catch (e) {
+            show('✗ Không thử được key: ' + e.message, 'text-red-400');
+        } finally {
+            btn.disabled = false;
         }
     }
 
@@ -291,7 +387,7 @@
         'search_api_key': 'API key cho provider search đã chọn. Nút Test hiện hỗ trợ Brave Search và Tavily trong dashboard.',
         'search_base_url': 'Base URL của instance SearXNG, ví dụ: https://search.example.com.',
         'sandbox_mode': '3 chế độ: Không hạn chế (bot toàn quyền), Giới hạn workspace (bot chỉ làm việc trong workspace), Whitelist (workspace + các thư mục chỉ định).',
-        'tool_preset': '4 preset: Developer (all tools on), Coder (Spawn/Cron off), Chatbot (safe public mode), Custom (per-group toggles).',
+        'tool_preset': 'Vai trò quyết định bot có tool gì: Chatbot, Trợ lý, Coder, Super coder, Trader, Toàn quyền (Developer cũ), hoặc Tuỳ chỉnh từng tool. Bot được đụng vào đâu thì do Exec_Sandbox quyết định.',
         'heartbeat_enabled': 'Cho bot tự "thức dậy" định kỳ để thực hiện các nhiệm vụ được viết trong file HEARTBEAT.md (giám sát, nhắc nhở...). ⚠ Khi bật, mỗi lần tick sẽ gọi LLM (~300 tokens) dù không có task.',
         'heartbeat_interval': 'Khoảng thời gian (giây) giữa các lần heartbeat. Ví dụ: 3600 = mỗi 1 giờ.',
         'web_port': 'Cổng mạng cho Web Dashboard. Mặc định: 8899. Truy cập: http://localhost:<port>',
@@ -626,7 +722,7 @@
         }
         if (result) {
             result.style.display = 'inline';
-            result.innerHTML = '<span style="color: #00FF41;">⟳ Saving...</span>';
+            result.innerHTML = '<span style="color: rgb(var(--c-primary));">⟳ Saving...</span>';
         }
         try {
             const resp = await fetch('/config/save-search-provider', {
@@ -636,12 +732,12 @@
             });
             const data = await resp.json();
             if (data.success) {
-                if (result) result.innerHTML = '<span style="color: #00FF41;">✓ ' + (data.message || 'Saved') + '</span>';
+                if (result) result.innerHTML = '<span style="color: rgb(var(--c-primary));">✓ ' + (data.message || 'Saved') + '</span>';
             } else {
-                if (result) result.innerHTML = '<span style="color: #ff6b6b;">✗ ' + (data.error || 'Save failed') + '</span>';
+                if (result) result.innerHTML = '<span style="color: rgb(var(--c-danger-soft));">✗ ' + (data.error || 'Save failed') + '</span>';
             }
         } catch (e) {
-            if (result) result.innerHTML = '<span style="color: #ff6b6b;">✗ Network error</span>';
+            if (result) result.innerHTML = '<span style="color: rgb(var(--c-danger-soft));">✗ Network error</span>';
         } finally {
             if (btn) {
                 btn.disabled = false;
@@ -662,7 +758,7 @@
 
         if (!key) {
             result.style.display = 'inline';
-            result.innerHTML = '<span style="color: #ff6b6b;">✗ Key trống</span>';
+            result.innerHTML = '<span style="color: rgb(var(--c-danger-soft));">✗ Key trống</span>';
             return;
         }
 
@@ -670,7 +766,7 @@
         btn.disabled = true;
         btn.style.opacity = '0.5';
         result.style.display = 'inline';
-        result.innerHTML = '<span style="color: #00FF41;">⟳ Testing...</span>';
+        result.innerHTML = '<span style="color: rgb(var(--c-primary));">⟳ Testing...</span>';
 
         try {
             const resp = await fetch('/config/test-search-provider', {
@@ -680,12 +776,12 @@
             });
             const data = await resp.json();
             if (data.success) {
-                result.innerHTML = '<span style="color: #00FF41;">✓ ' + data.message + '</span>';
+                result.innerHTML = '<span style="color: rgb(var(--c-primary));">✓ ' + data.message + '</span>';
             } else {
-                result.innerHTML = '<span style="color: #ff6b6b;">✗ ' + data.error + '</span>';
+                result.innerHTML = '<span style="color: rgb(var(--c-danger-soft));">✗ ' + data.error + '</span>';
             }
         } catch (e) {
-            result.innerHTML = '<span style="color: #ff6b6b;">✗ Connection error</span>';
+            result.innerHTML = '<span style="color: rgb(var(--c-danger-soft));">✗ Connection error</span>';
         } finally {
             btn.disabled = false;
             btn.style.opacity = '1';
@@ -701,14 +797,14 @@
 
         if (!token) {
             result.style.display = 'inline';
-            result.innerHTML = '<span style="color: #ff6b6b;">✗ Token trống</span>';
+            result.innerHTML = '<span style="color: rgb(var(--c-danger-soft));">✗ Token trống</span>';
             return;
         }
 
         btn.disabled = true;
         btn.style.opacity = '0.5';
         result.style.display = 'inline';
-        result.innerHTML = '<span style="color: #00FF41;">⟳ Testing...</span>';
+        result.innerHTML = '<span style="color: rgb(var(--c-primary));">⟳ Testing...</span>';
 
         try {
             const resp = await fetch('/config/test-telegram-token', {
@@ -718,15 +814,15 @@
             });
             const data = await resp.json();
             if (data.success) {
-                result.innerHTML = '<span style="color: #00FF41;">✓ ' + data.message + '</span>';
+                result.innerHTML = '<span style="color: rgb(var(--c-primary));">✓ ' + data.message + '</span>';
                 setTimeout(() => {
                     document.querySelector('form[action="/config"]').submit();
                 }, 800);
             } else {
-                result.innerHTML = '<span style="color: #ff6b6b;">✗ ' + data.error + '</span>';
+                result.innerHTML = '<span style="color: rgb(var(--c-danger-soft));">✗ ' + data.error + '</span>';
             }
         } catch (err) {
-            result.innerHTML = '<span style="color: #ff6b6b;">✗ Network error</span>';
+            result.innerHTML = '<span style="color: rgb(var(--c-danger-soft));">✗ Network error</span>';
         } finally {
             btn.disabled = false;
             btn.style.opacity = '1';
@@ -836,15 +932,15 @@
     async function codexSubmitCallback() {
         const callbackUrl = (document.getElementById('codex-callback-url') ? document.getElementById('codex-callback-url').value : '').trim();
         const result = document.getElementById('codex-callback-result');
-        if (!callbackUrl) { if (result) { result.style.display='block'; result.innerHTML='<span style="color:#ff6b6b">✗ Paste callback URL trước</span>'; } return; }
-        if (!_codexSessionId) { if (result) { result.style.display='block'; result.innerHTML='<span style="color:#ff6b6b">✗ Session hết hạn, nhấn Generate lại</span>'; } return; }
-        if (result) { result.style.display='block'; result.innerHTML='<span style="color:#00FF41">⟳ Đang xác nhận...</span>'; }
+        if (!callbackUrl) { if (result) { result.style.display='block'; result.innerHTML='<span style="color:rgb(var(--c-danger-soft))">✗ Paste callback URL trước</span>'; } return; }
+        if (!_codexSessionId) { if (result) { result.style.display='block'; result.innerHTML='<span style="color:rgb(var(--c-danger-soft))">✗ Session hết hạn, nhấn Generate lại</span>'; } return; }
+        if (result) { result.style.display='block'; result.innerHTML='<span style="color:rgb(var(--c-primary))">⟳ Đang xác nhận...</span>'; }
         try {
             const r = await fetch('/oauth/codex/callback', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ session_id: _codexSessionId, callback_url: callbackUrl }) });
             const d = await r.json();
-            if (d.success) { if (result) result.innerHTML='<span style="color:#00FF41">✓ Đăng nhập thành công!</span>'; setTimeout(function() { codexCheckStatus(); }, 800); }
-            else { if (result) result.innerHTML='<span style="color:#ff6b6b">✗ ' + (d.error || 'Lỗi không xác định') + '</span>'; }
-        } catch (e) { if (result) result.innerHTML='<span style="color:#ff6b6b">✗ Network error</span>'; }
+            if (d.success) { if (result) result.innerHTML='<span style="color:rgb(var(--c-primary))">✓ Đăng nhập thành công!</span>'; setTimeout(function() { codexCheckStatus(); }, 800); }
+            else { if (result) result.innerHTML='<span style="color:rgb(var(--c-danger-soft))">✗ ' + (d.error || 'Lỗi không xác định') + '</span>'; }
+        } catch (e) { if (result) result.innerHTML='<span style="color:rgb(var(--c-danger-soft))">✗ Network error</span>'; }
     }
     async function codexLogout() {
         await fetch('/oauth/codex/logout', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
@@ -931,17 +1027,17 @@
     }
     async function xaiStartLogin() {
         const result = document.getElementById('xai-callback-result');
-        if (result) { result.style.display='block'; result.innerHTML='<span style="color:#00FF41">⟳ Generating xAI URL...</span>'; }
+        if (result) { result.style.display='block'; result.innerHTML='<span style="color:rgb(var(--c-primary))">⟳ Generating xAI URL...</span>'; }
         try {
             const r = await fetch('/oauth/xai/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
             const d = await r.json();
-            if (!d.success) { if (result) result.innerHTML='<span style="color:#ff6b6b">✗ ' + (d.error || 'Failed') + '</span>'; return; }
+            if (!d.success) { if (result) result.innerHTML='<span style="color:rgb(var(--c-danger-soft))">✗ ' + (d.error || 'Failed') + '</span>'; return; }
             _xaiSessionId = d.session_id;
             const urlEl = document.getElementById('xai-auth-url');
             if (urlEl) urlEl.value = d.url;
             const step = document.getElementById('xai-url-step');
             if (step) step.classList.remove('hidden');
-            if (result) result.innerHTML='<span style="color:#00FF41">✓ URL generated. Paste callback URL or displayed code below.</span>';
+            if (result) result.innerHTML='<span style="color:rgb(var(--c-primary))">✓ URL generated. Paste callback URL or displayed code below.</span>';
             showOAuthFlowModal({
                 title: 'XAI OAUTH LOGIN',
                 subtitle: 'SYS.OAUTH.XAI',
@@ -969,7 +1065,7 @@
                     }
                 },
             });
-        } catch (e) { if (result) result.innerHTML='<span style="color:#ff6b6b">✗ Network error</span>'; }
+        } catch (e) { if (result) result.innerHTML='<span style="color:rgb(var(--c-danger-soft))">✗ Network error</span>'; }
     }
     function xaiCopyUrl() {
         const url = document.getElementById('xai-auth-url') ? document.getElementById('xai-auth-url').value : '';
@@ -978,18 +1074,18 @@
     async function xaiSubmitCallback() {
         const callbackUrl = (document.getElementById('xai-callback-url') ? document.getElementById('xai-callback-url').value : '').trim();
         const result = document.getElementById('xai-callback-result');
-        if (!callbackUrl) { if (result) { result.style.display='block'; result.innerHTML='<span style="color:#ff6b6b">✗ Paste callback URL or displayed code first</span>'; } return; }
-        if (!_xaiSessionId) { if (result) { result.style.display='block'; result.innerHTML='<span style="color:#ff6b6b">✗ Session expired, generate URL again</span>'; } return; }
-        if (result) { result.style.display='block'; result.innerHTML='<span style="color:#00FF41">⟳ Confirming...</span>'; }
+        if (!callbackUrl) { if (result) { result.style.display='block'; result.innerHTML='<span style="color:rgb(var(--c-danger-soft))">✗ Paste callback URL or displayed code first</span>'; } return; }
+        if (!_xaiSessionId) { if (result) { result.style.display='block'; result.innerHTML='<span style="color:rgb(var(--c-danger-soft))">✗ Session expired, generate URL again</span>'; } return; }
+        if (result) { result.style.display='block'; result.innerHTML='<span style="color:rgb(var(--c-primary))">⟳ Confirming...</span>'; }
         try {
             const r = await fetch('/oauth/xai/callback', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ session_id: _xaiSessionId, callback_url: callbackUrl }) });
             const d = await r.json();
             if (d.success) {
-                const warn = d.state_verified ? '' : ' <span style="color:#facc15">Bare code used; state was not verified.</span>';
-                if (result) result.innerHTML='<span style="color:#00FF41">✓ xAI OAuth login successful.</span>' + warn;
+                const warn = d.state_verified ? '' : ' <span style="color:rgb(var(--c-warning))">Bare code used; state was not verified.</span>';
+                if (result) result.innerHTML='<span style="color:rgb(var(--c-primary))">✓ xAI OAuth login successful.</span>' + warn;
                 setTimeout(function() { xaiCheckStatus(); }, 800);
-            } else { if (result) result.innerHTML='<span style="color:#ff6b6b">✗ ' + (d.error || 'Unknown error') + '</span>'; }
-        } catch (e) { if (result) result.innerHTML='<span style="color:#ff6b6b">✗ Network error</span>'; }
+            } else { if (result) result.innerHTML='<span style="color:rgb(var(--c-danger-soft))">✗ ' + (d.error || 'Unknown error') + '</span>'; }
+        } catch (e) { if (result) result.innerHTML='<span style="color:rgb(var(--c-danger-soft))">✗ Network error</span>'; }
     }
     async function xaiLogout() {
         await fetch('/oauth/xai/logout', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });

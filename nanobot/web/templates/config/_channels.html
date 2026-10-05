@@ -1,7 +1,7 @@
         <!-- ============================================================ -->
         <!-- Section: Channels (enabled only) -->
         <!-- ============================================================ -->
-        <div class="matrix-card p-6">
+        <div class="ui-card p-6">
             <div class="flex items-center justify-between mb-4 border-b border-primary/20 pb-4 cursor-pointer"
                 onclick="toggleSection('channels-body')">
                 <div class="flex items-center gap-3">
@@ -24,14 +24,14 @@
                                 <input type="checkbox" name="send_progress" {% if send_progress %}checked{% endif %}
                                     class="sr-only peer" />
                                 <div class="w-12 h-6 bg-black/60 border border-primary/50 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300"></div>
-                                <div class="absolute top-[2px] left-[2px] w-5 h-5 bg-primary/40 peer-checked:bg-primary peer-checked:shadow-[0_0_8px_#00FF41] peer-checked:translate-x-6 transition-all duration-300"></div>
+                                <div class="absolute top-[2px] left-[2px] w-5 h-5 bg-primary/40 peer-checked:bg-primary peer-checked:shadow-glow-8 peer-checked:translate-x-6 transition-all duration-300"></div>
                             </div>
                             <span class="text-[10px] font-bold uppercase tracking-widest text-primary/60">Send_Progress</span>
                         </label>
                         <div class="relative group flex items-center">
                             <button type="button" class="text-primary/30 hover:text-primary/70 text-[10px] font-mono transition-colors leading-none">(?)</button>
                             <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 hidden group-hover:block z-50 pointer-events-none">
-                                <div class="bg-black border border-primary/40 p-3 text-[10px] text-primary/70 font-mono leading-relaxed shadow-[0_0_15px_rgba(0,255,65,0.15)]">
+                                <div class="bg-black border border-primary/40 p-3 text-[10px] text-primary/70 font-mono leading-relaxed shadow-glow-15-15">
                                     <p class="text-primary font-bold mb-1">Send_Progress</p>
                                     Khi bật, bot gửi tin nhắn trung gian trong lúc xử lý (ví dụ: "Đang tìm kiếm...", "Đang đọc file..."). Giúp user biết bot đang làm gì thay vì im lặng chờ.
                                     <span class="text-primary/40 mt-1 block">Nên tắt nếu channel không hỗ trợ edit message hoặc gây nhiễu.</span>
@@ -46,14 +46,14 @@
                                 <input type="checkbox" name="send_tool_hints" {% if send_tool_hints %}checked{% endif %}
                                     class="sr-only peer" />
                                 <div class="w-12 h-6 bg-black/60 border border-primary/50 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300"></div>
-                                <div class="absolute top-[2px] left-[2px] w-5 h-5 bg-primary/40 peer-checked:bg-primary peer-checked:shadow-[0_0_8px_#00FF41] peer-checked:translate-x-6 transition-all duration-300"></div>
+                                <div class="absolute top-[2px] left-[2px] w-5 h-5 bg-primary/40 peer-checked:bg-primary peer-checked:shadow-glow-8 peer-checked:translate-x-6 transition-all duration-300"></div>
                             </div>
                             <span class="text-[10px] font-bold uppercase tracking-widest text-primary/60">Send_Tool_Hints</span>
                         </label>
                         <div class="relative group flex items-center">
                             <button type="button" class="text-primary/30 hover:text-primary/70 text-[10px] font-mono transition-colors leading-none">(?)</button>
                             <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 hidden group-hover:block z-50 pointer-events-none">
-                                <div class="bg-black border border-primary/40 p-3 text-[10px] text-primary/70 font-mono leading-relaxed shadow-[0_0_15px_rgba(0,255,65,0.15)]">
+                                <div class="bg-black border border-primary/40 p-3 text-[10px] text-primary/70 font-mono leading-relaxed shadow-glow-15-15">
                                     <p class="text-primary font-bold mb-1">Send_Tool_Hints</p>
                                     Khi bật, bot thông báo ngắn khi bắt đầu dùng tool (ví dụ: "🔍 Đang tìm kiếm web...", "📂 Đang đọc file..."). Giúp user hiểu bot đang thực hiện thao tác gì.
                                     <span class="text-primary/40 mt-1 block">Khác Send_Progress: chỉ thông báo tên tool, không phải toàn bộ intermediate output.</span>
@@ -67,7 +67,7 @@
                         <div class="relative group flex items-center mr-1">
                             <button type="button" class="text-primary/30 hover:text-primary/70 text-[10px] font-mono transition-colors leading-none">(?)</button>
                             <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 hidden group-hover:block z-50 pointer-events-none">
-                                <div class="bg-black border border-primary/40 p-3 text-[10px] text-primary/70 font-mono leading-relaxed shadow-[0_0_15px_rgba(0,255,65,0.15)]">
+                                <div class="bg-black border border-primary/40 p-3 text-[10px] text-primary/70 font-mono leading-relaxed shadow-glow-15-15">
                                     <p class="text-primary font-bold mb-1">Debounce</p>
                                     Thời gian chờ (giây) trước khi xử lý tin nhắn. Nếu user gửi nhiều tin liên tiếp trong khoảng này, bot gộp tất cả thành 1 lần xử lý.
                                     <br><br>
@@ -90,9 +90,9 @@
                         <select id="enable-channel-select"
                             class="bg-black/60 border border-primary/30 focus:border-primary outline-none px-2 py-1 text-primary font-mono text-[10px] transition-all duration-300 appearance-none cursor-pointer"
                             style="background-image: none;">
-                            <option value="" style="background: #0a0a0a; color: #00FF41;">+ channels</option>
+                            <option value="" style="background: rgb(var(--c-surface)); color: rgb(var(--c-primary));">+ channels</option>
                             {% for dc in disabled_channels %}
-                            <option value="{{ dc }}" style="background: #0a0a0a; color: #00FF41;">{{ dc }}</option>
+                            <option value="{{ dc }}" style="background: rgb(var(--c-surface)); color: rgb(var(--c-primary));">{{ dc }}</option>
                             {% endfor %}
                         </select>
                         <button type="button" onclick="enableSelectedChannel()"
@@ -110,7 +110,7 @@
                     {% for ch in channels %}
                     <div class="border border-primary/20 p-4 bg-primary/5" id="ch-card-{{ ch.name }}">
                         <div class="flex items-center gap-3 mb-3">
-                            <span class="w-2 h-2 rounded-full bg-primary shadow-[0_0_6px_#00FF41]"></span>
+                            <span class="w-2 h-2 rounded-full bg-primary shadow-glow-6"></span>
                             <span class="text-[11px] font-bold uppercase tracking-widest text-primary">{{ ch.name }}</span>
                             <span class="text-[9px] text-primary/30 font-mono">channels.{{ ch.name }}</span>
                             <button type="button" onclick="toggleChannel('{{ ch.name }}', false)"
@@ -134,12 +134,12 @@
                                     </button>
                                     <span id="telegram-test-result" class="text-[10px] font-mono" style="display: none;"></span>
                                 </div>
-                                <input type="password" id="channel_telegram_token" name="channel_telegram_token"
-                                    autocomplete="off" data-bwignore="true" data-1p-ignore="true"
+                                <input type="text" id="channel_telegram_token" name="channel_telegram_token"
+                                    autocomplete="off" spellcheck="false" data-bwignore="true" data-1p-ignore="true"
                                     data-lpignore="true" data-form-type="other"
                                     value="{{ ch.fields.get('token', '') }}"
                                     placeholder="e.g. 123456789:AAFxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                                    class="w-full bg-black border border-primary/20 text-primary/90 text-[10px] font-mono px-2 py-1.5 focus:outline-none focus:border-primary/60">
+                                    class="w-full bg-black border border-primary/20 text-primary/90 text-[10px] font-mono px-2 py-1.5 focus:outline-none focus:border-primary/60 secret-field">
                                 <span class="text-primary/35">Lấy từ @BotFather trên Telegram. Để trống nếu không muốn thay đổi.</span>
                             </div>
                             {# allow_from #}
@@ -170,7 +170,7 @@
                                             {% if _reply_to_message == True or _reply_to_message == 'True' %}checked{% endif %}
                                             class="sr-only peer" />
                                         <div class="w-10 h-5 bg-black/60 border border-primary/30 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300"></div>
-                                        <div class="absolute top-[2px] left-[2px] w-4 h-4 bg-primary/30 peer-checked:bg-primary peer-checked:shadow-[0_0_8px_#00FF41] peer-checked:translate-x-5 transition-all duration-300"></div>
+                                        <div class="absolute top-[2px] left-[2px] w-4 h-4 bg-primary/30 peer-checked:bg-primary peer-checked:shadow-glow-8 peer-checked:translate-x-5 transition-all duration-300"></div>
                                     </div>
                                     <span class="text-[10px] font-bold uppercase tracking-wider text-primary/60 peer-checked:text-primary">reply_to_message</span>
                                 </label>
@@ -186,7 +186,7 @@
                                             {% if _stream == True or _stream == 'True' or _stream is none %}checked{% endif %}
                                             class="sr-only peer" />
                                         <div class="w-10 h-5 bg-black/60 border border-primary/30 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300"></div>
-                                        <div class="absolute top-[2px] left-[2px] w-4 h-4 bg-primary/30 peer-checked:bg-primary peer-checked:shadow-[0_0_8px_#00FF41] peer-checked:translate-x-5 transition-all duration-300"></div>
+                                        <div class="absolute top-[2px] left-[2px] w-4 h-4 bg-primary/30 peer-checked:bg-primary peer-checked:shadow-glow-8 peer-checked:translate-x-5 transition-all duration-300"></div>
                                     </div>
                                     <span class="text-[10px] font-bold uppercase tracking-wider text-primary/60 peer-checked:text-primary">streaming</span>
                                 </label>
@@ -207,7 +207,7 @@
                                                     {% if telegram_group_policy == "mention" %}checked{% endif %}
                                                     class="sr-only peer">
                                                 <span class="w-10 h-5 bg-black/60 border border-primary/30 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300"></span>
-                                                <span class="absolute top-[2px] left-[2px] w-4 h-4 bg-primary/30 peer-checked:bg-primary peer-checked:shadow-[0_0_8px_#00FF41] peer-checked:translate-x-5 transition-all duration-300"></span>
+                                                <span class="absolute top-[2px] left-[2px] w-4 h-4 bg-primary/30 peer-checked:bg-primary peer-checked:shadow-glow-8 peer-checked:translate-x-5 transition-all duration-300"></span>
                                             </span>
                                             <span class="text-xs font-bold uppercase tracking-wider text-primary/80">Mentions only</span>
                                         </div>
@@ -222,7 +222,7 @@
                                                     {% if telegram_group_policy == "ambient" %}checked{% endif %}
                                                     class="sr-only peer">
                                                 <span class="w-10 h-5 bg-black/60 border border-primary/30 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300"></span>
-                                                <span class="absolute top-[2px] left-[2px] w-4 h-4 bg-primary/30 peer-checked:bg-primary peer-checked:shadow-[0_0_8px_#00FF41] peer-checked:translate-x-5 transition-all duration-300"></span>
+                                                <span class="absolute top-[2px] left-[2px] w-4 h-4 bg-primary/30 peer-checked:bg-primary peer-checked:shadow-glow-8 peer-checked:translate-x-5 transition-all duration-300"></span>
                                             </span>
                                             <span class="text-xs font-bold uppercase tracking-wider text-primary/80">Smart ambient</span>
                                         </div>
@@ -237,7 +237,7 @@
                                                     {% if telegram_group_policy == "open" %}checked{% endif %}
                                                     class="sr-only peer">
                                                 <span class="w-10 h-5 bg-black/60 border border-primary/30 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300"></span>
-                                                <span class="absolute top-[2px] left-[2px] w-4 h-4 bg-primary/30 peer-checked:bg-primary peer-checked:shadow-[0_0_8px_#00FF41] peer-checked:translate-x-5 transition-all duration-300"></span>
+                                                <span class="absolute top-[2px] left-[2px] w-4 h-4 bg-primary/30 peer-checked:bg-primary peer-checked:shadow-glow-8 peer-checked:translate-x-5 transition-all duration-300"></span>
                                             </span>
                                             <span class="text-xs font-bold uppercase tracking-wider text-primary/80">Open</span>
                                         </div>

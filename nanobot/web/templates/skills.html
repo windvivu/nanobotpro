@@ -1,19 +1,19 @@
 {% extends "base.html" %}
 
-{% block title %}Skills — Nanobot OS{% endblock %}
+{% block title %}{{ tr('nav.skills') }} — Nanobot OS{% endblock %}
 
 {% block content %}
 <!-- Sidebar -->
 <aside class="w-full lg:w-72 flex flex-col gap-6">
-    <div class="matrix-card p-6 flex flex-col items-center text-center gap-4">
+    <div class="ui-card p-6 flex flex-col items-center text-center gap-4">
         <div
             class="w-20 h-20 flex items-center justify-center text-primary glow-text border-2 border-primary/30 rounded-full relative">
             <div class="absolute inset-0 border border-primary animate-pulse rounded-full opacity-20"></div>
             <span class="material-symbols-outlined text-4xl">extension</span>
         </div>
         <div>
-            <h2 class="text-lg font-bold glow-text tracking-widest uppercase">Skills_DB</h2>
-            <p class="text-[10px] text-primary/50 font-mono">{{ total }} SKILLS LOADED</p>
+            <h2 class="text-lg font-bold glow-text tracking-widest uppercase">{{ tr('page.skills_db') }}</h2>
+            <p class="text-[10px] text-primary/50 font-mono">{{ tr('page.skills_loaded', count=total) }}</p>
         </div>
     </div>
 
@@ -25,18 +25,18 @@
 <div class="flex-1 flex flex-col gap-4">
 
     <!-- Tab Header -->
-    <div class="matrix-card p-1 flex gap-1">
+    <div class="ui-card p-1 flex gap-1">
         <button id="tab-installed-btn" onclick="switchTab('installed')"
             class="flex-1 px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest rounded transition-all flex items-center justify-center gap-2 tab-active">
-            <span class="material-symbols-outlined text-sm">extension</span>Skills ({{ total }})
+            <span class="material-symbols-outlined text-sm">extension</span>{{ tr('page.installed_skills', count=total) }}
         </button>
         <button id="tab-hub-btn" onclick="switchTab('hub')"
             class="flex-1 px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest rounded transition-all flex items-center justify-center gap-2 tab-inactive">
-            <span class="material-symbols-outlined text-sm">travel_explore</span>ClawHub
+            <span class="material-symbols-outlined text-sm">travel_explore</span>{{ tr('page.clawhub') }}
         </button>
         <button id="tab-mcp-btn" onclick="switchTab('mcp')"
             class="flex-1 px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest rounded transition-all flex items-center justify-center gap-2 tab-inactive">
-            <span class="material-symbols-outlined text-sm">hub</span>MCP ({{ mcp_servers|length }})
+            <span class="material-symbols-outlined text-sm">hub</span>{{ tr('page.mcp', count=mcp_servers|length) }}
         </button>
     </div>
 
@@ -45,7 +45,7 @@
         {% if skills %}
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             {% for skill in skills %}
-            <div class="matrix-card p-5 flex flex-col gap-3 group" id="skill-card-{{ skill.name }}">
+            <div class="ui-card p-5 flex flex-col gap-3 group" id="skill-card-{{ skill.name }}">
                 <div class="flex items-center justify-between">
                     <a href="/skills/{{ skill.name }}" class="flex items-center gap-3 flex-1">
                         <span
@@ -128,7 +128,7 @@
             {% endfor %}
         </div>
         {% else %}
-        <div class="matrix-card p-12 flex flex-col items-center text-center gap-4">
+        <div class="ui-card p-12 flex flex-col items-center text-center gap-4">
             <span class="material-symbols-outlined text-6xl text-primary/20">extension_off</span>
             <h3 class="text-sm font-bold uppercase tracking-widest text-primary/40">No Skills</h3>
             <p class="text-[10px] text-primary/20">No skills found in workspace or builtin directories</p>
@@ -139,7 +139,7 @@
     <!-- ========== TAB 2: ClawHub Marketplace ========== -->
     <div id="tab-hub" class="hidden flex flex-col gap-4">
         <!-- Search Bar -->
-        <div class="matrix-card p-4">
+        <div class="ui-card p-4">
             <div class="flex gap-2">
                 <input id="hub-query" type="text" placeholder="Search skills... (e.g. web scraping, weather, database)"
                     class="flex-1 bg-transparent border border-primary/30 rounded px-3 py-2.5 text-xs text-primary font-mono outline-none focus:border-primary/60 transition-colors placeholder:text-primary/20"
@@ -158,7 +158,7 @@
         </div>
 
         <!-- Loading -->
-        <div id="hub-loading" class="hidden matrix-card p-8 flex flex-col items-center gap-3">
+        <div id="hub-loading" class="hidden ui-card p-8 flex flex-col items-center gap-3">
             <span class="material-symbols-outlined text-3xl text-primary animate-spin">progress_activity</span>
             <p class="text-[10px] text-primary/50 font-mono">Searching ClawHub registry...</p>
         </div>
@@ -167,18 +167,18 @@
         <div id="hub-results-grid" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
 
         <!-- No Results -->
-        <div id="hub-no-results" class="hidden matrix-card p-8 flex flex-col items-center gap-3">
+        <div id="hub-no-results" class="hidden ui-card p-8 flex flex-col items-center gap-3">
             <span class="material-symbols-outlined text-3xl text-primary/20">search_off</span>
             <p class="text-[10px] text-primary/30 font-mono">No skills found. Try different keywords.</p>
         </div>
 
         <!-- Error -->
-        <div id="hub-error" class="hidden matrix-card p-4 border border-red-500/30 bg-red-500/5">
+        <div id="hub-error" class="hidden ui-card p-4 border border-red-500/30 bg-red-500/5">
             <p class="text-[10px] text-red-400 font-mono" id="hub-error-text"></p>
         </div>
 
         <!-- Placeholder when no search yet -->
-        <div id="hub-placeholder" class="matrix-card p-10 flex flex-col items-center gap-4 text-center">
+        <div id="hub-placeholder" class="ui-card p-10 flex flex-col items-center gap-4 text-center">
             <span class="material-symbols-outlined text-5xl text-primary/15">travel_explore</span>
             <div>
                 <h3 class="text-xs font-bold uppercase tracking-widest text-primary/30 mb-1">ClawHub Skill Registry</h3>
@@ -191,21 +191,19 @@
     <div id="tab-mcp" class="hidden flex flex-col gap-4">
         {% set tradingview_installed = 'tradingview' in mcp_servers %}
 
-        {% if not tradingview_installed %}
         <div id="trader-mode-toggle-row" class="flex items-center justify-between">
             <div>
                 <h3 class="text-[11px] font-bold uppercase tracking-widest text-primary">Trader Mode</h3>
-                <p class="text-[9px] text-primary/35 font-mono mt-1">Show TradingView MCP controls for local chart automation.</p>
+                <p class="text-[9px] text-primary/35 font-mono mt-1">Bật để bot dùng công cụ trading: quét thị trường và điều khiển biểu đồ TradingView qua MCP.</p>
             </div>
             <button id="trader-mode-toggle" onclick="toggleTraderMode()" class="px-3 py-2 text-[9px] font-bold uppercase tracking-wider border border-primary/35 text-primary/60 hover:text-primary hover:bg-primary/10 rounded transition-all flex items-center gap-1.5">
                 <span class="material-symbols-outlined text-[13px]">candlestick_chart</span>
-                <span id="trader-mode-toggle-label">Show Trader Mode</span>
+                <span id="trader-mode-toggle-label">{{ 'Tắt Trader Mode' if trader_mode_enabled else 'Bật Trader Mode' }}</span>
             </button>
         </div>
-        {% endif %}
 
         <!-- Managed TradingView integration -->
-        <div class="matrix-card p-5 flex flex-col gap-4 {{ '' if tradingview_installed else 'hidden' }}" id="tradingview-mcp-card" data-installed="{{ 'true' if tradingview_installed else 'false' }}">
+        <div class="ui-card p-5 flex flex-col gap-4 {{ '' if trader_mode_enabled else 'hidden' }}" id="tradingview-mcp-card" data-installed="{{ 'true' if tradingview_installed else 'false' }}">
             <div class="flex flex-col lg:flex-row lg:items-start gap-4 justify-between">
                 <div class="flex items-start gap-3">
                     <span id="tradingview-health-dot" class="w-2.5 h-2.5 rounded-full bg-primary/20 mt-1.5 transition-all duration-500" title="Checking..."></span>
@@ -259,7 +257,7 @@
         </div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             {% for preset_id, preset in mcp_presets.items() %}
-            <div class="matrix-card p-4 flex flex-col gap-3">
+            <div class="ui-card p-4 flex flex-col gap-3">
                 <div class="flex items-start gap-3">
                     <span class="material-symbols-outlined text-primary/60">deployed_code</span>
                     <div class="min-w-0 flex-1">
@@ -290,7 +288,7 @@
             {% endfor %}
         </div>
 
-        <div id="mcp-custom-preset-form" class="hidden matrix-card p-5">
+        <div id="mcp-custom-preset-form" class="hidden ui-card p-5">
             <div class="flex items-center justify-between mb-4">
                 <span class="text-[11px] font-bold uppercase tracking-widest text-primary">Custom MCP Bundle</span>
                 <button onclick="mcpCustomPresetClose()" class="text-primary/30 hover:text-primary"><span class="material-symbols-outlined text-sm">close</span></button>
@@ -323,7 +321,7 @@
         </div>
 
         <!-- Add Form (hidden by default) -->
-        <div id="mcp-add-form" class="hidden matrix-card p-5">
+        <div id="mcp-add-form" class="hidden ui-card p-5">
             <div class="flex items-center justify-between mb-4">
                 <span class="text-[11px] font-bold uppercase tracking-widest text-primary">Add MCP Server</span>
                 <button onclick="mcpToggleAddForm()" class="text-primary/30 hover:text-primary transition-colors">
@@ -338,9 +336,9 @@
                 <div class="flex flex-col gap-1">
                     <label class="text-[9px] font-bold uppercase tracking-wider text-primary/60">Type</label>
                     <select id="mcp-type" class="bg-black/60 border border-primary/30 focus:border-primary outline-none px-3 py-2 text-primary font-mono text-xs transition-all appearance-none cursor-pointer" onchange="mcpTypeChanged()">
-                        <option value="stdio" style="background:#0a0a0a;color:#00FF41">stdio (command)</option>
-                        <option value="sse" style="background:#0a0a0a;color:#00FF41">sse (http)</option>
-                        <option value="streamableHttp" style="background:#0a0a0a;color:#00FF41">streamableHttp</option>
+                        <option value="stdio" style="background:rgb(var(--c-surface));color:rgb(var(--c-primary))">stdio (command)</option>
+                        <option value="sse" style="background:rgb(var(--c-surface));color:rgb(var(--c-primary))">sse (http)</option>
+                        <option value="streamableHttp" style="background:rgb(var(--c-surface));color:rgb(var(--c-primary))">streamableHttp</option>
                     </select>
                 </div>
                 <div id="mcp-stdio-fields" class="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -382,7 +380,7 @@
         {% if mcp_servers %}
         <div class="flex flex-col gap-3">
             {% for name, srv in mcp_servers.items() %}
-            <div class="matrix-card p-4" id="mcp-card-{{ name }}">
+            <div class="ui-card p-4" id="mcp-card-{{ name }}">
                 <div class="flex items-center gap-3 mb-2">
                     <span id="mcp-dot-{{ name }}" class="w-2 h-2 rounded-full bg-primary/20 transition-all duration-500" title="Checking..."></span>
                     <span class="text-sm font-bold uppercase tracking-widest text-primary">{{ name }}</span>
@@ -418,7 +416,7 @@
             {% endfor %}
         </div>
         {% else %}
-        <div class="matrix-card p-10 flex flex-col items-center gap-4 text-center">
+        <div class="ui-card p-10 flex flex-col items-center gap-4 text-center">
             <span class="material-symbols-outlined text-5xl text-primary/15">hub</span>
             <div>
                 <h3 class="text-xs font-bold uppercase tracking-widest text-primary/30 mb-1">No MCP Servers</h3>
@@ -440,7 +438,7 @@
     </div>
 
     <!-- Terminal Footer -->
-    <div class="matrix-card p-4 font-mono text-[11px] leading-tight space-y-1 mt-auto">
+    <div class="ui-card p-4 font-mono text-[11px] leading-tight space-y-1 mt-auto">
         <div class="flex gap-2">
             <span class="text-primary/40">[SKL]</span>
             <span class="text-primary">Skills scan complete... <span class="text-white">{{ total }} LOADED</span></span>
@@ -532,9 +530,9 @@
             <div class="flex flex-col gap-1">
                 <label class="text-[8px] font-bold uppercase tracking-wider text-primary/40">Type</label>
                 <select id="mcp-edit-type" class="bg-black/60 border border-primary/20 px-3 py-2 text-primary/60 font-mono text-xs outline-none transition-all appearance-none" onchange="mcpEditTypeChanged()">
-                    <option value="stdio" style="background:#0a0a0a;color:#00FF41">stdio</option>
-                    <option value="sse" style="background:#0a0a0a;color:#00FF41">sse</option>
-                    <option value="streamableHttp" style="background:#0a0a0a;color:#00FF41">streamableHttp</option>
+                    <option value="stdio" style="background:rgb(var(--c-surface));color:rgb(var(--c-primary))">stdio</option>
+                    <option value="sse" style="background:rgb(var(--c-surface));color:rgb(var(--c-primary))">sse</option>
+                    <option value="streamableHttp" style="background:rgb(var(--c-surface));color:rgb(var(--c-primary))">streamableHttp</option>
                 </select>
             </div>
 
@@ -591,19 +589,19 @@
 
     /* Tab styles */
     .tab-active {
-        background: rgba(var(--color-primary-rgb, 0,255,65), 0.12);
-        color: var(--color-primary, #00FF41);
-        border: 1px solid rgba(var(--color-primary-rgb, 0,255,65), 0.3);
+        background: rgb(var(--c-primary) / 0.12);
+        color: var(--color-primary, rgb(var(--c-primary)));
+        border: 1px solid rgb(var(--c-primary) / 0.3);
     }
     .tab-inactive {
         background: transparent;
-        color: rgba(var(--color-primary-rgb, 0,255,65), 0.35);
+        color: rgb(var(--c-primary) / var(--text-alpha-35));
         border: 1px solid transparent;
         cursor: pointer;
     }
     .tab-inactive:hover {
-        color: rgba(var(--color-primary-rgb, 0,255,65), 0.6);
-        background: rgba(var(--color-primary-rgb, 0,255,65), 0.04);
+        color: rgb(var(--c-primary) / 0.6);
+        background: rgb(var(--c-primary) / 0.04);
     }
 
     /* Collapsible disabled-skill details */
@@ -628,7 +626,7 @@
         position: fixed;
         inset: 0;
         z-index: 9999;
-        background: rgba(0, 0, 0, 0.6);
+        background: rgb(var(--c-black) / 0.6);
         backdrop-filter: blur(4px);
         align-items: center;
         justify-content: center;
@@ -637,9 +635,9 @@
         display: flex;
     }
     .hub-modal-box {
-        border: 1px solid var(--color-primary, #00FF41);
-        box-shadow: 0 0 30px rgba(0,255,65,0.25);
-        background: #141414;
+        border: 1px solid var(--color-primary, rgb(var(--c-primary)));
+        box-shadow: 0 0 30px rgb(var(--c-accent) / calc(0.25 * var(--glow)));
+        background: rgb(var(--c-surface));
         min-width: 320px;
         max-width: 440px;
         animation: hub-modal-in 0.15s ease;
@@ -682,7 +680,7 @@ function switchTab(tab) {
 
 // ── MCP Functions ──
 var MCP_CUSTOM_PRESETS = {{ mcp_custom_preset_data | tojson }};
-var TRADER_MODE_KEY = 'nanobot.traderMode.enabled';
+var TRADER_MODE_ENABLED = {{ trader_mode_enabled | tojson }};
 
 function tradingViewIsInstalled() {
     var card = document.getElementById('tradingview-mcp-card');
@@ -694,30 +692,39 @@ function tradingViewIsVisible() {
     return Boolean(card && !card.classList.contains('hidden'));
 }
 
-function tradingViewSetTraderMode(enabled) {
-    localStorage.setItem(TRADER_MODE_KEY, enabled ? '1' : '0');
-    tradingViewInitVisibility();
+async function tradingViewSetTraderMode(enabled) {
+    try {
+        var resp = await fetch('/skills/trader-mode', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({enabled: enabled})
+        });
+        var data = await resp.json();
+        if (!resp.ok || !data.success) throw new Error(data.error || 'Trader Mode update failed');
+        TRADER_MODE_ENABLED = Boolean(data.enabled);
+        tradingViewInitVisibility();
+    } catch (err) {
+        hubModal('error', 'Trader Mode Update Failed', err.message, function(){});
+    }
 }
 
 function toggleTraderMode() {
-    tradingViewSetTraderMode(!tradingViewIsVisible());
+    tradingViewSetTraderMode(!TRADER_MODE_ENABLED);
 }
 
 function tradingViewInitVisibility() {
     var card = document.getElementById('tradingview-mcp-card');
     if (!card) return;
-    var installed = tradingViewIsInstalled();
-    var enabled = installed || localStorage.getItem(TRADER_MODE_KEY) === '1';
+    var enabled = TRADER_MODE_ENABLED;
     card.classList.toggle('hidden', !enabled);
 
     var toggle = document.getElementById('trader-mode-toggle');
     var label = document.getElementById('trader-mode-toggle-label');
     if (toggle) {
-        toggle.classList.toggle('hidden', installed);
         toggle.classList.toggle('border-primary/60', enabled);
         toggle.classList.toggle('text-primary', enabled);
     }
-    if (label) label.textContent = enabled ? 'Hide Trader Mode' : 'Show Trader Mode';
+    if (label) label.textContent = enabled ? 'Tắt Trader Mode' : 'Bật Trader Mode';
     if (enabled) tradingViewRefreshHealth();
 }
 
@@ -762,9 +769,9 @@ function tradingViewRenderHealth(data) {
     var installed = Boolean(configCheck && configCheck.ok);
     var ok = Boolean(data.ok);
     dot.className = ok
-        ? 'w-2.5 h-2.5 rounded-full bg-primary shadow-[0_0_8px_#00FF41] mt-1.5 transition-all duration-500'
+        ? 'w-2.5 h-2.5 rounded-full bg-primary shadow-glow-8 mt-1.5 transition-all duration-500'
         : (installed
-            ? 'w-2.5 h-2.5 rounded-full bg-yellow-400 shadow-[0_0_8px_#facc15] mt-1.5 transition-all duration-500'
+            ? 'w-2.5 h-2.5 rounded-full bg-yellow-400 shadow-glow-warning-8 mt-1.5 transition-all duration-500'
             : 'w-2.5 h-2.5 rounded-full bg-primary/20 mt-1.5 transition-all duration-500');
     dot.title = ok ? 'Ready' : (installed ? 'Needs attention' : 'Not installed');
 
@@ -774,7 +781,7 @@ function tradingViewRenderHealth(data) {
         ? 'Ready. Restart gateway after install/update to connect tools.' + browser
         : (installed ? 'Installed, but one or more checks need attention.' + browser : 'Not installed yet. Install backend, then restart gateway.');
     summary.className = ok
-        ? 'inline-flex mt-2 px-2.5 py-1 border border-primary/35 bg-primary/[0.07] text-[9px] text-primary font-mono rounded shadow-[0_0_8px_rgba(0,255,65,0.14)]'
+        ? 'inline-flex mt-2 px-2.5 py-1 border border-primary/35 bg-primary/[0.07] text-[9px] text-primary font-mono rounded shadow-glow-8-14'
         : (installed
             ? 'inline-flex mt-2 px-2.5 py-1 border border-yellow-400/35 bg-yellow-400/[0.08] text-[9px] text-yellow-400 font-mono rounded shadow-[0_0_8px_rgba(250,204,21,0.12)]'
             : 'inline-flex mt-2 px-2.5 py-1 border border-primary/25 bg-primary/[0.05] text-[9px] text-primary/80 font-mono rounded');
@@ -850,7 +857,7 @@ function tradingViewUninstall() {
     hubModal('delete', 'Uninstall TradingView MCP', 'Remove TradingView from MCP config? Downloaded backend cache will be kept.', async function() {
         try {
             await tradingViewPost('/skills/mcp/presets/tradingview/uninstall', 'tradingview-uninstall-btn', 'Removing...');
-            localStorage.setItem(TRADER_MODE_KEY, '0');
+            TRADER_MODE_ENABLED = false;
             hubModal('check_circle', 'Uninstalled', 'TradingView MCP config removed. Backend cache was kept.', function() { window.location.reload(); });
         } catch (err) { hubModal('error', 'Uninstall Failed', err.message, function(){}); }
     });
@@ -1240,16 +1247,16 @@ async function mcpPollStatus() {
             if (!dot) return;
 
             if (info.state === 'connected') {
-                dot.className = 'w-2 h-2 rounded-full bg-primary shadow-[0_0_6px_#00FF41] transition-all duration-500';
+                dot.className = 'w-2 h-2 rounded-full bg-primary shadow-glow-6 transition-all duration-500';
                 dot.title = info.tool_count + ' tools connected';
                 if (toolsSpan) { toolsSpan.textContent = info.tool_count + ' tools'; toolsSpan.className = 'text-[9px] font-mono text-primary/40'; }
             } else if (info.state === 'pending' || info.state === 'unknown') {
-                dot.className = 'w-2 h-2 rounded-full bg-yellow-400 shadow-[0_0_6px_#facc15] transition-all duration-500';
+                dot.className = 'w-2 h-2 rounded-full bg-yellow-400 shadow-glow-warning-6 transition-all duration-500';
                 dot.title = 'Pending — restart gateway to connect';
                 if (toolsSpan) { toolsSpan.textContent = 'restart required'; toolsSpan.className = 'text-[9px] font-mono text-yellow-400/60'; }
             } else {
                 // failed
-                dot.className = 'w-2 h-2 rounded-full bg-red-500 shadow-[0_0_6px_#ef4444] transition-all duration-500';
+                dot.className = 'w-2 h-2 rounded-full bg-red-500 shadow-glow-danger-6 transition-all duration-500';
                 dot.title = 'Failed to connect';
                 if (toolsSpan) { toolsSpan.textContent = 'connection failed'; toolsSpan.className = 'text-[9px] font-mono text-red-400/60'; }
             }
@@ -1320,7 +1327,7 @@ async function hubSearch() {
         }
 
         grid.innerHTML = data.results.map(r => `
-            <div class="matrix-card p-4 flex flex-col gap-2" id="hub-card-${r.slug}">
+            <div class="ui-card p-4 flex flex-col gap-2" id="hub-card-${r.slug}">
                 <div class="flex items-center justify-between">
                     <span class="text-sm font-bold uppercase tracking-widest text-primary">${escHtml(r.name)}</span>
                     <span class="text-[9px] font-mono text-primary/30">${r.score}</span>

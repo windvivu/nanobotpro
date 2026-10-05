@@ -1,7 +1,7 @@
         <!-- ============================================================ -->
         <!-- Section: Gateway -->
         <!-- ============================================================ -->
-        <div class="matrix-card p-6">
+        <div class="ui-card p-6">
             <div class="flex items-center justify-between mb-4 border-b border-primary/20 pb-4 cursor-pointer"
                 onclick="toggleSection('gateway-body')">
                 <div class="flex items-center gap-3">
@@ -28,7 +28,7 @@
                                     class="w-14 h-7 bg-black/60 border border-primary/50 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300">
                                 </div>
                                 <div
-                                    class="absolute top-[3px] left-[3px] w-5 h-5 bg-primary/40 peer-checked:bg-primary peer-checked:shadow-[0_0_10px_#00FF41] peer-checked:translate-x-7 transition-all duration-300">
+                                    class="absolute top-[3px] left-[3px] w-5 h-5 bg-primary/40 peer-checked:bg-primary peer-checked:shadow-glow-10 peer-checked:translate-x-7 transition-all duration-300">
                                 </div>
                             </div>
                             <span class="text-sm font-bold glow-text uppercase" id="hb-label">{{ "ACTIVE" if
@@ -41,21 +41,21 @@
                             Heartbeat_Interval_S</label>
                         <input type="number" id="heartbeat_interval" name="heartbeat_interval"
                             value="{{ heartbeat_interval }}" min="60" max="86400"
-                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-glow-15-30 outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
                     </div>
                     <div class="flex flex-col gap-2">
                         <label for="web_port"
                             class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
                             Web_Dashboard_Port</label>
                         <input type="number" id="web_port" name="web_port" value="{{ web_port }}" min="1024" max="65535"
-                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-glow-15-30 outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
                     </div>
                     <div class="flex flex-col gap-2">
                         <label for="web_host"
                             class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
                             Web_Bind_Address</label>
                         <select id="web_host" name="web_host"
-                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm transition-all duration-300">
+                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-glow-15-30 outline-none px-4 py-3 text-primary font-mono text-sm transition-all duration-300">
                             <option value="127.0.0.1" {% if web_host == "127.0.0.1" %}selected{% endif %}>127.0.0.1 — localhost only (default, secure)</option>
                             <option value="0.0.0.0" {% if web_host == "0.0.0.0" %}selected{% endif %}>0.0.0.0 — all interfaces (required for fleet/remote access)</option>
                         </select>
@@ -74,32 +74,32 @@
                         <div class="grid grid-cols-2 gap-3">
                             <!-- New password -->
                             <div class="relative">
-                                <input type="password" id="web_password" name="web_password" value="{{ web_password }}"
+                                <input type="text" id="web_password" name="web_password" value="{{ web_password }}"
                                     data-original="{{ web_password }}"
                                     placeholder="New password..."
-                                    autocomplete="new-password" data-bwignore="true" data-1p-ignore="true"
+                                    autocomplete="off" spellcheck="false" data-bwignore="true" data-1p-ignore="true"
                                     data-lpignore="true" data-form-type="other"
-                                    class="w-full bg-black/60 border {% if web_password and web_password.startswith('nanobot@') %}border-yellow-500/60{% else %}border-primary/50{% endif %} focus:border-primary outline-none px-4 py-3 pr-10 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                                    class="w-full bg-black/60 border {% if web_password and web_password.startswith('nanobot@') %}border-yellow-500/60{% else %}border-primary/50{% endif %} focus:border-primary outline-none px-4 py-3 pr-10 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300 secret-field" />
                                 <button type="button"
                                     class="absolute right-2 top-1/2 -translate-y-1/2 text-primary/30 hover:text-primary transition-colors"
-                                    onmousedown="document.getElementById('web_password').type='text'"
-                                    onmouseup="document.getElementById('web_password').type='password'"
-                                    onmouseleave="document.getElementById('web_password').type='password'"
+                                    onmousedown="setSecretRevealed(document.getElementById('web_password'), true)"
+                                    onmouseup="setSecretRevealed(document.getElementById('web_password'), false)"
+                                    onmouseleave="setSecretRevealed(document.getElementById('web_password'), false)"
                                     title="Hold to reveal">
                                     <span class="material-symbols-outlined text-[18px]">visibility</span>
                                 </button>
                             </div>
                             <!-- Repeat password -->
                             <div class="relative">
-                                <input type="password" id="web_password_confirm" placeholder="Repeat password..."
-                                    autocomplete="new-password" data-bwignore="true" data-1p-ignore="true"
+                                <input type="text" id="web_password_confirm" placeholder="Repeat password..."
+                                    autocomplete="off" spellcheck="false" data-bwignore="true" data-1p-ignore="true"
                                     data-lpignore="true" data-form-type="other"
-                                    class="w-full bg-black/60 border border-primary/50 focus:border-primary outline-none px-4 py-3 pr-10 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                                    class="w-full bg-black/60 border border-primary/50 focus:border-primary outline-none px-4 py-3 pr-10 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300 secret-field" />
                                 <button type="button"
                                     class="absolute right-2 top-1/2 -translate-y-1/2 text-primary/30 hover:text-primary transition-colors"
-                                    onmousedown="document.getElementById('web_password_confirm').type='text'"
-                                    onmouseup="document.getElementById('web_password_confirm').type='password'"
-                                    onmouseleave="document.getElementById('web_password_confirm').type='password'"
+                                    onmousedown="setSecretRevealed(document.getElementById('web_password_confirm'), true)"
+                                    onmouseup="setSecretRevealed(document.getElementById('web_password_confirm'), false)"
+                                    onmouseleave="setSecretRevealed(document.getElementById('web_password_confirm'), false)"
                                     title="Hold to reveal">
                                     <span class="material-symbols-outlined text-[18px]">visibility</span>
                                 </button>
@@ -112,6 +112,92 @@
                             Nhập mật khẩu mới → bấm <strong class="text-primary/80">Save Config</strong> → sau đó <strong class="text-primary/80">restart gateway</strong> để áp dụng.
                         </p>
                         {% endif %}
+                    </div>
+
+                    <!-- Voice in Web Chat (gateway.web.voice): the mic button and reading answers aloud.
+                         The Groq key is the one in Accounts → Groq; this page only knows whether there is one. -->
+                    <div class="md:col-span-2 flex flex-col gap-4 border-t border-primary/20 pt-6" id="voice-section">
+                        <div class="flex items-center gap-2">
+                            <span class="material-symbols-outlined text-primary/80 text-sm">mic</span>
+                            <h4 class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">Giọng nói trong Web Chat</h4>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="flex flex-col gap-2">
+                                <label for="voice_recognition"
+                                    class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
+                                    Voice_Recognition</label>
+                                <select id="voice_recognition" name="voice_recognition"
+                                    onchange="voiceChoiceChanged()" data-saved="{{ 'groq' if voice_recognition == 'groq' else 'browser' }}"
+                                    class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-glow-15-30 outline-none px-4 py-3 text-primary font-mono text-sm transition-all duration-300">
+                                    <option value="browser" {% if voice_recognition != "groq" %}selected{% endif %}>Trình duyệt — không cần chuẩn bị</option>
+                                    <option value="groq" {% if voice_recognition == "groq" %}selected{% endif %}>Groq — cần key Groq, chạy trên mọi trình duyệt</option>
+                                </select>
+                                {% if not voice_groq_key %}
+                                <p id="voice-groq-warning" data-voice-for="groq"
+                                    class="text-[10px] text-yellow-400 font-mono {% if voice_recognition != 'groq' %}hidden{% endif %}">
+                                    ⚠ Chưa có key Groq: nhập key bên dưới, nếu không nút micro trong Web Chat sẽ mờ.
+                                </p>
+                                {% endif %}
+                                <!-- The Groq key, shown with the Groq choice. It is the key of Accounts → Groq
+                                     (providers.groq.apiKey): typing here keeps that hidden form field in step, so
+                                     Save Configuration saves it, and Test saves a key that works at once. -->
+                                {% set voice_groq = providers | default([]) | selectattr("name", "equalto", "groq") | first %}
+                                <div data-voice-for="groq" class="flex flex-col gap-2 {% if voice_recognition != 'groq' %}hidden{% endif %}">
+                                    <label for="voice_groq_key"
+                                        class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
+                                        Groq_API_Key</label>
+                                    <div class="flex gap-2">
+                                        <div class="relative flex-1">
+                                            <input type="text" id="voice_groq_key" value="{{ voice_groq.api_key if voice_groq else '' }}"
+                                                placeholder="gsk_..." autocomplete="off" spellcheck="false" data-bwignore="true" data-1p-ignore="true"
+                                                data-lpignore="true" data-form-type="other"
+                                                oninput="voiceGroqKeyChanged(this)" onfocus="voiceGroqKeyFocus(this)"
+                                                class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-glow-15-30 outline-none px-4 py-3 pr-10 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300 secret-field" />
+                                            <button type="button" onclick="toggleReveal(this)" title="Hiện hoặc ẩn key"
+                                                class="absolute right-2 top-1/2 -translate-y-1/2 text-primary/30 hover:text-primary transition-colors">
+                                                <span class="material-symbols-outlined text-[18px]">visibility</span>
+                                            </button>
+                                        </div>
+                                        <button type="button" id="voice-groq-test" onclick="testVoiceGroqKey()"
+                                            title="Hỏi Groq xem key có dùng được không (không tốn lượt nhận dạng)"
+                                            class="px-4 border border-primary/50 text-[10px] text-primary/80 font-bold uppercase tracking-widest hover:border-primary hover:text-primary transition-all duration-300 flex items-center gap-1">
+                                            <span class="material-symbols-outlined text-[14px]">bolt</span><span>Test</span>
+                                        </button>
+                                    </div>
+                                    <span id="voice-groq-result" class="text-[10px] font-mono hidden" role="status"></span>
+                                </div>
+                                <!-- Only the description of the chosen way shows (the select's onchange switches them) -->
+                                <p id="voice-help-browser" data-voice-for="browser"
+                                    class="text-[10px] text-primary/50 font-mono leading-relaxed {% if voice_recognition == 'groq' %}hidden{% endif %}">
+                                    <strong class="text-primary/80">Trình duyệt</strong>: chữ hiện dần khi đang nói; giọng nói do dịch vụ của trình duyệt xử lý (Chrome gửi tới Google, Edge gửi tới Microsoft). Firefox không có dịch vụ này. Trên Brave nút micro vẫn bấm được, nhưng Brave không có dịch vụ nhận dạng nên sẽ báo lỗi: khi đó hãy chọn Groq.
+                                </p>
+                                <p id="voice-help-groq" data-voice-for="groq"
+                                    class="text-[10px] text-primary/50 font-mono leading-relaxed {% if voice_recognition != 'groq' %}hidden{% endif %}">
+                                    <strong class="text-primary/80">Groq</strong>: nói xong mới có chữ (khoảng 1 giây); giọng nói gửi tới Groq. Key miễn phí lấy ở console.groq.com → API Keys; đây cũng là key của Accounts → Groq.
+                                </p>
+                            </div>
+                            <div class="flex flex-col gap-2">
+                                <label for="voice_language"
+                                    class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt;
+                                    Voice_Language</label>
+                                <!-- A dropdown: a text box with suggestions only offered the language already in it.
+                                     A language set by hand in config.json that is not listed stays as the first option. -->
+                                {% set voice_languages = [("vi-VN", "Tiếng Việt"), ("en-US", "English (US)"), ("en-GB", "English (UK)"),
+                                    ("ja-JP", "日本語"), ("ko-KR", "한국어"), ("zh-CN", "中文"), ("fr-FR", "Français"), ("de-DE", "Deutsch")] %}
+                                <select id="voice_language" name="voice_language"
+                                    class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-glow-15-30 outline-none px-4 py-3 text-primary font-mono text-sm transition-all duration-300">
+                                    {% if voice_language and voice_language not in voice_languages | map(attribute=0) | list %}
+                                    <option value="{{ voice_language }}" selected>{{ voice_language }}</option>
+                                    {% endif %}
+                                    {% for code, name in voice_languages %}
+                                    <option value="{{ code }}" {% if code == voice_language %}selected{% endif %}>{{ code }} — {{ name }}</option>
+                                    {% endfor %}
+                                </select>
+                                <p class="text-[10px] text-primary/50 font-mono leading-relaxed">
+                                    Dùng cho nhận dạng bằng trình duyệt và để chọn giọng đọc câu trả lời. Groq tự nhận ngôn ngữ từ lời nói, không theo ô này. Mặc định <span class="text-primary/80">vi-VN</span>.
+                                </p>
+                            </div>
+                        </div>
                     </div>
 
                 </div>

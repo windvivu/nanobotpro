@@ -1,0 +1,42 @@
+{#- Aurora theme: bright and modern. Light canvas with slowly drifting aurora light (effects.html),
+    frosted-glass cards, gradient title, violet accent, Plus Jakarta Sans. Same token contract as
+    themes/matrix/head.html; like the light theme, the Tailwind "black"/"white" roles are swapped. #}
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+    :root {
+        --c-canvas: 246 247 255;    /* page background under the aurora */
+        --c-primary: 30 27 75;      /* indigo ink */
+        --c-accent: 124 58 237;     /* violet: active nav, focus, checked controls */
+        --c-surface: 255 255 255;   /* glass cards (made translucent in theme.css) */
+        --c-black: 255 255 255;     /* Tailwind "black" (swapped): inputs, panels, text on primary */
+        --c-white: 17 12 46;        /* Tailwind "white" (swapped): strong text */
+        --c-success: 5 150 105;
+        --c-warning: 180 83 9;
+        --c-danger: 225 29 72;
+        --c-danger-soft: 225 29 72;
+        --c-red-300: 185 18 59;
+        --c-red-400: 184 24 59;
+        --c-red-500: 184 24 59;
+        --c-red-950: 255 228 230;
+        --c-yellow-200: 113 63 18;
+        --c-yellow-300: 133 77 14;
+        --c-yellow-400: 149 68 7;
+        --c-yellow-500: 149 68 7;
+        --c-orange-400: 159 60 8;
+        --c-orange-500: 194 65 12;
+        --c-green-400: 4 103 72;
+        --c-blue-400: 73 63 228;
+        --glow: 0;                  /* no neon glows; depth comes from soft coloured shadows */
+        --text-floor: 0.56;         /* faint text never goes below this (base.html): subtext stays readable */
+        --font-ui: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+        --logo-filter: hue-rotate(150deg) saturate(1.3) brightness(1.05);
+        --card-shadow: 0 10px 30px rgb(124 58 237 / 0.10), 0 1px 2px rgb(30 27 75 / 0.06);
+        color-scheme: light;
+
+        /* Aurora surfaces, used by theme.css */
+        --aurora-glass: rgb(255 255 255 / 0.62);
+        --aurora-glass-border: rgb(255 255 255 / 0.75);
+        --aurora-gradient: linear-gradient(90deg, #7c3aed 0%, #db2777 50%, #0ea5e9 100%);
+        --aurora-pill: linear-gradient(90deg, rgb(124 58 237 / 0.18) 0%, rgb(236 72 153 / 0.12) 100%);
+    }
+</style>

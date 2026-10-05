@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any
 
 from nanobot.agent.tools.base import Tool, tool_parameters
 from nanobot.agent.tools.schema import StringSchema, tool_parameters_schema
+from nanobot.agent.tools.turn_state import TurnLocal
 
 if TYPE_CHECKING:
     from nanobot.agent.subagent import SubagentManager
@@ -19,17 +20,24 @@ if TYPE_CHECKING:
 class SpawnTool(Tool):
     """Tool to spawn a subagent for background task execution."""
 
+    # One instance serves every session: where the result goes back to is per turn (custom)
+    _origin_channel = TurnLocal()
+    _origin_chat_id = TurnLocal()
+    _session_key = TurnLocal()
+
     def __init__(self, manager: "SubagentManager"):
         self._manager = manager
         self._origin_channel = "cli"
         self._origin_chat_id = "direct"
         self._session_key = "cli:direct"
 
-    def set_context(self, channel: str, chat_id: str) -> None:
+    def set_context(self, channel: str, chat_id: str, session_key: str | None = None) -> None:
         """Set the origin context for subagent announcements."""
         self._origin_channel = channel
         self._origin_chat_id = chat_id
-        self._session_key = f"{channel}:{chat_id}"
+        # The session that spawned it (the unified one when unifiedSession is on): the result is
+        # answered there, and /stop finds the task (custom, as upstream)
+        self._session_key = session_key or f"{channel}:{chat_id}"
 
     @property
     def name(self) -> str:

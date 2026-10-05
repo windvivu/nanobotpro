@@ -1,0 +1,83 @@
+/* Shared rules for flat themes (clean, light), included by their theme.css. Not a theme itself
+   (no head.html). `:root` raises specificity where a rule must beat a page's own style block. */
+
+/* Cards: flat surface, hairline border, soft depth (--card-shadow comes from the theme tokens) */
+.ui-card {
+    background-color: rgb(var(--c-surface));
+    backdrop-filter: none;
+    border: 1px solid rgb(var(--c-primary) / 0.12);
+    border-radius: 10px;
+    box-shadow: var(--card-shadow);
+}
+.ui-card:hover {
+    border-color: rgb(var(--c-primary) / 0.2);
+    box-shadow: var(--card-shadow);
+}
+header.ui-card {
+    border-width: 0 0 1px;
+    border-radius: 0;
+    background-color: rgb(var(--c-surface) / 0.92);
+    backdrop-filter: blur(8px);
+}
+.ui-card.rounded-none { border-radius: 0; }
+#theme-menu { box-shadow: 0 10px 30px rgb(0 0 0 / 0.25); }
+
+/* No glow on text, no blinking, no terminal cursors */
+.glow-text { text-shadow: none; }
+.blinking { animation: none; }
+.ui-cursor { display: none; }
+
+/* Calmer typography for Inter: sentence case for navigation and headings, tighter tracking */
+.tracking-widest { letter-spacing: 0.06em; }
+.tracking-wider { letter-spacing: 0.04em; }
+nav .uppercase,
+h1.uppercase, h2.uppercase, h3.uppercase { text-transform: none; letter-spacing: 0.01em; }
+
+/* Sidebar: plain rows; only the active item is tinted, no scan/pulse/flicker */
+nav > a.ui-card {
+    background-color: transparent;
+    border-color: transparent;
+    box-shadow: none;
+}
+nav > a.ui-card:hover { background-color: rgb(var(--c-primary) / 0.06); }
+.nav-active {
+    animation: none;
+    background: rgb(var(--c-accent) / 0.12) !important;
+    border-left-color: rgb(var(--c-accent)) !important;
+    border-left-width: 3px !important;
+}
+.nav-active::before,
+.nav-active::after { display: none; }
+.nav-active span,
+.nav-active .nav-label {
+    text-shadow: none;
+    animation: none;
+    color: rgb(var(--c-white));
+}
+
+/* Form controls: accent focus ring instead of glow */
+:root input:focus,
+:root textarea:focus,
+:root select:focus {
+    outline: none;
+    border-color: rgb(var(--c-accent) / 0.8);
+    box-shadow: 0 0 0 3px rgb(var(--c-accent) / 0.2);
+}
+
+/* Matrix-only decorations on individual pages */
+.neo-avatar-container::before,
+.neo-avatar-container::after { display: none; }
+/* :root beats the login page's own rule, whose glitch animation tints the avatar Matrix green */
+:root .neo-avatar-img { animation: none; }
+.login-corner { display: none; }
+.profile-active-card::before,
+.profile-active-card::after,
+.profile-active-card .active-border-bottom,
+.profile-active-card .active-border-left,
+.profile-active-card .active-corners { display: none; }
+:root .profile-active-card {
+    animation: none;
+    border-color: rgb(var(--c-accent) / 0.6) !important;
+}
+:root #new-msg-banner { background: rgb(var(--c-surface)); }
+:root #new-conv-modal > div { background: rgb(var(--c-surface)) !important; }

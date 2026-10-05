@@ -1,0 +1,47 @@
+{#- Office 2003 theme (Blue colour scheme): the classic blue command-bar gradients, an Outlook 2003
+    pane-header title bar, navigation-pane buttons and orange/navy highlights, Tahoma, square
+    corners. Colours follow the Office 2003 Blue palette. Same token contract as
+    themes/matrix/head.html; like the light theme, the Tailwind "black"/"white" roles are swapped. #}
+<style>
+    :root {
+        --c-canvas: 158 190 245;    /* command-bar blue */
+        --c-primary: 21 44 107;     /* dark navy ink */
+        --c-accent: 0 45 150;       /* pane-header blue: focus, links, checked controls */
+        --c-surface: 255 255 255;   /* panes, dropdown options */
+        --c-black: 255 255 255;     /* Tailwind "black" (swapped): inputs, panels, text on primary */
+        --c-white: 0 0 0;           /* Tailwind "white" (swapped): strong text */
+        --c-success: 0 128 0;
+        --c-warning: 153 102 0;
+        --c-danger: 204 0 0;
+        --c-danger-soft: 204 0 0;
+        --c-red-300: 153 0 0;
+        --c-red-400: 196 0 0;
+        --c-red-500: 196 0 0;
+        --c-red-950: 255 230 230;
+        --c-yellow-200: 113 63 18;
+        --c-yellow-300: 133 77 14;
+        --c-yellow-400: 123 82 0;
+        --c-yellow-500: 123 82 0;
+        --c-orange-400: 148 67 0;
+        --c-orange-500: 192 80 0;
+        --c-green-400: 0 107 0;
+        --c-blue-400: 0 45 150;
+        --glow: 0;                  /* no glows */
+        --text-floor: 0.6;          /* faint text never goes below this (base.html): subtext stays readable */
+        --font-ui: Tahoma, Verdana, 'Segoe UI', sans-serif;
+        --logo-filter: sepia(1) hue-rotate(185deg) saturate(3.5);
+        --card-shadow: 1px 1px 0 rgb(0 45 150 / 0.15);
+        color-scheme: light;
+
+        /* Office 2003 Blue surfaces, used by theme.css */
+        --o3-workspace: linear-gradient(180deg, #9ebef5 0%, #c4dafa 100%);
+        --o3-border: 59 97 156;
+        --o3-title: linear-gradient(180deg, #5987d6 0%, #2f5fc0 45%, #002d96 100%);
+        --o3-toolbar: linear-gradient(180deg, #e3efff 0%, #cbe1fc 45%, #7ba4e0 100%);
+        --o3-pane: linear-gradient(180deg, #ffffff 0%, #f2f7ff 100%);
+        --o3-hover: linear-gradient(180deg, #ffffde 0%, #ffcb88 100%);
+        --o3-checked: linear-gradient(180deg, #ffdf9a 0%, #ffa64c 100%);
+        --o3-pressed: linear-gradient(180deg, #fe803e 0%, #ffb16d 50%, #ffdf9a 100%);
+        --o3-navy: 0 0 128;
+    }
+</style>

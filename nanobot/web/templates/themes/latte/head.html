@@ -1,0 +1,44 @@
+{#- Latte theme: the Catppuccin Latte palette (https://catppuccin.com/palette). Warm, calm and easy
+    to read for long sessions; no motion. Mantle page, Base cards, Surface0 lines, Text ink, Mauve
+    accent. Same token contract as themes/matrix/head.html; the Tailwind "black"/"white" roles are
+    swapped as in the light theme. #}
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+    :root {
+        --c-canvas: 230 233 239;    /* Mantle #e6e9ef */
+        --c-primary: 76 79 105;     /* Text #4c4f69 */
+        --c-accent: 136 57 239;     /* Mauve #8839ef */
+        --c-surface: 239 241 245;   /* Base #eff1f5 */
+        --c-black: 230 233 239;     /* Tailwind "black" (swapped): Mantle for inputs, panels, text on primary */
+        --c-white: 61 63 87;        /* Tailwind "white" (swapped): strong text */
+        --c-success: 64 160 43;     /* Green #40a02b */
+        --c-warning: 254 100 11;    /* Peach #fe640b */
+        --c-danger: 210 15 57;      /* Red #d20f39 */
+        --c-danger-soft: 230 69 83; /* Maroon #e64553 */
+        --c-red-300: 171 23 36;
+        --c-red-400: 174 12 47;
+        --c-red-500: 174 12 47;
+        --c-red-950: 248 222 228;
+        --c-yellow-200: 114 73 15;  /* Yellow #df8e1d and Peach, darkened from here on for 4.5:1 text */
+        --c-yellow-300: 114 73 15;
+        --c-yellow-400: 147 54 1;
+        --c-yellow-500: 147 54 1;
+        --c-orange-400: 147 54 1;
+        --c-orange-500: 230 69 83;
+        --c-green-400: 37 94 25;
+        --c-blue-400: 9 72 198;    /* Blue #1e66f5, darkened for 4.5:1 text */
+        --glow: 0;                  /* no glows */
+        --text-floor: 0.79;         /* faint text never goes below this (base.html): subtext stays readable */
+        --font-ui: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+        --logo-filter: hue-rotate(140deg) saturate(0.8) brightness(1.05);
+        --card-shadow: 0 1px 2px rgb(76 79 105 / 0.08);
+        color-scheme: light;
+
+        /* Catppuccin Latte surfaces, used by theme.css */
+        --latte-crust: 220 224 232;     /* Crust #dce0e8 */
+        --latte-surface0: 204 208 218;  /* Surface0 #ccd0da */
+        --latte-surface1: 188 192 204;  /* Surface1 #bcc0cc */
+        --latte-overlay0: 156 160 176;  /* Overlay0 #9ca0b0 */
+        --latte-rainbow: linear-gradient(90deg, #dc8a78, #dd7878, #ea76cb, #8839ef, #d20f39, #e64553, #fe640b, #df8e1d, #40a02b, #179299, #04a5e5, #209fb5, #1e66f5, #7287fd);
+    }
+</style>

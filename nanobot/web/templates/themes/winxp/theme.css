@@ -1,0 +1,191 @@
+/* Windows XP theme: shared flat and light-background rules plus the Luna look. Included at the
+   end of the Tailwind style block in base.html. */
+{% include "themes/_flat.css" %}
+{% include "themes/_light.css" %}
+
+/* Desktop and window: a Bliss-like desktop, the page as one XP window (title bar + beige body) */
+:root body { background: var(--xp-bliss) fixed; }
+header.ui-card,
+:root main {
+    width: calc(100% - 48px);
+    max-width: 1600px;
+    margin-left: auto;
+    margin-right: auto;
+}
+:root main {
+    margin-bottom: 24px;
+    background: rgb(var(--xp-window));
+    border: 3px solid rgb(var(--xp-frame));
+    border-top: 0;
+}
+
+/* Title case, no letter-spaced capitals */
+.uppercase { text-transform: none; }
+.tracking-widest, .tracking-wider { letter-spacing: 0.01em; }
+
+/* Luna title bar: white bold text on the bright blue gradient. Tokens switch to light-on-dark
+   inside it; the theme menu that opens from it switches them back. */
+header.ui-card {
+    --c-primary: 255 255 255;
+    --text-floor: 0.8;          /* white subtext on the blue title bar stays readable (base.html) */
+    --c-white: 255 255 255;
+    --c-black: 0 61 215;
+    --c-accent: 255 255 255;
+    margin-top: 16px;
+    color: rgb(var(--c-primary));
+    background-color: #0058ee;
+    background-image: var(--xp-titlebar);
+    backdrop-filter: none;
+    border: 0;
+    border-radius: 8px 8px 0 0;
+    text-shadow: 1px 1px #0f1089;
+}
+header h1 { font-family: 'Trebuchet MS', Tahoma, sans-serif; }
+#theme-menu {
+    --c-primary: 0 0 0;
+    --c-white: 0 0 0;
+    --c-black: 255 255 255;
+    --c-accent: 49 106 197;
+    color: rgb(var(--c-primary));
+    text-shadow: none;
+    background: rgb(var(--c-surface));
+    border: 1px solid #aca899;
+    border-radius: 0;
+}
+#locale-menu {
+    --c-primary: 0 0 0;
+    --c-white: 0 0 0;
+    --c-black: 255 255 255;
+    --c-accent: 49 106 197;
+    color: rgb(var(--c-primary));
+    text-shadow: none;
+    background: rgb(var(--c-surface));
+    border: 1px solid #aca899;
+    border-radius: 0;
+}
+#locale-menu .locale-option { color: #000000 !important; }
+#locale-menu .locale-option:hover,
+#locale-menu .locale-option:hover * {
+    background-color: rgb(49 106 197);
+    color: #ffffff !important;
+}
+#locale-menu .locale-option.is-active { color: rgb(49 106 197) !important; }
+#theme-menu button:hover,
+#theme-menu button:hover * { background-color: rgb(49 106 197); color: #ffffff; }
+#fleet-badge,
+#fleet-badge span,
+#default-pwd-badge,
+#default-pwd-badge span {
+    color: #ffe680 !important;
+}
+
+/* Title-bar buttons: rounded squares with a white rim, like the caption buttons */
+header button.rounded-full {
+    border-radius: 3px;
+    border: 1px solid #ffffff;
+    background: linear-gradient(180deg, #3c8cf7 0%, #2167e6 50%, #1a57d6 100%);
+    color: #ffffff;
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.25);
+}
+header button.rounded-full:hover {
+    background: linear-gradient(180deg, #5ea2fb 0%, #3a7ff0 50%, #2a6be2 100%);
+    color: #ffffff;
+}
+
+/* Status button as the green Start button */
+#server-status-btn {
+    background: var(--xp-start);
+    border: 0;
+    border-radius: 4px 14px 14px 4px;
+    color: #ffffff;
+    font-style: italic;
+    text-shadow: 1px 1px 1px #1a4d1a;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.35);
+}
+#server-status-btn:hover {
+    background: linear-gradient(180deg, #73c26a 0%, #4db14c 45%, #3a9d39 100%);
+    color: #ffffff;
+}
+
+/* Dialog sheets: near-white gradient, grey hairline, small radius */
+.ui-card {
+    background-color: rgb(var(--c-surface));
+    background-image: var(--xp-sheet);
+    border: 1px solid rgb(var(--xp-sheet-border));
+    border-radius: 3px;
+    box-shadow: var(--card-shadow);
+}
+.ui-card:hover { border-color: rgb(var(--xp-sheet-border)); }
+
+/* Sidebar as the Explorer task pane: blue panel, blue task links, XP selection for the active one */
+:root nav {
+    background: var(--xp-taskpane);
+    padding: 12px;
+    border-radius: 4px;
+}
+nav > a.ui-card {
+    background-image: var(--xp-task);
+    border: 1px solid #ffffff;
+    border-radius: 3px;
+    box-shadow: none;
+}
+nav > a.ui-card span { color: rgb(var(--xp-link)); }
+nav > a.ui-card:hover span { color: rgb(var(--xp-link-hover)); text-decoration: underline; }
+nav > a.ui-card:hover { background-image: var(--xp-task); }
+.nav-active {
+    background: rgb(var(--c-accent)) !important;
+    border-color: #ffffff !important;
+    border-left-width: 1px !important;
+}
+nav > a.ui-card.nav-active span,
+.nav-active .nav-label { color: #ffffff; text-decoration: none; }
+
+/* Text boxes: XP blue-grey border, square corners */
+:root main input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+:root main textarea,
+:root main select {
+    border-color: rgb(var(--xp-textbox-border));
+    border-radius: 0;
+}
+:root input:focus,
+:root textarea:focus,
+:root select:focus {
+    border-color: rgb(var(--c-accent));
+    box-shadow: none;
+}
+
+/* Push buttons in the window body: XP face, orange rim when hovered, sunken when pressed.
+   Round icon buttons and buttons filled or lettered in a status colour keep their look. */
+:root main button.border:not(.rounded-full):not(.bg-primary):not([class*="bg-red"]):not([class*="bg-yellow"]):not([class*="bg-green"]):not([class*="text-red"]):not([class*="text-orange"]):not([class*="text-yellow"]) {
+    background-color: #f4f3ee;
+    background-image: var(--xp-button);
+    border-color: rgb(var(--xp-button-border));
+    border-radius: 3px;
+}
+:root main button.border:not(.rounded-full):not(.bg-primary):not([class*="bg-red"]):not([class*="bg-yellow"]):not([class*="bg-green"]):not([class*="text-red"]):not([class*="text-orange"]):not([class*="text-yellow"]):hover,
+:root main button.border:not(.rounded-full):not(.bg-primary):not([class*="bg-red"]):not([class*="bg-yellow"]):not([class*="bg-green"]):not([class*="text-red"]):not([class*="text-orange"]):not([class*="text-yellow"]):hover * {
+    color: rgb(var(--c-primary));
+}
+:root main button.border:not(.rounded-full):not(.bg-primary):not([class*="bg-red"]):not([class*="bg-yellow"]):not([class*="bg-green"]):not([class*="text-red"]):not([class*="text-orange"]):not([class*="text-yellow"]):hover {
+    background-image: var(--xp-button);
+    box-shadow: var(--xp-button-hover);
+}
+:root main button.border:not(.rounded-full):not(.bg-primary):not([class*="bg-red"]):not([class*="bg-yellow"]):not([class*="bg-green"]):not([class*="text-red"]):not([class*="text-orange"]):not([class*="text-yellow"]):active {
+    background-image: var(--xp-button-pressed);
+    box-shadow: none;
+}
+
+/* Luna scroll bars */
+::-webkit-scrollbar { width: 14px; height: 14px; }
+::-webkit-scrollbar-track { background: #f4f4f0; }
+::-webkit-scrollbar-thumb {
+    background: linear-gradient(90deg, #c9d8fc 0%, #b5c9f7 100%);
+    border: 1px solid #ffffff;
+    border-radius: 3px;
+    box-shadow: inset 0 0 0 1px #a3bbec;
+}
+::-webkit-scrollbar-thumb:hover { background: linear-gradient(90deg, #d9e4fd 0%, #c4d4f9 100%); }
+* { scrollbar-color: #b5c9f7 #f4f4f0; }
+
+/* Selection: XP highlight */
+::selection { background: rgb(49 106 197); color: #ffffff; }

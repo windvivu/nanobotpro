@@ -6,6 +6,7 @@ from typing import Any
 
 from nanobot.agent.tools.base import Tool, tool_parameters
 from nanobot.agent.tools.schema import StringSchema, tool_parameters_schema
+from nanobot.agent.tools.turn_state import TurnLocal
 from nanobot.session.goal_state import (
     ACTIVE_STATUS,
     make_active_goal_state,
@@ -26,9 +27,10 @@ def _session_key_from_context(
 
 
 class _GoalContextMixin:
-    _channel: str | None
-    _chat_id: str | None
-    _session_key: str | None
+    # One instance serves every session: the session a goal belongs to is per turn (custom)
+    _channel = TurnLocal()
+    _chat_id = TurnLocal()
+    _session_key = TurnLocal()
 
     def set_context(
         self,

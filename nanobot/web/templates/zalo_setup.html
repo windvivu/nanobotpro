@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Zalo Setup — Nanobot OS{% endblock %}
+{% block title %}{{ tr('page.zalo_setup') }} — Nanobot OS{% endblock %}
 
 {% block head_extra %}
 <style>
@@ -15,7 +15,7 @@
 {% block content %}
 <!-- Sidebar -->
 <aside class="w-full lg:w-72 flex flex-col gap-6">
-    <div class="matrix-card p-6 flex flex-col items-center text-center gap-4">
+    <div class="ui-card p-6 flex flex-col items-center text-center gap-4">
         <div
             class="w-20 h-20 flex items-center justify-center text-primary glow-text border-2 border-primary/30 rounded-full relative">
             <div class="absolute inset-0 border border-primary animate-pulse rounded-full opacity-20"></div>
@@ -35,8 +35,8 @@
             </svg>
         </div>
         <div>
-            <h2 class="text-lg font-bold glow-text tracking-widest uppercase">Nanobot_Admin</h2>
-            <p class="text-[10px] text-primary/50 font-mono">UID: 00-FF-41-X9</p>
+            <h2 class="text-lg font-bold glow-text tracking-widest uppercase">{{ profile_name or 'Default' }}</h2>
+            <p class="text-[10px] text-primary/50 font-mono">Profile: {{ profile_id or 'default' }}</p>
         </div>
     </div>
 
@@ -49,13 +49,13 @@
 <!-- Main Content -->
 <div class="flex-1 flex flex-col gap-8">
     <!-- Header -->
-    <div class="matrix-card p-6 relative overflow-hidden">
+    <div class="ui-card p-6 relative overflow-hidden">
         <div class="absolute top-0 right-0 p-2 opacity-10">
             <span class="material-symbols-outlined text-6xl">qr_code_2</span>
         </div>
         <div class="flex items-center gap-3 mb-2">
             <span class="w-2 h-2 rounded-full" id="header-dot"
-                style="background: var(--matrix-green); box-shadow: 0 0 5px var(--matrix-green);"></span>
+                style="background: rgb(var(--c-primary)); box-shadow: 0 0 5px rgb(var(--c-accent) / var(--glow));"></span>
             <h3 class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/60">Zalo Channel</h3>
         </div>
         <h1 class="text-2xl font-bold glow-text tracking-wider uppercase">Zalo Personal Setup</h1>
@@ -66,7 +66,7 @@
     <!-- Status + QR Area -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <!-- Connection Status -->
-        <div class="matrix-card p-6">
+        <div class="ui-card p-6">
             <div class="flex items-center gap-3 mb-6 border-b border-primary/20 pb-4">
                 <span class="material-symbols-outlined glow-text">monitoring</span>
                 <h3 class="text-xs font-bold uppercase tracking-widest glow-text">Connection Status</h3>
@@ -94,13 +94,13 @@
                 <div class="flex justify-between items-center p-2">
                     <span class="text-sm uppercase tracking-wider text-primary/60">Session</span>
                     <span class="text-sm font-bold" id="session-status"
-                        style="color: var(--session-color, rgba(0,255,65,0.6));">--</span>
+                        style="color: var(--session-color, rgb(var(--c-primary) / 0.6));">--</span>
                 </div>
 
                 <div class="flex justify-between items-center p-2">
                     <span class="text-sm uppercase tracking-wider text-primary/60">Bridge</span>
                     {% if bridge_status.installed == True %}
-                        <span class="text-sm font-bold font-mono bridge-status-span" style="color: rgba(0,255,65,0.7);">zca-js v{{ bridge_status.version }} ✓</span>
+                        <span class="text-sm font-bold font-mono bridge-status-span" style="color: rgb(var(--c-primary) / 0.7);">zca-js v{{ bridge_status.version }} ✓</span>
                     {% elif bridge_status.installed == False %}
                         <span class="text-sm font-bold font-mono bridge-status-span text-orange-400/80">Not installed ⚠</span>
                     {% else %}
@@ -146,7 +146,7 @@
         </div>
 
         <!-- QR Code Display -->
-        <div class="matrix-card p-6 flex flex-col items-center justify-center min-h-[320px]" id="qr-container">
+        <div class="ui-card p-6 flex flex-col items-center justify-center min-h-[320px]" id="qr-container">
             <!-- Disconnected state -->
             <div id="qr-placeholder" class="text-center">
                 <span class="material-symbols-outlined text-6xl text-primary/20 mb-4">qr_code_2</span>
@@ -183,7 +183,7 @@
                 <span class="material-symbols-outlined text-6xl text-green-400 mb-4"
                     style="text-shadow: 0 0 15px rgba(74, 222, 128, 0.5);">check_circle</span>
                 <p class="text-lg font-bold uppercase tracking-wider"
-                    style="color: #4ade80; text-shadow: 0 0 10px rgba(74, 222, 128, 0.3);">Connected</p>
+                    style="color: rgb(var(--c-success)); text-shadow: 0 0 10px rgba(74, 222, 128, 0.3);">Connected</p>
                 <p class="text-[10px] text-primary/40 mt-2" id="connected-user">User: --</p>
             </div>
 
@@ -199,7 +199,7 @@
     </div>
 
     <!-- Warning Banner -->
-    <div class="matrix-card p-4 border-l-4 border-l-yellow-500/60">
+    <div class="ui-card p-4 border-l-4 border-l-yellow-500/60">
         <div class="flex items-start gap-3">
             <span class="material-symbols-outlined text-yellow-500/80 mt-0.5">warning</span>
             <div>
@@ -215,7 +215,7 @@
     </div>
 
     <!-- Channel Configuration -->
-    <div class="matrix-card p-6" id="config-card">
+    <div class="ui-card p-6" id="config-card">
         <div class="flex items-center gap-3 mb-6 border-b border-primary/20 pb-4">
             <span class="material-symbols-outlined glow-text">settings</span>
             <h3 class="text-xs font-bold uppercase tracking-widest glow-text">Channel Configuration</h3>
@@ -265,7 +265,7 @@
                                     {% if zalo_config.group_reply_mode == "mention" %}checked{% endif %}
                                     class="sr-only peer">
                                 <span class="w-10 h-5 bg-black/60 border border-primary/30 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300"></span>
-                                <span class="absolute top-[2px] left-[2px] w-4 h-4 bg-primary/30 peer-checked:bg-primary peer-checked:shadow-[0_0_8px_#00FF41] peer-checked:translate-x-5 transition-all duration-300"></span>
+                                <span class="absolute top-[2px] left-[2px] w-4 h-4 bg-primary/30 peer-checked:bg-primary peer-checked:shadow-glow-8 peer-checked:translate-x-5 transition-all duration-300"></span>
                             </span>
                             <span class="text-xs font-bold uppercase tracking-wider text-primary/80">Mentions only</span>
                         </div>
@@ -280,7 +280,7 @@
                                     {% if zalo_config.group_reply_mode == "ambient" %}checked{% endif %}
                                     class="sr-only peer">
                                 <span class="w-10 h-5 bg-black/60 border border-primary/30 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300"></span>
-                                <span class="absolute top-[2px] left-[2px] w-4 h-4 bg-primary/30 peer-checked:bg-primary peer-checked:shadow-[0_0_8px_#00FF41] peer-checked:translate-x-5 transition-all duration-300"></span>
+                                <span class="absolute top-[2px] left-[2px] w-4 h-4 bg-primary/30 peer-checked:bg-primary peer-checked:shadow-glow-8 peer-checked:translate-x-5 transition-all duration-300"></span>
                             </span>
                             <span class="text-xs font-bold uppercase tracking-wider text-primary/80">Smart ambient</span>
                         </div>
@@ -295,7 +295,7 @@
                                     {% if zalo_config.group_reply_mode == "open" %}checked{% endif %}
                                     class="sr-only peer">
                                 <span class="w-10 h-5 bg-black/60 border border-primary/30 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300"></span>
-                                <span class="absolute top-[2px] left-[2px] w-4 h-4 bg-primary/30 peer-checked:bg-primary peer-checked:shadow-[0_0_8px_#00FF41] peer-checked:translate-x-5 transition-all duration-300"></span>
+                                <span class="absolute top-[2px] left-[2px] w-4 h-4 bg-primary/30 peer-checked:bg-primary peer-checked:shadow-glow-8 peer-checked:translate-x-5 transition-all duration-300"></span>
                             </span>
                             <span class="text-xs font-bold uppercase tracking-wider text-primary/80">Open</span>
                         </div>
@@ -303,6 +303,41 @@
                             Treat every group message like normal chat. Debug/private groups only.
                         </p>
                     </label>
+                </div>
+            </div>
+
+            <!-- Group filter (custom): cheap rules in zalo_personal.py that keep group noise away from the LLM -->
+            <div class="md:col-span-2 flex flex-col gap-3 border border-primary/15 bg-black/20 p-4">
+                <div class="flex items-center justify-between gap-3">
+                    <label class="text-[10px] font-bold uppercase tracking-wider text-primary/60">group_filter</label>
+                    <span class="text-[9px] text-primary/25 font-mono">groupFilter</span>
+                </div>
+                <p class="text-[10px] leading-relaxed text-primary/35">
+                    Before the LLM sees a group message: small talk ("ok", "haha", stickers, one or two words that ask
+                    nothing), keyboard mashing, the same message again, and floods from one sender are dropped.
+                    Only in Smart ambient; a message that mentions the bot is only held back when repeated or flooded.
+                    The rules stand down for two minutes after the bot speaks in the group.
+                </p>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {% for value, title, text in [
+                        ("off", "Off", "Every group message reaches the LLM, as before."),
+                        ("log", "Log only", "Nothing is dropped. What would be dropped is logged, and a would-be drop the bot then answered is flagged as a miss, so the rules can be judged first."),
+                        ("on", "On", "Drop them. Each drop is logged with its reason."),
+                    ] %}
+                    <label class="cursor-pointer border border-primary/20 bg-black/30 p-3 hover:border-primary/50 transition-colors">
+                        <div class="flex items-center gap-3">
+                            <span class="relative inline-flex w-10 h-5 shrink-0">
+                                <input type="radio" name="cfg-group-filter" value="{{ value }}"
+                                    {% if zalo_config.group_filter == value %}checked{% endif %}
+                                    class="sr-only peer">
+                                <span class="w-10 h-5 bg-black/60 border border-primary/30 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300"></span>
+                                <span class="absolute top-[2px] left-[2px] w-4 h-4 bg-primary/30 peer-checked:bg-primary peer-checked:shadow-glow-8 peer-checked:translate-x-5 transition-all duration-300"></span>
+                            </span>
+                            <span class="text-xs font-bold uppercase tracking-wider text-primary/80">{{ title }}</span>
+                        </div>
+                        <p class="mt-2 text-[10px] leading-relaxed text-primary/35">{{ text }}</p>
+                    </label>
+                    {% endfor %}
                 </div>
             </div>
         </div>
@@ -323,7 +358,7 @@
     </div>
 
     <!-- Terminal Log -->
-    <div class="matrix-card p-4 font-mono text-[11px] leading-tight space-y-1" id="terminal-log">
+    <div class="ui-card p-4 font-mono text-[11px] leading-tight space-y-1" id="terminal-log">
         <div class="flex gap-2">
             <span class="text-primary/40">[ZALO]</span>
             <span class="text-primary">Module initialized. Awaiting connection...</span>
@@ -338,7 +373,7 @@
 
 <!-- Clear Session Confirmation Modal -->
 <div id="clearSessionModal" class="fixed inset-0 z-50 bg-black/80 items-center justify-center" style="display: none;">
-    <div class="matrix-card p-6 w-full max-w-sm flex flex-col gap-5 border-yellow-500/40 shadow-[0_0_30px_rgba(250,204,21,0.15)] relative">
+    <div class="ui-card p-6 w-full max-w-sm flex flex-col gap-5 border-yellow-500/40 shadow-[0_0_30px_rgba(250,204,21,0.15)] relative">
         <div class="flex items-center gap-3">
             <span class="material-symbols-outlined text-yellow-400">delete_forever</span>
             <h3 class="text-sm font-bold uppercase tracking-widest text-yellow-400">Clear Session Data</h3>
@@ -367,7 +402,7 @@
 
 <!-- Reinstall Bridge Confirmation Modal -->
 <div id="reinstallModal" class="fixed inset-0 z-50 bg-black/80 items-center justify-center" style="display: none;">
-    <div class="matrix-card p-6 w-full max-w-sm flex flex-col gap-5 border-orange-500/40 shadow-[0_0_30px_rgba(251,146,60,0.15)] relative">
+    <div class="ui-card p-6 w-full max-w-sm flex flex-col gap-5 border-orange-500/40 shadow-[0_0_30px_rgba(251,146,60,0.15)] relative">
         <div class="flex items-center gap-3">
             <span class="material-symbols-outlined text-orange-400">refresh</span>
             <h3 class="text-sm font-bold uppercase tracking-widest text-orange-400">Reinstall Bridge</h3>
@@ -400,6 +435,7 @@
 <script>
     let pollInterval = null;
     let currentStatus = '{{ zalo_status.status }}';
+    let currentReconnecting = false;
     let isDisconnecting = false;
 
     function updateUI(data) {
@@ -438,30 +474,33 @@
 
         if (data.hasSavedSession) {
             sessionStatus.textContent = 'SAVED ✓';
-            sessionStatus.style.color = '#4ade80';
+            sessionStatus.style.color = 'rgb(var(--c-success))';
             placeholderText.textContent = 'Press Connect (auto-login)';
             placeholderHint.textContent = 'Saved session found — no QR needed';
             loadingText.textContent = 'Auto-login with saved session...';
             loadingHint.textContent = 'Using saved credentials';
         } else {
             sessionStatus.textContent = 'NOT SAVED';
-            sessionStatus.style.color = '#ef4444';
+            sessionStatus.style.color = 'rgb(var(--c-danger))';
             placeholderText.textContent = 'Press Connect to generate QR';
             placeholderHint.textContent = 'Scan with Zalo app to login';
             loadingText.textContent = 'Generating QR code...';
             loadingHint.textContent = 'Waiting for Zalo server';
         }
 
-        // Show "Clear Session" only when disconnected + has saved session
+        // No bridge running: disconnected, or the session expired (bridge exited)
+        const isIdle = data.status === 'disconnected' || data.status === 'auth_required';
+
+        // Show "Clear Session" only when idle + has saved session
         if (btnClearSession) {
             btnClearSession.style.display =
-                (data.status === 'disconnected' && data.hasSavedSession) ? 'flex' : 'none';
+                (isIdle && data.hasSavedSession) ? 'flex' : 'none';
         }
 
         // Disable "Reinstall Bridge" when connecting or connected (backend also guards this)
         const btnReinstall = document.getElementById('btn-reinstall-bridge');
         if (btnReinstall) {
-            const isDisconnected = data.status === 'disconnected' || data.status === 'not_enabled';
+            const isDisconnected = isIdle || data.status === 'not_enabled';
             btnReinstall.disabled = !isDisconnected;
             btnReinstall.style.opacity = isDisconnected ? '1' : '0.3';
             btnReinstall.style.cursor = isDisconnected ? 'pointer' : 'not-allowed';
@@ -469,12 +508,12 @@
         }
 
         if (data.status === 'connected') {
-            statusDot.style.background = '#4ade80';
-            statusDot.style.boxShadow = '0 0 8px #4ade80';
+            statusDot.style.background = 'rgb(var(--c-success))';
+            statusDot.style.boxShadow = '0 0 8px rgb(var(--c-success) / var(--glow))';
             statusText.textContent = 'CONNECTED';
-            statusText.style.color = '#4ade80';
-            headerDot.style.background = '#4ade80';
-            headerDot.style.boxShadow = '0 0 5px #4ade80';
+            statusText.style.color = 'rgb(var(--c-success))';
+            headerDot.style.background = 'rgb(var(--c-success))';
+            headerDot.style.boxShadow = '0 0 5px rgb(var(--c-success) / var(--glow))';
             userId.textContent = data.userId || '--';
 
             btnConnect.style.display = 'none';
@@ -488,18 +527,18 @@
 
             qrConnected.style.display = 'block';
             connectedUser.textContent = 'User ID: ' + (data.userId || '--');
-            stopPolling();
+            startPolling();  // keep watching: the bot can drop and reconnect on its own
 
             // Refresh bridge status indicator (npm install just completed)
             refreshBridgeStatus();
 
         } else if (data.status === 'connecting') {
-            statusDot.style.background = '#facc15';
-            statusDot.style.boxShadow = '0 0 8px #facc15';
+            statusDot.style.background = 'rgb(var(--c-warning))';
+            statusDot.style.boxShadow = '0 0 8px rgb(var(--c-warning) / var(--glow))';
             statusText.textContent = 'CONNECTING';
-            statusText.style.color = '#facc15';
-            headerDot.style.background = '#facc15';
-            headerDot.style.boxShadow = '0 0 5px #facc15';
+            statusText.style.color = 'rgb(var(--c-warning))';
+            headerDot.style.background = 'rgb(var(--c-warning))';
+            headerDot.style.boxShadow = '0 0 5px rgb(var(--c-warning) / var(--glow))';
             userId.textContent = '--';
 
             if (data.hasQr) {
@@ -529,12 +568,12 @@
             }
         } else {
             // disconnected
-            statusDot.style.background = '#ef4444';
-            statusDot.style.boxShadow = '0 0 8px #ef4444';
+            statusDot.style.background = 'rgb(var(--c-danger))';
+            statusDot.style.boxShadow = '0 0 8px rgb(var(--c-danger) / var(--glow))';
             statusText.textContent = 'DISCONNECTED';
-            statusText.style.color = '#ef4444';
-            headerDot.style.background = 'var(--matrix-green)';
-            headerDot.style.boxShadow = '0 0 5px var(--matrix-green)';
+            statusText.style.color = 'rgb(var(--c-danger))';
+            headerDot.style.background = 'rgb(var(--c-primary))';
+            headerDot.style.boxShadow = '0 0 5px rgb(var(--c-accent) / var(--glow))';
             userId.textContent = '--';
             // Restore connect button to normal state
             btnConnect.style.display = 'flex';
@@ -545,8 +584,32 @@
 
             btnDisconnect.style.display = 'none';
             qrPlaceholder.style.display = 'block';
-            stopPolling();
+
+            if (data.status === 'auth_required' || data.sessionExpired) {
+                // Zalo refused the saved session: Connect starts a fresh QR login.
+                statusText.textContent = 'SESSION EXPIRED — SCAN QR';
+                statusText.style.color = 'rgb(var(--c-orange-400, 251 146 60))';
+            }
+
+            if (data.reconnecting) {
+                // Waiting out a backoff before reconnecting on its own: Connect retries
+                // now, Disconnect cancels the pending reconnect.
+                const elsewhere = data.disconnectReason === 'duplicate_connection';
+                statusText.textContent = elsewhere ? 'OPENED ELSEWHERE — RETRY LATER' : 'RECONNECTING';
+                statusText.style.color = 'rgb(var(--c-warning))';
+                statusDot.style.background = 'rgb(var(--c-warning))';
+                statusDot.style.boxShadow = '0 0 8px rgb(var(--c-warning) / var(--glow))';
+                btnDisconnect.style.display = 'flex';
+                btnDisconnect.disabled = false;
+                btnDisconnect.innerHTML = '<span class="material-symbols-outlined text-sm">link_off</span>Disconnect';
+                btnDisconnect.style.opacity = '1';
+                btnDisconnect.style.cursor = 'pointer';
+                startPolling();
+            } else {
+                stopPolling();
+            }
         }
+        currentReconnecting = !!data.reconnecting;
     }
 
     function addLog(msg) {
@@ -610,10 +673,10 @@
             spans.forEach(el => {
                 if (data.installed === true) {
                     el.textContent = 'zca-js v' + data.version + ' ✓';
-                    el.style.color = 'rgba(0,255,65,0.7)';
+                    el.style.color = 'rgb(var(--c-primary) / 0.7)';
                 } else if (data.installed === false) {
                     el.textContent = 'Not installed ⚠';
-                    el.style.color = 'rgba(251,146,60,0.8)';
+                    el.style.color = 'rgb(var(--c-orange-400, 251 146 60) / 0.9)';
                 }
             });
         } catch (e) { /* silent */ }
@@ -667,10 +730,11 @@
                 const res = await fetch('/zalo/status');
                 const data = await res.json();
 
-                if (data.status !== currentStatus || (data.status === 'connecting' && data.hasQr)) {
+                if (data.status !== currentStatus || !!data.reconnecting !== currentReconnecting
+                        || (data.status === 'connecting' && data.hasQr)) {
                     updateUI(data);
                     if (data.status === 'connected') {
-                        addLog('<span style="color:#4ade80">Successfully connected!</span>');
+                        addLog('<span style="color:rgb(var(--c-success))">Successfully connected!</span>');
                     }
                 }
             } catch (err) {
@@ -702,7 +766,7 @@
             const res = await fetch('/zalo/clear-session', { method: 'POST' });
             const data = await res.json();
             if (data.cleared) {
-                addLog('<span style="color:#facc15">Session cleared — next connect requires QR scan.</span>');
+                addLog('<span style="color:rgb(var(--c-warning))">Session cleared — next connect requires QR scan.</span>');
             } else if (data.status === 'error') {
                 addLog('<span class="text-red-400">Error: ' + data.message + '</span>');
             } else {
@@ -733,9 +797,9 @@
             const res = await fetch('/zalo/reinstall-bridge', { method: 'POST' });
             const data = await res.json();
             if (data.success) {
-                addLog('<span style="color:#fb923c">' + data.message + '</span>');
-                addLog('<span style="color:#fb923c">Press Connect to install latest zca-js.</span>');
-                addLog('<span style="color:#fb923c/60">↻ Refresh page to see updated Bridge status.</span>');
+                addLog('<span style="color: rgb(var(--c-orange-400, 251 146 60))">' + data.message + '</span>');
+                addLog('<span style="color: rgb(var(--c-orange-400, 251 146 60))">Press Connect to install latest zca-js.</span>');
+                addLog('<span style="color: rgb(var(--c-orange-400, 251 146 60) / 0.9)">↻ Refresh page to see updated Bridge status.</span>');
             } else {
                 addLog('<span class="text-red-400">Error: ' + (data.error || 'Reinstall failed') + '</span>');
             }
@@ -766,20 +830,21 @@
                     allow_from: document.getElementById('cfg-allow-from').value,
                     node_path: document.getElementById('cfg-node-path').value,
                     group_reply_mode: document.querySelector('input[name="cfg-group-reply-mode"]:checked').value,
+                    group_filter: document.querySelector('input[name="cfg-group-filter"]:checked').value,
                 }),
             });
             const data = await res.json();
             if (data.success) {
                 msg.textContent = '✓ ' + data.message;
-                msg.style.color = '#4ade80';
-                addLog('<span style="color:#4ade80">Config saved. Next Zalo message uses the new mode.</span>');
+                msg.style.color = 'rgb(var(--c-success))';
+                addLog('<span style="color:rgb(var(--c-success))">Config saved. Next Zalo message uses the new mode.</span>');
             } else {
                 msg.textContent = '✗ ' + (data.error || 'Save failed');
-                msg.style.color = '#ef4444';
+                msg.style.color = 'rgb(var(--c-danger))';
             }
         } catch (err) {
             msg.textContent = '✗ Network error: ' + err.message;
-            msg.style.color = '#ef4444';
+            msg.style.color = 'rgb(var(--c-danger))';
         } finally {
             btn.disabled = false;
             btn.style.opacity = '1';

@@ -1,24 +1,18 @@
-Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
-
 param(
     [int]$Port = 8900,
     [string]$HostName = "127.0.0.1"
 )
 
-$ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$VenvPython = Join-Path $ScriptRoot "venv\Scripts\python.exe"
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
 
-if (-not (Test-Path -LiteralPath $VenvPython)) {
-    Write-Host "Missing local venv Python:" -ForegroundColor Red
-    Write-Host "  $VenvPython" -ForegroundColor Yellow
-    Write-Host ""
-    Write-Host "Create and install the environment first:" -ForegroundColor Cyan
-    Write-Host "  python -m venv venv"
-    Write-Host "  .\venv\Scripts\Activate.ps1"
-    Write-Host "  python -m pip install -e "".[web,dev]"""
-    exit 1
-}
+$ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+# Reuses venv\ or .venv\; creates venv\ and installs nanobot on the first run.
+& (Join-Path $ScriptRoot "scripts\ensure-venv.ps1")
+if ($LASTEXITCODE -ne 0) { exit 1 }
+$VenvPython = Join-Path $ScriptRoot "venv\Scripts\python.exe"
+if (-not (Test-Path -LiteralPath $VenvPython)) { $VenvPython = Join-Path $ScriptRoot ".venv\Scripts\python.exe" }
 
 Write-Host ""
 Write-Host "=== Nanobot Adminbot Launcher ===" -ForegroundColor Cyan
@@ -32,4 +26,9 @@ Write-Host "Press Ctrl+C to stop Adminbot." -ForegroundColor DarkGray
 Write-Host ""
 
 Set-Location -LiteralPath $ScriptRoot
+# Opens the dashboard in the browser once it answers (NANOBOT_NO_BROWSER=1 to skip).
+$BrowserHost = if ($HostName -in "0.0.0.0", "::") { "127.0.0.1" } else { $HostName }
+Start-Process powershell -WindowStyle Hidden -ArgumentList @(
+    "-NoProfile", "-ExecutionPolicy", "Bypass",
+    "-File", "`"$(Join-Path $ScriptRoot 'scripts\open-browser.ps1')`"", "-Url", "http://${BrowserHost}:$Port")
 & $VenvPython -m adminbot.app.main web --port $Port --host $HostName

@@ -1,0 +1,45 @@
+{#- Sakura theme: white-and-blossom pink, cherry petals drifting down behind the app (effects.html),
+    rounded white cards with a soft pink shadow, Nunito. Same token contract as
+    themes/matrix/head.html; like the light theme, the Tailwind "black"/"white" roles are swapped. #}
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet" />
+<style>
+    :root {
+        --c-canvas: 255 247 250;    /* blossom white */
+        --c-primary: 76 29 58;      /* deep plum ink */
+        --c-accent: 219 39 119;     /* sakura pink: active nav, focus, checked controls */
+        --c-surface: 255 255 255;   /* cards, dropdown options */
+        --c-black: 255 255 255;     /* Tailwind "black" (swapped): inputs, panels, text on primary */
+        --c-white: 59 17 41;        /* Tailwind "white" (swapped): strong text */
+        --c-success: 5 150 105;
+        --c-warning: 180 83 9;
+        --c-danger: 190 18 60;
+        --c-danger-soft: 190 18 60;
+        --c-red-300: 159 18 57;
+        --c-red-400: 185 18 59;
+        --c-red-500: 185 18 59;
+        --c-red-950: 255 228 230;
+        --c-yellow-200: 113 63 18;
+        --c-yellow-300: 133 77 14;
+        --c-yellow-400: 149 68 7;
+        --c-yellow-500: 149 68 7;
+        --c-orange-400: 159 60 8;
+        --c-orange-500: 194 65 12;
+        --c-green-400: 4 103 72;
+        --c-blue-400: 73 63 228;
+        --glow: 0;                  /* no neon glows */
+        --text-floor: 0.58;         /* faint text never goes below this (base.html): subtext stays readable */
+        --font-ui: 'Nunito', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+        --logo-filter: hue-rotate(210deg) saturate(1.2) brightness(1.1);
+        --card-shadow: 0 8px 24px rgb(219 39 119 / 0.08), 0 1px 2px rgb(76 29 58 / 0.05);
+        color-scheme: light;
+
+        /* Sakura surfaces, used by theme.css */
+        --sakura-backdrop:
+            radial-gradient(circle at 0% 0%, rgb(251 207 232 / 0.75) 0%, transparent 38%),
+            radial-gradient(circle at 100% 100%, rgb(252 231 243 / 0.95) 0%, transparent 45%),
+            radial-gradient(circle at 100% 0%, rgb(255 228 238 / 0.6) 0%, transparent 30%);
+        --sakura-border: 251 207 232;
+        --sakura-gradient: linear-gradient(90deg, #db2777 0%, #f472b6 100%);
+        --sakura-petal: linear-gradient(135deg, #ffd1e3 0%, #f9a8c9 60%, #f472b6 100%);
+    }
+</style>

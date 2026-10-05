@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -75,6 +76,7 @@ class AgentRunSpec:
     retry_wait_callback: Any | None = None  # LLM retry on_wait — separate from progress_callback (see log)
     checkpoint_callback: Any | None = None
     fallback_factory: FallbackFactory | None = None
+    timing_id: str | None = None  # Internal Web Chat latency correlation only
 
 
 @dataclass(slots=True)
@@ -240,6 +242,14 @@ class AgentRunner:
                     },
                 )
                 await hook.after_iteration(context)
+                if context.stop_reason:
+                    # A hook ended the run after these tools: the bot answered with one of them (it sent
+                    # its reply with files to the chat). No further model call (custom)
+                    final_content = context.final_content
+                    stop_reason = context.stop_reason
+                    if hook.wants_streaming():
+                        await hook.on_stream_end(context, resuming=False)
+                    break
                 empty_content_retries = 0
                 length_recovery_count = 0
                 continue
@@ -415,8 +425,26 @@ class AgentRunner:
             retry_mode="single_attempt" if spec.fallback_factory is not None else None,
         )
         if hook.wants_streaming():
+            request_started_at = time.perf_counter()
+            if spec.channel == "webchat":
+                logger.info(
+                    "[WebChatTiming] turn={} session={} event=provider_request_start iteration={} model={}",
+                    spec.timing_id or "-",
+                    spec.session_key or "default",
+                    context.iteration,
+                    spec.model,
+                )
+
             async def _stream(delta: str) -> None:
                 if delta:
+                    if spec.channel == "webchat" and not context.streaming_started:
+                        logger.info(
+                            "[WebChatTiming] turn={} session={} event=provider_first_delta iteration={} elapsed_ms={:.1f}",
+                            spec.timing_id or "-",
+                            spec.session_key or "default",
+                            context.iteration,
+                            (time.perf_counter() - request_started_at) * 1000,
+                        )
                     context.streaming_started = True
                 await hook.on_stream(context, delta)
 

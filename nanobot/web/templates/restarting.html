@@ -1,19 +1,40 @@
 {% extends "base.html" %}
 
-{% block title %}Restarting Gateway - Nanobot OS{% endblock %}
+{% block title %}{{ tr('page.restart_gateway') }} - Nanobot OS{% endblock %}
 
 {% block content %}
 <div class="w-full flex-1 self-stretch min-h-[70vh] flex items-center justify-center">
-    <div class="matrix-card w-full max-w-2xl p-8 text-center">
+    <div class="ui-card w-full max-w-2xl p-8 text-center">
         <div class="flex justify-center mb-6">
-            <span class="material-symbols-outlined text-5xl text-primary animate-spin">restart_alt</span>
+            <span id="restart-icon" class="material-symbols-outlined text-5xl text-primary {{ '' if running_subagents else 'animate-spin' }}">restart_alt</span>
         </div>
-        <h1 class="text-2xl font-bold uppercase tracking-[0.35em] text-primary glow-text mb-3">Restarting</h1>
-        <p class="text-sm text-primary/50 font-mono mb-6">Gateway is applying configuration changes.</p>
+        <h1 class="text-2xl font-bold uppercase tracking-[0.35em] text-primary glow-text mb-3">{{ tr('page.restarting') }}</h1>
+        <p class="text-sm text-primary/50 font-mono mb-6">{{ tr('page.gateway_applying') }}</p>
+        {% if running_subagents %}
+        <!-- Sub-agents still running end with the restart: ask before restarting -->
+        <div id="restart-warning" class="border border-yellow-400/50 bg-yellow-400/10 p-4 mb-6 text-left">
+            <p class="text-xs font-bold uppercase tracking-widest text-yellow-400 mb-2">
+                {{ running_subagents | length }} tác vụ nền đang chạy
+            </p>
+            <p class="text-xs text-primary/70 font-mono leading-relaxed">
+                Khởi động lại sẽ dừng chúng giữa chừng và chúng sẽ không có kết quả
+                (sau khi khởi động, bot báo lại cho từng cuộc chat):
+            </p>
+            <ul class="mt-2 text-xs text-primary/80 font-mono list-disc pl-5">
+                {% for label in running_subagents %}<li>{{ label }}</li>{% endfor %}
+            </ul>
+            <div class="flex gap-3 justify-end mt-4">
+                <a href="{{ next_url }}"
+                    class="px-4 py-2 text-[10px] font-bold uppercase tracking-wider border border-primary/30 text-primary/70 hover:text-primary hover:border-primary/60 transition-all">Huỷ</a>
+                <button type="button" id="restart-anyway" onclick="restartAnyway()"
+                    class="px-4 py-2 text-[10px] font-bold uppercase tracking-wider border border-yellow-400/60 text-yellow-400 hover:bg-yellow-400/10 transition-all">Vẫn khởi động lại</button>
+            </div>
+        </div>
+        {% endif %}
 
         <div class="border border-primary/20 bg-black/40 p-4 text-left font-mono text-xs space-y-2">
             <div class="flex items-center gap-2">
-                <span id="restart-step-request-dot" class="w-2 h-2 rounded-full bg-yellow-400 shadow-[0_0_6px_#facc15]"></span>
+                <span id="restart-step-request-dot" class="w-2 h-2 rounded-full bg-yellow-400 shadow-glow-warning-6"></span>
                 <span id="restart-step-request">Sending restart request...</span>
             </div>
             <div class="flex items-center gap-2">
@@ -36,6 +57,8 @@
 {% block scripts %}
 <script>
 const NEXT_URL = {{ next_url | tojson }};
+// Sub-agents are running: wait until the warning is confirmed
+const ASK_FIRST = {{ (running_subagents | length > 0) | tojson }};
 
 function setStep(id, state, text) {
     const dot = document.getElementById(id + '-dot');
@@ -43,13 +66,13 @@ function setStep(id, state, text) {
     if (!dot || !label) return;
 
     if (state === 'ok') {
-        dot.className = 'w-2 h-2 rounded-full bg-primary shadow-[0_0_6px_#00FF41]';
+        dot.className = 'w-2 h-2 rounded-full bg-primary shadow-glow-6';
         label.className = 'text-primary/80';
     } else if (state === 'active') {
-        dot.className = 'w-2 h-2 rounded-full bg-yellow-400 shadow-[0_0_6px_#facc15]';
+        dot.className = 'w-2 h-2 rounded-full bg-yellow-400 shadow-glow-warning-6';
         label.className = 'text-yellow-400/80';
     } else if (state === 'error') {
-        dot.className = 'w-2 h-2 rounded-full bg-red-500 shadow-[0_0_6px_#ef4444]';
+        dot.className = 'w-2 h-2 rounded-full bg-red-500 shadow-glow-danger-6';
         label.className = 'text-red-400/80';
     }
 
@@ -102,6 +125,17 @@ function pollUntilReady() {
     }, 1500);
 }
 
-setTimeout(triggerRestart, 300);
+function restartAnyway() {
+    const warning = document.getElementById('restart-warning');
+    if (warning) warning.hidden = true;
+    document.getElementById('restart-icon').classList.add('animate-spin');
+    triggerRestart();
+}
+if (ASK_FIRST) {
+    setStep('restart-step-request', 'active', 'Waiting for your confirmation...');
+    setDetail('Nothing restarts until you confirm.');
+} else {
+    setTimeout(triggerRestart, 300);
+}
 </script>
 {% endblock %}

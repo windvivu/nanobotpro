@@ -1,0 +1,3 @@
+/* Light theme: shared flat rules plus fixes for elements that stay dark or use fixed colours. */
+{% include "themes/_flat.css" %}
+{% include "themes/_light.css" %}

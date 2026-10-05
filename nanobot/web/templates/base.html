@@ -1,124 +1,180 @@
 <!DOCTYPE html>
-<html class="dark" lang="en">
+{%- set _theme = current_theme() if current_theme is defined else (ui_theme | default("matrix")) %}
+<html class="dark" lang="{{ current_locale() }}" data-theme="{{ _theme }}">
 
 <head>
     <meta charset="utf-8" />
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
     <title>{% block title %}Nanobot OS{% endblock %}</title>
     <link rel="icon" href="/static/catmatrix.png" type="image/png" />
+    {% include "themes/" ~ _theme ~ "/head.html" %}
+    <script>
+        // Shared catalog for page-specific JavaScript.  Dynamic API statuses
+        // can use the same keys as server-rendered labels.
+        window.nanobotI18n = {{ ui_translations() | tojson }};
+        window.nanobotTr = function (key, fallback, values) {
+            let text = window.nanobotI18n[key] || fallback || key;
+            Object.entries(values || {}).forEach(([name, value]) => {
+                text = text.replace(`{${name}}`, String(value));
+            });
+            return text;
+        };
+        // Theme colour token -> rgb() string, for APIs that cannot read CSS variables (e.g. canvas).
+        function themeColor(name, alpha = 1) {
+            const rgb = getComputedStyle(document.documentElement).getPropertyValue('--c-' + name).trim();
+            return 'rgb(' + rgb + ' / ' + alpha + ')';
+        }
+        // Dashboard theme switcher: the choice is kept per browser in a cookie; no cookie = server theme.
+        function toggleThemeMenu(event) {
+            event.stopPropagation();
+            const open = !document.getElementById('theme-menu').classList.toggle('hidden');
+            document.getElementById('theme-switcher-btn').setAttribute('aria-expanded', String(open));
+        }
+        function setDashboardTheme(name) {
+            const cookie = '{{ theme_cookie }}';
+            document.cookie = name
+                ? cookie + '=' + encodeURIComponent(name) + '; path=/; max-age=31536000; samesite=lax'
+                : cookie + '=; path=/; max-age=0; samesite=lax';
+            window.location.reload();
+        }
+        // Dashboard language is a per-browser preference. It is independent
+        // from gateway.web.voice.language, which controls speech recognition.
+        function toggleLocaleMenu(event) {
+            event.stopPropagation();
+            const open = !document.getElementById('locale-menu').classList.toggle('hidden');
+            document.getElementById('locale-switcher-btn').setAttribute('aria-expanded', String(open));
+        }
+        function setDashboardLocale(locale) {
+            if (!['en', 'vi'].includes(locale)) return;
+            document.cookie = '{{ locale_cookie }}=' + encodeURIComponent(locale) + '; path=/; max-age=31536000; samesite=lax';
+            window.location.reload();
+        }
+        // Make a theme the server default for every browser without its own choice, then follow it.
+        async function setDefaultTheme(name) {
+            const note = document.getElementById('theme-menu-note');
+            try {
+                const res = await fetch('/api/theme/default', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ theme: name }),
+                });
+                const data = (res.headers.get('content-type') || '').includes('json') ? await res.json() : null;
+                if (!data || !data.success) throw new Error((data && data.error) || 'log in to change the default');
+                setDashboardTheme('');
+            } catch (err) {
+                note.textContent = window.nanobotTr('common.error') + ': ' + err.message;
+                note.classList.remove('hidden');
+            }
+        }
+        document.addEventListener('click', function (e) {
+            const switcher = document.getElementById('theme-switcher');
+            if (switcher && !switcher.contains(e.target)) {
+                document.getElementById('theme-menu').classList.add('hidden');
+            }
+            const localeSwitcher = document.getElementById('locale-switcher');
+            if (localeSwitcher && !localeSwitcher.contains(e.target)) {
+                document.getElementById('locale-menu').classList.add('hidden');
+            }
+        });
+    </script>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
         rel="stylesheet" />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;700&display=swap"
         rel="stylesheet" />
     <script id="tailwind-config">
+        const themeShades = (colour, shades) => Object.fromEntries(Object.entries(shades).map(
+            ([shade, rgb]) => [shade, `rgb(var(--c-${colour}-${shade}, ${rgb}) / <alpha-value>)`]));
         tailwind.config = {
             darkMode: "class",
             theme: {
                 extend: {
+                    // Colours resolve to the active theme's tokens (themes/<name>/head.html);
+                    // <alpha-value> keeps opacity modifiers such as text-primary/40 working.
                     colors: {
-                        "primary": "#00FF41",
-                        "matrix-dark": "#0a0a0a",
+                        "canvas": "rgb(var(--c-canvas) / <alpha-value>)",
+                        "primary": "rgb(var(--c-primary) / <alpha-value>)",
+                        "accent": "rgb(var(--c-accent) / <alpha-value>)",
+                        "surface": "rgb(var(--c-surface) / <alpha-value>)",
+                        "black": "rgb(var(--c-black) / <alpha-value>)",
+                        "white": "rgb(var(--c-white) / <alpha-value>)",
+                        // Palette shades used by the templates; a theme can override any of them
+                        // with --c-<colour>-<shade> (the light theme darkens them for contrast).
+                        "red": themeShades("red", { 300: "252 165 165", 400: "248 113 113", 500: "239 68 68", 950: "69 10 10" }),
+                        "yellow": themeShades("yellow", { 200: "254 240 138", 300: "253 224 71", 400: "250 204 21", 500: "234 179 8" }),
+                        "orange": themeShades("orange", { 400: "251 146 60", 500: "249 115 22" }),
+                        "green": themeShades("green", { 400: "74 222 128" }),
+                        "blue": themeShades("blue", { 400: "96 165 250" }),
+                    },
+                    // Glow scale: shadow-glow-<blur>[-<opacity %>] in the accent colour and
+                    // shadow-glow-<status>-<blur> for status colours, all scaled by --glow.
+                    boxShadow: {
+                        "glow-4": "0 0 4px rgb(var(--c-accent) / var(--glow))",
+                        "glow-5": "0 0 5px rgb(var(--c-accent) / var(--glow))",
+                        "glow-6": "0 0 6px rgb(var(--c-accent) / var(--glow))",
+                        "glow-8": "0 0 8px rgb(var(--c-accent) / var(--glow))",
+                        "glow-8-14": "0 0 8px rgb(var(--c-accent) / calc(0.14 * var(--glow)))",
+                        "glow-8-40": "0 0 8px rgb(var(--c-accent) / calc(0.4 * var(--glow)))",
+                        "glow-10": "0 0 10px rgb(var(--c-accent) / var(--glow))",
+                        "glow-10-20": "0 0 10px rgb(var(--c-accent) / calc(0.2 * var(--glow)))",
+                        "glow-10-30": "0 0 10px rgb(var(--c-accent) / calc(0.3 * var(--glow)))",
+                        "glow-15-15": "0 0 15px rgb(var(--c-accent) / calc(0.15 * var(--glow)))",
+                        "glow-15-30": "0 0 15px rgb(var(--c-accent) / calc(0.3 * var(--glow)))",
+                        "glow-20-30": "0 0 20px rgb(var(--c-accent) / calc(0.3 * var(--glow)))",
+                        "glow-30-20": "0 0 30px rgb(var(--c-accent) / calc(0.2 * var(--glow)))",
+                        "glow-40-12": "0 0 40px rgb(var(--c-accent) / calc(0.12 * var(--glow)))",
+                        "glow-danger-6": "0 0 6px rgb(var(--c-danger) / var(--glow))",
+                        "glow-warning-6": "0 0 6px rgb(var(--c-warning) / var(--glow))",
+                        "glow-warning-8": "0 0 8px rgb(var(--c-warning) / var(--glow))",
                     },
                     fontFamily: {
-                        "mono": ["'JetBrains Mono'", "monospace"]
+                        "mono": ["'JetBrains Mono'", "monospace"],
+                        "ui": ["var(--font-ui)"],
                     },
                 },
             },
         }
     </script>
     <style type="text/tailwindcss">
-        @keyframes matrix-rain {
-        0% { transform: translateY(-100%); }
-        100% { transform: translateY(100vh); }
-    }
     @keyframes blink {
         0%, 100% { opacity: 1; }
         50% { opacity: 0.3; }
     }
-    @keyframes scanline {
-        0% { transform: translateY(-100%); }
-        100% { transform: translateY(100%); }
-    }
-    .matrix-rain-container {
-        position: fixed;
-        inset: 0;
-        background: #000;
-        overflow: hidden;
-        z-index: -2;
-    }
-    .matrix-foreground-container {
-        position: fixed;
-        inset: 0;
-        overflow: hidden;
-        z-index: 100;
-        pointer-events: none;
-    }
-    .matrix-column {
-        position: absolute;
-        top: -100%;
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 1.1rem;
-        line-height: 1;
-        writing-mode: vertical-rl;
-        text-orientation: upright;
-        color: #00FF41;
-        user-select: none;
-        pointer-events: none;
-        white-space: nowrap;
-        text-shadow: 0 0 8px rgba(0, 255, 65, 0.8);
-    }
-    .matrix-column-foreground {
-        position: absolute;
-        top: -100%;
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 1.8rem;
-        line-height: 1;
-        writing-mode: vertical-rl;
-        text-orientation: upright;
-        color: #00FF41;
-        user-select: none;
-        pointer-events: none;
-        white-space: nowrap;
-        text-shadow: 0 0 15px rgba(0, 255, 65, 1), 0 0 30px rgba(0, 255, 65, 0.5);
-        opacity: 0.95;
-        filter: brightness(1.2);
-        font-weight: 700;
-    }
-    .crt-overlay {
-        position: fixed;
-        inset: 0;
-        background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
-        background-size: 100% 4px, 3px 100%;
-        pointer-events: none;
-        z-index: 50;
-    }
-    .crt-scanline {
-        position: fixed;
-        inset: 0;
-        height: 2px;
-        background: rgba(0, 255, 65, 0.1);
-        animation: scanline 8s linear infinite;
-        z-index: 51;
-        pointer-events: none;
-    }
     .glow-text {
-        text-shadow: 0 0 5px rgba(0, 255, 65, 0.7);
+        text-shadow: 0 0 5px rgb(var(--c-accent) / calc(0.7 * var(--glow)));
     }
-    .matrix-card {
-        background-color: rgba(10, 10, 10, 0.7);
+    .ui-card {
+        background-color: rgb(var(--c-surface) / 0.7);
         backdrop-filter: blur(8px);
-        border: 1px solid #00FF41;
-        box-shadow: 0 0 15px rgba(0, 255, 65, 0.2), inset 0 0 10px rgba(0, 255, 65, 0.1);
+        border: 1px solid rgb(var(--c-primary));
+        box-shadow: 0 0 15px rgb(var(--c-accent) / calc(0.2 * var(--glow))), inset 0 0 10px rgb(var(--c-accent) / calc(0.1 * var(--glow)));
     }
-    .matrix-card:hover {
-        box-shadow: 0 0 25px rgba(0, 255, 65, 0.4), inset 0 0 15px rgba(0, 255, 65, 0.2);
+    .ui-card:hover {
+        box-shadow: 0 0 25px rgb(var(--c-accent) / calc(0.4 * var(--glow))), inset 0 0 15px rgb(var(--c-accent) / calc(0.2 * var(--glow)));
         transition: all 0.3s ease;
+    }
+    /* Locale options must remain readable when a light theme gives cards a
+       white surface. Tailwind opacity utilities can otherwise inherit a
+       nearly white primary colour from a custom theme. */
+    #locale-menu {
+        color: rgb(var(--c-primary) / .95);
+        background-color: rgb(var(--c-surface) / .98);
+    }
+    #locale-menu .locale-option {
+        color: rgb(var(--c-primary) / .95) !important;
+        text-shadow: none;
+    }
+    #locale-menu .locale-option:hover {
+        color: rgb(var(--c-primary)) !important;
+        background-color: rgb(var(--c-primary) / .10);
+    }
+    #locale-menu .locale-option.is-active {
+        color: rgb(var(--c-accent)) !important;
+        font-weight: 700;
     }
     .blinking {
         animation: blink 1.5s step-end infinite;
     }
-    .rain-anim { animation: matrix-rain linear infinite; }
 
     /* ── Active Nav Item ── */
     @keyframes nav-scan {
@@ -128,8 +184,8 @@
         100% { transform: translateX(100%); opacity: 0; }
     }
     @keyframes nav-glow-pulse {
-        0%, 100% { box-shadow: 0 0 8px rgba(0,255,65,0.35), inset 0 0 8px rgba(0,255,65,0.12), 2px 0 0 0 #00FF41 inset; }
-        50%       { box-shadow: 0 0 22px rgba(0,255,65,0.7), inset 0 0 16px rgba(0,255,65,0.28), 2px 0 0 0 #00FF41 inset; }
+        0%, 100% { box-shadow: 0 0 8px rgb(var(--c-accent) / calc(0.35 * var(--glow))), inset 0 0 8px rgb(var(--c-accent) / calc(0.12 * var(--glow))), 2px 0 0 0 rgb(var(--c-accent) / var(--glow)) inset; }
+        50%       { box-shadow: 0 0 22px rgb(var(--c-accent) / calc(0.7 * var(--glow))), inset 0 0 16px rgb(var(--c-accent) / calc(0.28 * var(--glow))), 2px 0 0 0 rgb(var(--c-accent) / var(--glow)) inset; }
     }
     @keyframes nav-char-flicker {
         0%, 92%, 100% { opacity: 1; }
@@ -142,8 +198,8 @@
         position: relative;
         overflow: hidden;
         animation: nav-glow-pulse 2.4s ease-in-out infinite;
-        background: linear-gradient(90deg, rgba(0,255,65,0.18) 0%, rgba(0,255,65,0.06) 100%) !important;
-        border-left-color: #00FF41 !important;
+        background: linear-gradient(90deg, rgb(var(--c-primary) / 0.18) 0%, rgb(var(--c-primary) / 0.06) 100%) !important;
+        border-left-color: rgb(var(--c-primary)) !important;
         border-left-width: 4px !important;
     }
     .nav-active::before {
@@ -153,7 +209,7 @@
         left: 0;
         width: 40%;
         height: 100%;
-        background: linear-gradient(90deg, transparent 0%, rgba(0,255,65,0.25) 50%, transparent 100%);
+        background: linear-gradient(90deg, transparent 0%, rgb(var(--c-primary) / 0.25) 50%, transparent 100%);
         animation: nav-scan 3s ease-in-out infinite;
         pointer-events: none;
         z-index: 1;
@@ -166,8 +222,8 @@
             0deg,
             transparent,
             transparent 3px,
-            rgba(0,255,65,0.03) 3px,
-            rgba(0,255,65,0.03) 4px
+            rgb(var(--c-primary) / 0.03) 3px,
+            rgb(var(--c-primary) / 0.03) 4px
         );
         pointer-events: none;
         z-index: 0;
@@ -175,7 +231,7 @@
     .nav-active span, .nav-active .nav-label {
         position: relative;
         z-index: 2;
-        text-shadow: 0 0 8px rgba(0,255,65,0.9), 0 0 16px rgba(0,255,65,0.5);
+        text-shadow: 0 0 8px rgb(var(--c-accent) / calc(0.9 * var(--glow))), 0 0 16px rgb(var(--c-accent) / calc(0.5 * var(--glow)));
         animation: nav-char-flicker 5s step-end infinite;
     }
     .nav-active .nav-tag {
@@ -183,27 +239,27 @@
         z-index: 2;
     }
 
-    /* Global matrix scrollbar */
+    /* Global scrollbar */
     ::-webkit-scrollbar {
         width: 8px;
         height: 8px;
     }
     ::-webkit-scrollbar-track {
-        background: rgba(0, 255, 65, 0.03);
+        background: rgb(var(--c-primary) / 0.03);
     }
     ::-webkit-scrollbar-thumb {
-        background: rgba(0, 255, 65, 0.4);
+        background: rgb(var(--c-primary) / 0.4);
         border-radius: 4px;
     }
     ::-webkit-scrollbar-thumb:hover {
-        background: rgba(0, 255, 65, 0.7);
+        background: rgb(var(--c-primary) / 0.7);
     }
     ::-webkit-scrollbar-corner {
         background: transparent;
     }
     * {
         scrollbar-width: thin;
-        scrollbar-color: rgba(0, 255, 65, 0.4) rgba(0, 255, 65, 0.03);
+        scrollbar-color: rgb(var(--c-primary) / 0.4) rgb(var(--c-primary) / 0.03);
     }
 
     /* Prompt Viewer scrollbar — brighter */
@@ -211,106 +267,90 @@
         width: 6px;
     }
     #prompt-viewer-content::-webkit-scrollbar-track {
-        background: rgba(0, 255, 65, 0.08);
+        background: rgb(var(--c-primary) / 0.08);
     }
     #prompt-viewer-content::-webkit-scrollbar-thumb {
-        background: rgba(0, 255, 65, 0.5);
+        background: rgb(var(--c-primary) / 0.5);
         border-radius: 3px;
-        box-shadow: 0 0 4px rgba(0, 255, 65, 0.3);
+        box-shadow: 0 0 4px rgb(var(--c-accent) / calc(0.3 * var(--glow)));
     }
     #prompt-viewer-content::-webkit-scrollbar-thumb:hover {
-        background: rgba(0, 255, 65, 0.8);
-        box-shadow: 0 0 8px rgba(0, 255, 65, 0.5);
+        background: rgb(var(--c-primary) / 0.8);
+        box-shadow: 0 0 8px rgb(var(--c-accent) / calc(0.5 * var(--glow)));
     }
     #prompt-viewer-content {
         scrollbar-width: thin;
-        scrollbar-color: rgba(0, 255, 65, 0.5) rgba(0, 255, 65, 0.08);
+        scrollbar-color: rgb(var(--c-primary) / 0.5) rgb(var(--c-primary) / 0.08);
     }
+    /* Readable secondary text in every theme. Faint text classes (text-primary/40 and the like) are
+       lifted onto the theme's floor, --text-floor in themes/<name>/head.html:
+       alpha = floor + (1 - floor) x n%. Dimmer text stays dimmer, and the faintest subtext still
+       reaches about 4.5:1 contrast on cards; its smaller size is what marks it as subtext.
+       The classes read the floor where they are, so a theme can raise it inside a coloured area
+       (the Windows XP and Office 2003 title bars do). Hand-written styles use the page-wide scale
+       through var(--text-alpha-<n>). */
+    :root {
+{%- for n in range(5, 100, 5) %}
+        --text-alpha-{{ n }}: calc(var(--text-floor, 0.6) + (1 - var(--text-floor, 0.6)) * {{ n / 100 }});
+{%- endfor %}
+    }
+{%- for n in range(5, 100, 5) %}
+{%- set a = "calc(var(--text-floor, 0.6) + (1 - var(--text-floor, 0.6)) * " ~ (n / 100) ~ ")" %}
+    .text-primary\/{{ n }}, .hover\:text-primary\/{{ n }}:hover, .group:hover .group-hover\:text-primary\/{{ n }} { color: rgb(var(--c-primary) / {{ a }}); }
+    .placeholder\:text-primary\/{{ n }}::placeholder { color: rgb(var(--c-primary) / {{ a }}); }
+    .text-white\/{{ n }}, .hover\:text-white\/{{ n }}:hover { color: rgb(var(--c-white) / {{ a }}); }
+{%- endfor %}
+    /* Faint coloured text (text-yellow-400/60, text-red-400/50 ...) is lifted harder, onto
+       --text-floor-color (0.85): its colour carries the meaning, so it stays nearly solid. Each theme
+       keeps these shades dark (or light) enough for 4.5:1 on its cards; tests/test_web_theme.py checks.
+       Defaults are the same as themeShades() in the Tailwind config above. */
+{%- set text_shades = {
+    "red-300": "252 165 165", "red-400": "248 113 113", "red-500": "239 68 68",
+    "yellow-200": "254 240 138", "yellow-300": "253 224 71", "yellow-400": "250 204 21", "yellow-500": "234 179 8",
+    "orange-400": "251 146 60", "green-400": "74 222 128", "blue-400": "96 165 250",
+} %}
+{%- for shade, rgb in text_shades.items() %}{% for n in range(30, 100, 10) %}
+    .text-{{ shade }}\/{{ n }}, .hover\:text-{{ shade }}\/{{ n }}:hover { color: rgb(var(--c-{{ shade }}, {{ rgb }}) / calc(var(--text-floor-color, 0.85) + (1 - var(--text-floor-color, 0.85)) * {{ n / 100 }})); }
+{%- endfor %}{% endfor %}
+    /* Sidebar tags (_RUN, _CRN ...) are dimmed with opacity-60: same floor as faint text classes */
+    .nav-tag.opacity-60 { opacity: calc(var(--text-floor, 0.6) + (1 - var(--text-floor, 0.6)) * 0.6); }
     /* Browser extensions can inject fixed closed-shadow overlays that block dashboard clicks. */
     bit-notification-bar-root {
         pointer-events: none !important;
     }
+    /* Secret inputs (API keys, tokens) are type="text" so password managers do not treat forms
+       such as Config as a login; the characters are masked here instead, for every theme.
+       Themes must not override -webkit-text-security on inputs. */
+    .secret-field { -webkit-text-security: disc; }
+    .secret-field.is-revealed { -webkit-text-security: none; }
+{% include "themes/" ~ _theme ~ "/theme.css" ignore missing %}
 </style>
     {% block head_extra %}{% endblock %}
 </head>
 
-<body class="bg-black text-primary font-mono selection:bg-primary selection:text-black">
+<body class="bg-canvas text-primary font-ui selection:bg-primary selection:text-black">
 
-    <!-- Matrix Rain Background -->
-    <div class="matrix-rain-container">
-        <div class="matrix-column rain-anim" style="left: 2%; animation-duration: 12s; animation-delay: -2s;">
-            ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿ1234567890</div>
-        <div class="matrix-column rain-anim"
-            style="left: 7%; animation-duration: 8s; animation-delay: -5s; opacity: 0.6; font-size: 0.8rem;">
-            ZXCVMBNALSKDJFHGQPWOEIRUT</div>
-        <div class="matrix-column rain-anim" style="left: 12%; animation-duration: 15s; animation-delay: -1s;">
-            7894561230*+-/&lt;&gt;!@#$%^&amp;*()</div>
-        <div class="matrix-column rain-anim"
-            style="left: 17%; animation-duration: 10s; animation-delay: -8s; opacity: 0.4;">ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿ</div>
-        <div class="matrix-column rain-anim" style="left: 22%; animation-duration: 18s; animation-delay: -3s;">
-            qwertyuiopasdfghjklzxcvbnm</div>
-        <div class="matrix-column rain-anim" style="left: 27%; animation-duration: 9s; animation-delay: -12s;">
-            01010101010101010101010101</div>
-        <div class="matrix-column rain-anim"
-            style="left: 32%; animation-duration: 14s; animation-delay: -4s; opacity: 0.7;">ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿ</div>
-        <div class="matrix-column rain-anim" style="left: 37%; animation-duration: 11s; animation-delay: -9s;">
-            !@#$%^&amp;*()_+-=[]{}|;':",./</div>
-        <div class="matrix-column rain-anim"
-            style="left: 42%; animation-duration: 16s; animation-delay: -6s; opacity: 0.5;">0987654321QWERTYUIOPASDFGH
-        </div>
-        <div class="matrix-column rain-anim" style="left: 47%; animation-duration: 13s; animation-delay: -10s;">
-            ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿ</div>
-        <div class="matrix-column rain-anim" style="left: 52%; animation-duration: 12s; animation-delay: -2s;">
-            ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿ1234567890</div>
-        <div class="matrix-column rain-anim"
-            style="left: 57%; animation-duration: 8s; animation-delay: -5s; opacity: 0.6; font-size: 0.8rem;">
-            ZXCVMBNALSKDJFHGQPWOEIRUT</div>
-        <div class="matrix-column rain-anim" style="left: 62%; animation-duration: 15s; animation-delay: -1s;">
-            7894561230*+-/&lt;&gt;!@#$%^&amp;*()</div>
-        <div class="matrix-column rain-anim"
-            style="left: 67%; animation-duration: 10s; animation-delay: -8s; opacity: 0.4;">ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿ</div>
-        <div class="matrix-column rain-anim" style="left: 72%; animation-duration: 18s; animation-delay: -3s;">
-            qwertyuiopasdfghjklzxcvbnm</div>
-        <div class="matrix-column rain-anim" style="left: 77%; animation-duration: 9s; animation-delay: -12s;">
-            01010101010101010101010101</div>
-        <div class="matrix-column rain-anim"
-            style="left: 82%; animation-duration: 14s; animation-delay: -4s; opacity: 0.7;">ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿ</div>
-        <div class="matrix-column rain-anim" style="left: 87%; animation-duration: 11s; animation-delay: -9s;">
-            !@#$%^&amp;*()_+-=[]{}|;':",./</div>
-        <div class="matrix-column rain-anim"
-            style="left: 92%; animation-duration: 16s; animation-delay: -6s; opacity: 0.5;">0987654321QWERTYUIOPASDFGH
-        </div>
-        <div class="matrix-column rain-anim" style="left: 97%; animation-duration: 13s; animation-delay: -10s;">
-            ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿ</div>
-    </div>
-    <div class="matrix-foreground-container">
-        <div class="matrix-column-foreground rain-anim"
-            style="left: 15%; animation-duration: 6s; animation-delay: -1s;">ｶｷｸｹｺｻｼｽｾｿｱｲｳｴｵ0123456789</div>
-        <div class="matrix-column-foreground rain-anim"
-            style="left: 80%; animation-duration: 7s; animation-delay: -4s;">ﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖ</div>
-    </div>
-    <div class="crt-overlay"></div>
-    <div class="crt-scanline"></div>
+    {% include "themes/" ~ _theme ~ "/effects.html" ignore missing %}
 
     <!-- Main App -->
     <div class="relative z-10 flex flex-col min-h-screen">
         <!-- Header -->
         <header
-            class="matrix-card border-t-0 border-x-0 rounded-none px-8 py-4 flex items-center justify-between sticky top-0 z-[70]">
-            <div class="flex items-center gap-6">
+            class="ui-card border-t-0 border-x-0 rounded-none px-4 sm:px-8 py-3 sm:py-4 flex flex-wrap items-center justify-between gap-x-6 gap-y-3 sticky top-0 z-[70]">
+            <div class="flex flex-wrap items-center gap-3 sm:gap-6 min-w-0">
                 <div class="flex-shrink-0">
-                    <img src="/static/catmatrix.png" alt="Cat Matrix Icon"
-                        class="w-12 h-12 rounded-full object-cover border-2 border-primary/50"
-                        style="filter: brightness(0.85) sepia(1) hue-rotate(80deg) saturate(4); box-shadow: 0 0 12px rgba(0,255,65,0.4);">
+                    <img src="/static/catmatrix.png" alt="Nanobot logo"
+                        class="w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover border-2 border-primary/50"
+                        style="filter: var(--logo-filter); box-shadow: 0 0 12px rgb(var(--c-accent) / calc(0.4 * var(--glow)));">
                 </div>
-                <div class="flex flex-col">
-                    <h1 class="text-xl font-bold tracking-[0.2em] glow-text uppercase">Nanobot OS v{{ nanobot_version }}</h1>
-                    <p class="text-[10px] text-primary/60 tracking-widest">SYSTEM_VERSION: ULTIMATE_MATRIX_EDITION</p>
+                <div class="flex flex-col min-w-0 flex-1 sm:flex-none">
+                    <h1 class="text-base sm:text-xl font-bold tracking-[0.2em] glow-text uppercase">Nanobot OS v{{ nanobot_version }}</h1>
+                    <p class="text-[10px] text-primary/60 tracking-widest">{{ theme_value('edition', 'Personal AI assistant') }}</p>
                     <p class="text-[10px] text-primary/50 tracking-widest">DEVELOPED_BY: HOANG_MINH_QUAN</p>
                 </div>
                 <!-- Fleet Claim Badge (neon yellow, hidden when unclaimed) -->
                 <div id="fleet-badge"
-                    class="hidden ml-2 px-3 py-1.5 rounded border flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider transition-all duration-500"
+                    class="hidden w-full sm:w-auto sm:ml-2 px-3 py-1.5 rounded border flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider transition-all duration-500"
                     style="border-color: rgba(255, 230, 0, 0.6); background: rgba(255, 230, 0, 0.08); color: #ffe600; text-shadow: 0 0 8px rgba(255, 230, 0, 0.5); box-shadow: 0 0 12px rgba(255, 230, 0, 0.15), inset 0 0 8px rgba(255, 230, 0, 0.05);">
                     <span class="material-symbols-outlined text-sm" style="color: #ffe600;">hub</span>
                     <span id="fleet-badge-text">Fleet: —</span>
@@ -318,42 +358,94 @@
                 </div>
                 <!-- Default Password Warning Badge -->
                 <div id="default-pwd-badge" style="display:none;"
-                    class="ml-2 px-3 py-1.5 rounded border flex items-center gap-2 text-[10px] font-bold tracking-wider cursor-pointer transition-all duration-300"
+                    class="w-full sm:w-auto sm:ml-2 px-3 py-1.5 rounded border flex items-center gap-2 text-[10px] font-bold tracking-wider cursor-pointer transition-all duration-300"
                     style="border-color: rgba(255,200,0,0.6); background: rgba(255,200,0,0.08); color: #ffc800; text-shadow: 0 0 8px rgba(255,200,0,0.5); box-shadow: 0 0 12px rgba(255,200,0,0.15);"
-                    onclick="window.location='/config#web-section'" title="Click to change password in Settings">
+                    onclick="window.location='/config#web-section'" title="{{ tr('common.click_to_change_password') }}">
                     <span class="material-symbols-outlined text-sm" style="color: #ffc800;">lock_open</span>
-                    <span id="default-pwd-text">Default Password Active</span>
+                    <span id="default-pwd-text">{{ tr('common.default_password_active') }}</span>
                 </div>
             </div>
-            <div class="flex items-center gap-6">
+            <div class="flex items-center gap-3 sm:gap-6 ml-auto">
                 <!-- Prompt Viewer Toggle -->
-                <button onclick="togglePromptViewer()" title="View System Prompt"
+                <button onclick="togglePromptViewer()" title="{{ tr('common.view_system_prompt') }}"
                     class="w-10 h-10 flex items-center justify-center border border-primary/30 hover:border-primary hover:bg-primary/10 text-primary/50 hover:text-primary transition-all duration-300 rounded-full">
                     <span class="material-symbols-outlined text-lg">article</span>
                 </button>
                 <!-- Console Log Toggle -->
-                <button onclick="toggleConsoleViewer()" title="View Console Logs" id="console-viewer-btn"
+                <button onclick="toggleConsoleViewer()" title="{{ tr('common.view_console_logs') }}" id="console-viewer-btn"
                     class="w-10 h-10 flex items-center justify-center border border-primary/30 hover:border-primary hover:bg-primary/10 text-primary/50 hover:text-primary transition-all duration-300 rounded-full">
                     <span class="material-symbols-outlined text-lg">terminal</span>
                 </button>
                 <button id="server-status-btn"
-                    class="px-6 py-2 border border-primary bg-primary/10 glow-text flex items-center gap-2 group hover:bg-primary hover:text-black transition-all">
+                    class="px-3 sm:px-6 py-2 border border-primary bg-primary/10 glow-text flex items-center gap-2 group hover:bg-primary hover:text-black transition-all">
                     <span id="server-status-dot" class="blinking">●</span>
-                    <span id="server-status-text" class="font-bold tracking-widest uppercase text-sm">Online</span>
+                    <span id="server-status-text" class="font-bold tracking-widest uppercase text-sm">{{ tr('common.online') }}</span>
                 </button>
+                <!-- UI language -->
+                <div class="relative" id="locale-switcher">
+                    <button onclick="toggleLocaleMenu(event)" title="{{ tr('language.switch') }}" id="locale-switcher-btn"
+                        aria-haspopup="true" aria-expanded="false"
+                        class="w-10 h-10 flex items-center justify-center border border-primary/30 hover:border-primary hover:bg-primary/10 text-primary/50 hover:text-primary transition-all duration-300 rounded-full">
+                        <span class="material-symbols-outlined text-lg">language</span>
+                    </button>
+                    <div id="locale-menu" class="hidden ui-card absolute right-0 mt-2 w-44 py-2 z-[80] text-xs">
+                        <p class="px-4 pb-2 text-[10px] uppercase tracking-widest text-primary/40">{{ tr('language.switch') }}</p>
+                        <button onclick="setDashboardLocale('en')"
+                            class="locale-option w-full px-4 py-2 flex items-center justify-between text-left hover:bg-primary/10 {{ 'is-active' if current_locale() == 'en' else '' }}">
+                            <span>{{ tr('language.english') }}</span>
+                            {% if current_locale() == 'en' %}<span class="material-symbols-outlined text-sm">check</span>{% endif %}
+                        </button>
+                        <button onclick="setDashboardLocale('vi')"
+                            class="locale-option w-full px-4 py-2 flex items-center justify-between text-left hover:bg-primary/10 {{ 'is-active' if current_locale() == 'vi' else '' }}">
+                            <span>{{ tr('language.vietnamese') }}</span>
+                            {% if current_locale() == 'vi' %}<span class="material-symbols-outlined text-sm">check</span>{% endif %}
+                        </button>
+                    </div>
+                </div>
+                <!-- Theme Switcher -->
+                <div class="relative" id="theme-switcher">
+                    <button onclick="toggleThemeMenu(event)" title="{{ tr('common.theme') }}" id="theme-switcher-btn"
+                        aria-haspopup="true" aria-expanded="false"
+                        class="w-10 h-10 flex items-center justify-center border border-primary/30 hover:border-primary hover:bg-primary/10 text-primary/50 hover:text-primary transition-all duration-300 rounded-full">
+                        <span class="material-symbols-outlined text-lg">palette</span>
+                    </button>
+                    <div id="theme-menu" class="hidden ui-card absolute right-0 mt-2 w-56 py-2 z-[80] text-xs">
+                        <p class="px-4 pb-2 text-[10px] uppercase tracking-widest text-primary/40">{{ tr('common.theme') }}</p>
+                        {% for t in ui_themes() %}
+                        <button onclick="setDashboardTheme('{{ t.name }}')"
+                            class="w-full px-4 py-2 flex items-center justify-between text-left hover:bg-primary/10 {{ 'text-primary font-bold' if t.name == _theme else 'text-primary/60' }}">
+                            <span>{{ t.label }}</span>
+                            {% if t.name == _theme %}<span class="material-symbols-outlined text-sm">check</span>{% endif %}
+                        </button>
+                        {% endfor %}
+                        <div class="my-1 border-t border-primary/10"></div>
+                        <button onclick="setDashboardTheme('')"
+                            class="w-full px-4 py-2 text-left hover:bg-primary/10 text-primary/60">
+                            {{ tr('common.server_default') }} ({{ theme_info(ui_theme).label }})
+                        </button>
+                        {% if _theme != ui_theme %}
+                        <button onclick="setDefaultTheme('{{ _theme }}')" id="theme-set-default"
+                            class="w-full px-4 py-2 flex items-center gap-2 text-left hover:bg-primary/10 text-primary/80">
+                            <span class="material-symbols-outlined text-sm">push_pin</span>
+                            <span>{{ tr('common.set_as_default', theme=theme_info(_theme).label) }}</span>
+                        </button>
+                        {% endif %}
+                        <p id="theme-menu-note" class="hidden px-4 pt-1 text-[10px] text-red-400"></p>
+                    </div>
+                </div>
             </div>
         </header>
 
         <!-- Prompt Viewer Slide-out Panel -->
         <div id="prompt-viewer-panel"
             class="fixed top-0 right-0 h-full w-full md:w-[600px] lg:w-[700px] z-[60] transform translate-x-full transition-transform duration-300 ease-in-out flex flex-col"
-            style="background: rgba(5, 5, 5, 0.97); border-left: 1px solid rgba(0, 255, 65, 0.3); pointer-events: none; visibility: hidden;">
+            style="background: rgba(5, 5, 5, 0.97); border-left: 1px solid rgb(var(--c-primary) / 0.3); pointer-events: none; visibility: hidden;">
             <!-- Header -->
             <div class="flex items-center justify-between px-5 py-3 border-b border-primary/20"
-                style="background: rgba(0, 255, 65, 0.03);">
+                style="background: rgb(var(--c-primary) / 0.03);">
                 <div class="flex items-center gap-3">
                     <span class="material-symbols-outlined text-primary/70 text-sm">article</span>
-                    <span class="text-[11px] font-bold uppercase tracking-widest text-primary/80">System Prompt</span>
+                    <span class="text-[11px] font-bold uppercase tracking-widest text-primary/80">{{ tr('common.system_prompt') }}</span>
                     <span id="prompt-status" class="text-[9px] text-primary/30 font-mono"></span>
                 </div>
                 <div class="flex items-center gap-2">
@@ -361,7 +453,7 @@
                     <button onclick="copyPrompt(this)"
                         class="h-8 px-3 flex items-center justify-center gap-1.5 border border-primary/20 hover:border-primary hover:bg-primary/10 text-primary/40 hover:text-primary transition-all rounded text-[10px] font-bold uppercase tracking-wider">
                         <span class="material-symbols-outlined text-sm">content_copy</span>
-                        <span>Copy</span>
+                        <span>{{ tr('common.copy') }}</span>
                     </button>
                     <button onclick="togglePromptViewer()"
                         class="w-8 h-8 flex items-center justify-center border border-primary/20 hover:border-primary hover:bg-primary/10 text-primary/40 hover:text-primary transition-all rounded">
@@ -372,7 +464,7 @@
             <!-- Content -->
             <div id="prompt-viewer-content" class="flex-1 overflow-auto p-5">
                 <pre class="text-[11px] text-primary/90 font-mono whitespace-pre-wrap break-words leading-relaxed"
-                    id="prompt-text">Loading...</pre>
+                    id="prompt-text">{{ tr('common.loading') }}</pre>
             </div>
             <!-- Footer -->
             <div class="px-5 py-2 border-t border-primary/10 flex items-center justify-between">
@@ -386,20 +478,20 @@
 
         <div id="console-viewer-panel"
             class="fixed bottom-0 left-0 right-0 h-[45vh] z-[60] transform translate-y-full transition-transform duration-300 ease-in-out flex flex-col"
-            style="background: rgba(3, 3, 3, 0.97); border-top: 1px solid rgba(0, 255, 65, 0.3); pointer-events: none; visibility: hidden;">
+            style="background: rgba(3, 3, 3, 0.97); border-top: 1px solid rgb(var(--c-primary) / 0.3); pointer-events: none; visibility: hidden;">
             <!-- Header -->
             <div class="flex items-center justify-between px-5 py-2 border-b border-primary/20"
-                style="background: rgba(0, 255, 65, 0.03);">
+                style="background: rgb(var(--c-primary) / 0.03);">
                 <div class="flex items-center gap-1">
                     <span class="material-symbols-outlined text-primary/70 text-sm mr-1">terminal</span>
                     <!-- Tabs -->
                     <button onclick="switchConsoleTab('logs')" id="console-tab-logs"
                         class="px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-primary/80 border-b-2 border-primary transition-all">
-                        System Logs
+                        {{ tr('common.system_logs') }}
                     </button>
                     <button onclick="switchConsoleTab('exec')" id="console-tab-exec"
                         class="px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-primary/30 border-b-2 border-transparent transition-all hover:text-primary/60">
-                        Exec Output
+                        {{ tr('common.exec_output') }}
                     </button>
                     <span id="console-status" class="text-[9px] text-primary/30 font-mono ml-2"></span>
                     <span id="console-count" class="text-[9px] text-primary/40 font-mono"></span>
@@ -408,17 +500,17 @@
                     <button onclick="clearConsole()"
                         class="h-7 px-3 flex items-center justify-center gap-1.5 border border-primary/20 hover:border-primary hover:bg-primary/10 text-primary/40 hover:text-primary transition-all rounded text-[10px] font-bold uppercase tracking-wider">
                         <span class="material-symbols-outlined text-sm">delete</span>
-                        <span>Clear</span>
+                        <span>{{ tr('common.clear') }}</span>
                     </button>
                     <button onclick="toggleConsoleFilter()" id="console-filter-btn"
                         class="h-7 px-3 flex items-center justify-center gap-1.5 border border-primary/20 hover:border-primary hover:bg-primary/10 text-primary/40 hover:text-primary transition-all rounded text-[10px] font-bold uppercase tracking-wider">
                         <span class="material-symbols-outlined text-sm">filter_alt</span>
-                        <span>Filter</span>
+                        <span>{{ tr('common.filter') }}</span>
                     </button>
                     <button onclick="toggleConsolePause()" id="console-pause-btn"
                         class="h-7 px-3 flex items-center justify-center gap-1.5 border border-primary/20 hover:border-primary hover:bg-primary/10 text-primary/40 hover:text-primary transition-all rounded text-[10px] font-bold uppercase tracking-wider">
                         <span class="material-symbols-outlined text-sm">pause</span>
-                        <span>Pause</span>
+                        <span>{{ tr('common.pause') }}</span>
                     </button>
                     <button onclick="toggleConsoleViewer()"
                         class="w-7 h-7 flex items-center justify-center border border-primary/20 hover:border-primary hover:bg-primary/10 text-primary/40 hover:text-primary transition-all rounded">
@@ -440,35 +532,36 @@
 
         <!-- Footer -->
         <footer class="mt-auto px-10 py-4 text-center">
-            <p class="text-[10px] text-primary/30 uppercase tracking-[0.5em] glow-text">Wake up, Neo... The Matrix has
-                you.</p>
+            {% set _footer = theme_value('footer') %}
+            {% if _footer %}<p class="text-[10px] text-primary/30 uppercase tracking-[0.5em] glow-text">{{ _footer }}</p>{% endif %}
         </footer>
     </div>
 
     <!-- Global Logout Confirm Modal -->
     <div id="logoutModal" class="fixed inset-0 z-50 bg-black/80 items-center justify-center" style="display: none;">
         <div
-            class="matrix-card p-6 w-full max-w-sm flex flex-col gap-5 border-red-500/40 shadow-[0_0_30px_rgba(255,0,0,0.15)] relative">
+            class="ui-card p-6 w-full max-w-sm flex flex-col gap-5 border-red-500/40 shadow-[0_0_30px_rgba(255,0,0,0.15)] relative">
             <div class="flex items-center gap-3">
                 <span class="material-symbols-outlined text-red-500">logout</span>
-                <h3 class="text-sm font-bold uppercase tracking-widest text-red-400">System Logout</h3>
+                <h3 class="text-sm font-bold uppercase tracking-widest text-red-400">{{ tr('common.system_logout') }}</h3>
             </div>
             <p class="text-xs text-primary/70 leading-relaxed">
-                Are you sure you want to disconnect from the Matrix?
+                {% set _logout_prompt = theme_value('logout_prompt') %}
+                {{ _logout_prompt or tr('common.logout_prompt') }}
             </p>
             <p class="text-[10px] text-primary/40 leading-relaxed font-mono">
-                > Your session token will be destroyed.<br>
-                > Re-authentication required to access dashboard.
+                &gt; {{ tr('common.logout_token') }}<br>
+                &gt; {{ tr('common.logout_reauth') }}
             </p>
             <div class="flex gap-3 mt-2">
                 <a href="/logout"
                     class="flex-1 px-4 py-3 border border-red-500/50 bg-red-500/10 text-red-400 font-bold uppercase tracking-widest text-sm hover:bg-red-500/20 text-center transition-all duration-300 flex items-center justify-center gap-2">
                     <span class="material-symbols-outlined text-sm">power_settings_new</span>
-                    Logout
+                    {{ tr('nav.logout') }}
                 </a>
                 <button type="button" onclick="document.getElementById('logoutModal').style.display='none'"
                     class="px-4 py-3 border border-primary/20 text-primary/40 font-bold uppercase tracking-widest text-sm hover:text-primary transition-colors">
-                    Stay Connected
+                    {{ tr('common.stay_connected') }}
                 </button>
             </div>
         </div>
@@ -520,7 +613,7 @@
 
                 if (resp.status === 304) {
                     // Not modified
-                    if (statusEl) statusEl.textContent = '● live';
+                    if (statusEl) statusEl.textContent = window.nanobotTr('common.live');
                     return;
                 }
 
@@ -534,16 +627,16 @@
                     const charsEl = document.getElementById('prompt-chars');
                     const modEl = document.getElementById('prompt-modified');
                     const headerCharsEl = document.getElementById('prompt-header-chars');
-                    if (charsEl) charsEl.textContent = data.size.toLocaleString() + ' chars';
-                    if (headerCharsEl) headerCharsEl.textContent = data.size.toLocaleString() + ' chars';
-                    if (modEl) modEl.textContent = 'Updated: ' + new Date(data.mtime * 1000).toLocaleTimeString();
-                    if (statusEl) statusEl.textContent = '● live';
+                    if (charsEl) charsEl.textContent = window.nanobotTr('common.chars', '{count} chars', {count: data.size.toLocaleString()});
+                    if (headerCharsEl) headerCharsEl.textContent = window.nanobotTr('common.chars', '{count} chars', {count: data.size.toLocaleString()});
+                    if (modEl) modEl.textContent = window.nanobotTr('common.updated', 'Updated: {time}', {time: new Date(data.mtime * 1000).toLocaleTimeString()});
+                    if (statusEl) statusEl.textContent = window.nanobotTr('common.live');
                 } else {
-                    document.getElementById('prompt-text').textContent = '(prompt.md not found — send a message first to generate it)';
+                    document.getElementById('prompt-text').textContent = window.nanobotTr('common.prompt_not_found');
                     if (statusEl) statusEl.textContent = '';
                 }
             } catch (e) {
-                if (statusEl) statusEl.textContent = '● error';
+                if (statusEl) statusEl.textContent = window.nanobotTr('common.error');
                 console.warn('Prompt fetch error:', e);
             }
         }
@@ -553,7 +646,7 @@
             try {
                 await navigator.clipboard.writeText(text);
                 const orig = btn.innerHTML;
-                btn.innerHTML = '<span class="material-symbols-outlined text-sm">check</span><span>Copied!</span>';
+                btn.innerHTML = '<span class="material-symbols-outlined text-sm">check</span><span>' + window.nanobotTr('common.copied') + '</span>';
                 btn.classList.add('border-primary', 'text-primary');
                 setTimeout(function () {
                     btn.innerHTML = orig;
@@ -573,8 +666,8 @@
         let _activeConsoleTab = 'logs';
         let _consoleFilterOn = false;
         const _LEVEL_COLORS = {
-            'DEBUG': 'rgba(0, 255, 65, 0.4)',
-            'INFO': 'rgba(0, 255, 65, 0.85)',
+            'DEBUG': 'rgb(var(--c-primary) / 0.4)',
+            'INFO': 'rgb(var(--c-primary) / 0.85)',
             'SUCCESS': 'rgba(0, 200, 255, 0.85)',
             'WARNING': 'rgba(255, 200, 0, 0.9)',
             'ERROR': 'rgba(255, 80, 80, 0.95)',
@@ -632,10 +725,10 @@
             });
 
             _consoleEventSource.onopen = function () {
-                if (statusEl) statusEl.textContent = '● connected';
+                if (statusEl) statusEl.textContent = window.nanobotTr('common.connected');
             };
             _consoleEventSource.onerror = function () {
-                if (statusEl) statusEl.textContent = '● reconnecting...';
+                if (statusEl) statusEl.textContent = window.nanobotTr('common.reconnecting');
             };
         }
 
@@ -654,7 +747,7 @@
 
             for (const entry of entries) {
                 const line = document.createElement('div');
-                const color = _LEVEL_COLORS[entry.level] || 'rgba(0, 255, 65, 0.6)';
+                const color = _LEVEL_COLORS[entry.level] || 'rgb(var(--c-primary) / 0.6)';
                 const levelPad = entry.level.padEnd(8);
                 line.style.color = color;
                 line.dataset.level = entry.level;
@@ -677,7 +770,7 @@
             }
 
             const countEl = document.getElementById('console-count');
-            if (countEl) countEl.textContent = _consoleLineCount + ' lines';
+            if (countEl) countEl.textContent = window.nanobotTr('common.lines', '{count} lines', {count: _consoleLineCount});
         }
 
         function clearConsole() {
@@ -689,17 +782,17 @@
                 _execLineCount = 0;
             }
             const countEl = document.getElementById('console-count');
-            if (countEl) countEl.textContent = '0 lines';
+            if (countEl) countEl.textContent = window.nanobotTr('common.lines', '{count} lines', {count: 0});
         }
 
         function toggleConsolePause() {
             _consolePaused = !_consolePaused;
             const btn = document.getElementById('console-pause-btn');
             if (_consolePaused) {
-                btn.innerHTML = '<span class="material-symbols-outlined text-sm">play_arrow</span><span>Resume</span>';
+                btn.innerHTML = '<span class="material-symbols-outlined text-sm">play_arrow</span><span>' + window.nanobotTr('common.resume') + '</span>';
                 btn.classList.add('border-yellow-500/50', 'text-yellow-400');
             } else {
-                btn.innerHTML = '<span class="material-symbols-outlined text-sm">pause</span><span>Pause</span>';
+                btn.innerHTML = '<span class="material-symbols-outlined text-sm">pause</span><span>' + window.nanobotTr('common.pause') + '</span>';
                 btn.classList.remove('border-yellow-500/50', 'text-yellow-400');
             }
         }
@@ -708,10 +801,10 @@
             _consoleFilterOn = !_consoleFilterOn;
             const btn = document.getElementById('console-filter-btn');
             if (_consoleFilterOn) {
-                btn.innerHTML = '<span class="material-symbols-outlined text-sm">filter_alt</span><span>Filter ON</span>';
+                btn.innerHTML = '<span class="material-symbols-outlined text-sm">filter_alt</span><span>' + window.nanobotTr('common.filter_on') + '</span>';
                 btn.classList.add('border-primary', 'text-primary', 'bg-primary/10');
             } else {
-                btn.innerHTML = '<span class="material-symbols-outlined text-sm">filter_alt</span><span>Filter</span>';
+                btn.innerHTML = '<span class="material-symbols-outlined text-sm">filter_alt</span><span>' + window.nanobotTr('common.filter') + '</span>';
                 btn.classList.remove('border-primary', 'text-primary', 'bg-primary/10');
             }
             // Toggle visibility of existing DEBUG lines
@@ -734,13 +827,13 @@
                 execTab.className = 'px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-primary/30 border-b-2 border-transparent transition-all hover:text-primary/60';
                 logsContent.classList.remove('hidden');
                 execContent.classList.add('hidden');
-                if (countEl) countEl.textContent = _consoleLineCount + ' lines';
+                if (countEl) countEl.textContent = window.nanobotTr('common.lines', '{count} lines', {count: _consoleLineCount});
             } else {
                 execTab.className = 'px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-primary/80 border-b-2 border-primary transition-all';
                 logsTab.className = 'px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-primary/30 border-b-2 border-transparent transition-all hover:text-primary/60';
                 execContent.classList.remove('hidden');
                 logsContent.classList.add('hidden');
-                if (countEl) countEl.textContent = _execLineCount + ' lines';
+                if (countEl) countEl.textContent = window.nanobotTr('common.lines', '{count} lines', {count: _execLineCount});
             }
         }
 
@@ -751,7 +844,7 @@
             for (const entry of entries) {
                 const block = document.createElement('div');
                 block.style.marginBottom = '8px';
-                block.style.borderLeft = '2px solid ' + (entry.exit_code === 0 ? 'rgba(0, 255, 65, 0.4)' : 'rgba(255, 80, 80, 0.6)');
+                block.style.borderLeft = '2px solid ' + (entry.exit_code === 0 ? 'rgb(var(--c-primary) / 0.4)' : 'rgba(255, 80, 80, 0.6)');
                 block.style.paddingLeft = '8px';
 
                 // Command header
@@ -763,7 +856,7 @@
                 // stdout
                 if (entry.stdout && entry.stdout.trim()) {
                     const out = document.createElement('div');
-                    out.style.color = 'rgba(0, 255, 65, 0.75)';
+                    out.style.color = 'rgb(var(--c-primary) / 0.75)';
                     out.style.whiteSpace = 'pre-wrap';
                     out.style.wordBreak = 'break-all';
                     out.textContent = entry.stdout.slice(0, 3000);
@@ -819,7 +912,7 @@
                         _online = true;
                         dot.className = 'blinking';
                         dot.style.color = '';
-                        text.textContent = 'Online';
+                        text.textContent = window.nanobotTr('common.online');
                         btn.className = 'px-6 py-2 border border-primary bg-primary/10 glow-text flex items-center gap-2 group hover:bg-primary hover:text-black transition-all';
                     }
                 } catch {
@@ -827,7 +920,7 @@
                         _online = false;
                         dot.className = '';
                         dot.style.color = '#ff4444';
-                        text.textContent = 'Offline';
+                        text.textContent = window.nanobotTr('common.offline');
                         btn.className = 'px-6 py-2 border border-red-500/50 bg-red-500/10 flex items-center gap-2 transition-all';
                     }
                 }
@@ -870,7 +963,7 @@
                     if (data.is_default) {
                         badge.style.display = 'flex';
                         const textEl = document.getElementById('default-pwd-text');
-                        if (textEl) textEl.textContent = '\u26a0 Default Pwd: ' + data.password;
+                        if (textEl) textEl.textContent = window.nanobotTr('common.default_password_change');
                     } else {
                         badge.style.display = 'none';
                     }

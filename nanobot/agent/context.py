@@ -9,9 +9,13 @@ from typing import Any
 
 from nanobot.agent.memory import MemoryStore
 from nanobot.agent.skills import SkillsLoader
+from nanobot.brain_memory.context import BrainContextAdapter
+from nanobot.brain_memory.index import BrainIndex
+from nanobot.brain_memory.store import BrainStore
 from nanobot.session.goal_state import goal_state_runtime_lines
 from nanobot.utils.helpers import build_assistant_message, current_time_str, detect_image_mime
 from nanobot.utils.prompt_templates import render_template
+
 
 class ContextBuilder:
     """Builds the context (system prompt + messages) for the agent."""
@@ -22,28 +26,57 @@ class ContextBuilder:
     _MAX_RECENT_HISTORY = 50
 
     def __init__(self, workspace: Path, disabled_skills: list[str] | None = None, timezone: str = "UTC",
-                 chatbot_config: Any | None = None):
+                 chatbot_config: Any | None = None, brain_memory_config: Any | None = None):
         self.workspace = workspace
         self.timezone = timezone
         self.memory = MemoryStore(workspace)
         self.skills = SkillsLoader(workspace, disabled_skills=set(disabled_skills) if disabled_skills else None)
         self._chatbot_config = chatbot_config
+        self._brain_memory_config = brain_memory_config
+        self._brain_context: BrainContextAdapter | None = None
 
     def build_system_prompt(
         self,
         skill_names: list[str] | None = None,
         channel: str | None = None,
+        memory_query: str | None = None,
+        memory_session: str | None = None,
+        include_user_profile: bool = True,
     ) -> str:
         """Build the system prompt from identity, bootstrap files, memory, and skills."""
         parts = [self._get_identity(channel=channel)]
 
-        bootstrap = self._load_bootstrap_files()
+        # A group chat's turns leave USER.md out: it is the owner's profile (custom, agent/group_chat.py)
+        bootstrap = self._load_bootstrap_files(skip=() if include_user_profile else ("USER.md",))
         if bootstrap:
             parts.append(bootstrap)
 
-        memory = self.memory.get_memory_context()
-        if memory:
-            parts.append(f"# Memory\n\n{memory}")
+        brain_context = ""
+        if memory_query and self._brain_memory_config is not None:
+            config = self._brain_memory_config
+            if config.reads_session(memory_session):
+                try:
+                    if self._brain_context is None:
+                        store = BrainStore(self.workspace, config)
+                        self._brain_context = BrainContextAdapter(BrainIndex(store), config)
+                    # A long message (a pasted text, a sub-agent's report) is searched by its start: the
+                    # index refuses queries over maxQueryChars and only uses their first 32 terms (custom)
+                    brain_context = self._brain_context.render(memory_query[:config.max_query_chars])
+                except Exception:
+                    # Brain Memory is an optional cache; legacy context must
+                    # continue when its index is absent, corrupt or unavailable.
+                    brain_context = ""
+
+        # Brain retrieval is selective. When it finds relevant facts, omit the
+        # full legacy MEMORY.md to avoid duplicating the same knowledge in the
+        # prompt. An empty result or retrieval failure keeps the legacy memory
+        # as a safe fallback.
+        if brain_context:
+            parts.append("# Brain Memory Reference\n\n" + brain_context)
+        else:
+            memory = self.memory.get_memory_context()
+            if memory:
+                parts.append(f"# Memory\n\n{memory}")
 
         always_skills = self.skills.get_always_skills()
         if always_skills:
@@ -88,6 +121,7 @@ class ContextBuilder:
         thread_type: str | None = None,
         session_summary: str | None = None,
         extra_runtime_lines: Sequence[str] | None = None,
+        senders: Sequence[str] | None = None,
     ) -> str:
         """Build untrusted runtime metadata block for injection before the user message."""
         lines = [f"Current Time: {current_time_str(timezone)}"]
@@ -95,10 +129,14 @@ class ContextBuilder:
             lines += [f"Channel: {channel}", f"Chat ID: {chat_id}"]
         if thread_type:
             lines.append(f"Thread Type: {thread_type}")
-        if sender_id:
-            lines.append(f"Sender ID: {sender_id}")
-        if sender_name:
-            lines.append(f"Sender Name: {sender_name}")
+        if senders:
+            # Several people's messages debounced into one turn; each part names its sender (custom)
+            lines.append(f"Senders: {', '.join(senders)}")
+        else:
+            if sender_id:
+                lines.append(f"Sender ID: {sender_id}")
+            if sender_name:
+                lines.append(f"Sender Name: {sender_name}")
         if session_summary:
             lines += ["", "[Resumed Session]", session_summary]
         if extra_runtime_lines:
@@ -126,11 +164,13 @@ class ContextBuilder:
 
         return _to_blocks(left) + _to_blocks(right)
 
-    def _load_bootstrap_files(self) -> str:
-        """Load all bootstrap files from workspace."""
+    def _load_bootstrap_files(self, skip: tuple[str, ...] = ()) -> str:
+        """Load all bootstrap files from workspace, except those in skip."""
         parts = []
 
         for filename in self.BOOTSTRAP_FILES:
+            if filename in skip:
+                continue
             file_path = self.workspace / filename
             if file_path.exists():
                 content = file_path.read_text(encoding="utf-8")
@@ -153,6 +193,9 @@ class ContextBuilder:
         current_role: str = "user",
         *,
         session_metadata: Mapping[str, Any] | None = None,
+        memory_session: str | None = None,
+        senders: Sequence[str] | None = None,
+        include_user_profile: bool = True,
     ) -> list[dict[str, Any]]:
         """Build the complete message list for an LLM call."""
         extra_runtime_lines = goal_state_runtime_lines(session_metadata)
@@ -161,18 +204,26 @@ class ContextBuilder:
             sender_id=sender_id, sender_name=sender_name, thread_type=thread_type,
             session_summary=session_summary,
             extra_runtime_lines=extra_runtime_lines,
+            senders=senders,
         )
         user_content = self._build_user_content(current_message, media)
 
         # Merge runtime context and user content into a single user message
         # to avoid consecutive same-role messages that some providers reject.
-        if isinstance(user_content, str):
+        # Runtime context goes with user turns only, as upstream's build_current_message does (custom)
+        if current_role != "user":
+            merged = user_content
+        elif isinstance(user_content, str):
             merged = f"{runtime_ctx}\n\n{user_content}"
         else:
             merged = [{"type": "text", "text": runtime_ctx}] + user_content
 
         messages = [
-            {"role": "system", "content": self.build_system_prompt(skill_names, channel=channel)},
+            {"role": "system", "content": self.build_system_prompt(
+                skill_names, channel=channel, memory_query=current_message,
+                memory_session=memory_session or (f"{channel}:{chat_id}" if channel and chat_id else None),
+                include_user_profile=include_user_profile,
+            )},
             *history,
         ]
         # Merge if last message has same role (some providers reject consecutive same-role)

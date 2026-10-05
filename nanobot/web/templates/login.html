@@ -1,32 +1,32 @@
 {% extends "base.html" %}
 
-{% block title %}Access Terminal — Nanobot OS{% endblock %}
+{% block title %}{{ tr('page.access_terminal') }} — Nanobot OS{% endblock %}
 
 {% block content %}
 <div class="flex-1 flex items-center justify-center w-full min-h-[calc(100vh-140px)]">
     <div class="w-full max-w-md">
 
         <!-- Login Container with Matrix border -->
-        <div class="matrix-card p-10 relative overflow-hidden">
+        <div class="ui-card p-10 relative overflow-hidden">
 
             <!-- Corner decorations -->
-            <div class="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-primary shadow-[0_0_10px_#00FF41]">
+            <div class="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-primary shadow-glow-10 login-corner">
             </div>
-            <div class="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-primary shadow-[0_0_10px_#00FF41]">
-            </div>
-            <div
-                class="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-primary shadow-[0_0_10px_#00FF41]">
+            <div class="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-primary shadow-glow-10 login-corner">
             </div>
             <div
-                class="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-primary shadow-[0_0_10px_#00FF41]">
+                class="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-primary shadow-glow-10 login-corner">
+            </div>
+            <div
+                class="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-primary shadow-glow-10 login-corner">
             </div>
 
             <!-- Header -->
             <div class="text-center mb-8">
                 <style>
                     @keyframes neo-glow-pulse {
-                        0%, 100% { box-shadow: 0 0 15px rgba(0,255,65,0.3), 0 0 30px rgba(0,255,65,0.1); }
-                        50% { box-shadow: 0 0 25px rgba(0,255,65,0.6), 0 0 50px rgba(0,255,65,0.2), 0 0 80px rgba(0,255,65,0.1); }
+                        0%, 100% { box-shadow: 0 0 15px rgb(var(--c-accent) / calc(0.3 * var(--glow))), 0 0 30px rgb(var(--c-accent) / calc(0.1 * var(--glow))); }
+                        50% { box-shadow: 0 0 25px rgb(var(--c-accent) / calc(0.6 * var(--glow))), 0 0 50px rgb(var(--c-accent) / calc(0.2 * var(--glow))), 0 0 80px rgb(var(--c-accent) / calc(0.1 * var(--glow))); }
                     }
                     @keyframes neo-glitch {
                         0%, 90%, 100% { transform: translate(0); filter: brightness(0.85) sepia(1) hue-rotate(80deg) saturate(4); }
@@ -44,7 +44,7 @@
                         position: absolute;
                         inset: -4px;
                         border-radius: 50%;
-                        border: 2px solid rgba(0,255,65,0.5);
+                        border: 2px solid rgb(var(--c-primary) / 0.5);
                         animation: neo-glow-pulse 2.5s ease-in-out infinite;
                     }
                     .neo-avatar-container::after {
@@ -56,8 +56,8 @@
                             0deg,
                             transparent,
                             transparent 2px,
-                            rgba(0,255,65,0.05) 2px,
-                            rgba(0,255,65,0.05) 4px
+                            rgb(var(--c-primary) / 0.05) 2px,
+                            rgb(var(--c-primary) / 0.05) 4px
                         );
                         pointer-events: none;
                         z-index: 1;
@@ -67,9 +67,9 @@
                     }
                 </style>
                 <div class="neo-avatar-container">
-                    <img src="/static/neo.jpg" alt="Neo"
+                    <img src="{{ theme_value('login_avatar', '/static/catmatrix.png') }}" alt="{{ theme_value('login_avatar_alt', 'Nanobot') }}"
                         class="neo-avatar-img w-20 h-20 rounded-full object-cover"
-                        style="filter: brightness(0.85) sepia(1) hue-rotate(80deg) saturate(4);">
+                        style="filter: var(--logo-filter);">
                 </div>
 
                 <h2 class="text-2xl font-bold glow-text tracking-[0.3em] uppercase mb-2">NANOBOT_OS</h2>
@@ -101,7 +101,7 @@
                         <input type="password" id="password" name="password" placeholder="••••••••••••" autofocus
                             required autocomplete="off" data-bwignore="true" data-1p-ignore="true"
                             data-lpignore="true" data-form-type="other"
-                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.3)] outline-none px-4 py-3 text-primary font-mono text-sm text-center placeholder-primary/20 transition-all duration-300" />
+                            class="w-full bg-black/60 border border-primary/50 focus:border-primary focus:shadow-glow-15-30 outline-none px-4 py-3 text-primary font-mono text-sm text-center placeholder-primary/20 transition-all duration-300" />
                         <span class="absolute right-3 top-1/2 -translate-y-1/2 text-primary/30 text-xs">_</span>
                     </div>
                 </div>
@@ -111,7 +111,7 @@
                     <span class="material-symbols-outlined text-sm group-hover:text-black transition-colors"
                         id="loginIcon">login</span>
                     <span id="loginText">Authenticate</span>
-                    <span class="blinking">_</span>
+                    <span class="blinking ui-cursor">_</span>
                 </button>
             </form>
 
@@ -124,9 +124,12 @@
         </div>
 
         <!-- Bottom tagline -->
+        {% set _tagline = theme_value('login_tagline') %}
+        {% if _tagline %}
         <p class="text-center text-[10px] text-primary/20 uppercase tracking-[0.5em] mt-6 glow-text">
-            Follow the white rabbit.
+            {{ _tagline }}
         </p>
+        {% endif %}
     </div>
 </div>
 
@@ -137,15 +140,15 @@
     <div
         style="position:relative; z-index:10; text-align:center; font-family:'JetBrains Mono',monospace; padding: 0 24px;">
         <div id="overlayMsg"
-            style="color:#00FF41; font-size:1.2rem; font-weight:700; letter-spacing:0.3em; text-transform:uppercase; text-shadow:0 0 20px #00FF41, 0 0 40px #00FF41; margin-bottom:24px; transition: all 0.3s ease;">
+            style="color:rgb(var(--c-primary)); font-size:1.2rem; font-weight:700; letter-spacing:0.3em; text-transform:uppercase; text-shadow:0 0 20px rgb(var(--c-accent) / var(--glow)), 0 0 40px rgb(var(--c-accent) / var(--glow)); margin-bottom:24px; transition: all 0.3s ease;">
             INITIATING NEURAL LINK...</div>
-        <div style="width:300px; height:3px; background:rgba(0,255,65,0.15); margin:0 auto 16px;">
+        <div style="width:300px; height:3px; background:rgb(var(--c-primary) / 0.15); margin:0 auto 16px;">
             <div id="progressBar"
-                style="height:100%; width:0%; background:#00FF41; box-shadow:0 0 10px #00FF41; transition:width 1.6s linear;">
+                style="height:100%; width:0%; background:rgb(var(--c-primary)); box-shadow:0 0 10px rgb(var(--c-accent) / var(--glow)); transition:width 1.6s linear;">
             </div>
         </div>
         <div id="overlaySubMsg"
-            style="color:rgba(0,255,65,0.45); font-size:0.65rem; letter-spacing:0.4em; text-transform:uppercase;">
+            style="color:rgb(var(--c-primary) / var(--text-alpha-45)); font-size:0.65rem; letter-spacing:0.4em; text-transform:uppercase;">
             ESTABLISHING SECURE CHANNEL</div>
     </div>
 </div>
@@ -181,6 +184,10 @@
                 const html = await res.text();
                 document.open(); document.write(html); document.close();
             } else {
+                if (document.documentElement.dataset.theme !== 'matrix') {
+                    window.location.href = '/';
+                    return;
+                }
                 // ===== SUCCESS: FULLSCREEN MATRIX TAKEOVER =====
                 const overlay = document.getElementById('matrixOverlay');
                 const canvas = document.getElementById('matrixCanvas');
@@ -209,8 +216,8 @@
                             ctx.fillStyle = '#ffffff';
                             ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 6;
                         } else {
-                            ctx.fillStyle = '#00FF41';
-                            ctx.shadowColor = '#00FF41'; ctx.shadowBlur = 4;
+                            ctx.fillStyle = themeColor('primary');
+                            ctx.shadowColor = themeColor('accent'); ctx.shadowBlur = 4;
                         }
                         ctx.fillText(ch, i * FS, drops[i] * FS);
                         ctx.shadowBlur = 0;
@@ -236,7 +243,7 @@
                     if (p.big) {
                         msg.style.fontSize = '1.9rem';
                         msg.style.letterSpacing = '0.6em';
-                        msg.style.textShadow = '0 0 30px #00FF41, 0 0 60px #00FF41, 0 0 90px #00FF41';
+                        msg.style.textShadow = '0 0 30px rgb(var(--c-accent) / var(--glow)), 0 0 60px rgb(var(--c-accent) / var(--glow)), 0 0 90px rgb(var(--c-accent) / var(--glow))';
                     }
                 }, p.t));
 

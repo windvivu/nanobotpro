@@ -1,0 +1,105 @@
+/* Office 2003 theme: shared flat and light-background rules plus the Office 2003 Blue look.
+   Included at the end of the Tailwind style block in base.html. */
+{% include "themes/_flat.css" %}
+{% include "themes/_light.css" %}
+
+/* Workspace: the blue command-bar gradient behind everything */
+:root body { background: var(--o3-workspace) fixed; }
+
+/* Title case, no letter-spaced capitals */
+.uppercase { text-transform: none; }
+.tracking-widest, .tracking-wider { letter-spacing: 0.01em; }
+
+/* Title bar: Outlook 2003 pane header, white text on the dark blue gradient. Tokens are switched
+   to light-on-dark inside it; the theme menu that opens from it switches them back. */
+header.ui-card {
+    --c-primary: 255 255 255;
+    --text-floor: 0.8;          /* white subtext on the blue title bar stays readable (base.html) */
+    --c-white: 255 255 255;
+    --c-black: 0 45 150;
+    --c-accent: 255 203 136;
+    color: rgb(var(--c-primary));
+    background-color: #2f5fc0;
+    background-image: var(--o3-title);
+    backdrop-filter: none;
+    border-style: solid;
+    border-width: 0 0 1px;
+    border-color: transparent transparent #001c66;
+}
+#theme-menu {
+    --c-primary: 21 44 107;
+    --c-white: 0 0 0;
+    --c-black: 255 255 255;
+    --c-accent: 0 45 150;
+    color: rgb(var(--c-primary));
+}
+#fleet-badge,
+#fleet-badge span,
+#default-pwd-badge,
+#default-pwd-badge span {
+    color: #ffe680 !important;
+}
+
+/* Panes: white, dark blue frame, square corners */
+.ui-card {
+    background-color: rgb(var(--c-surface));
+    background-image: var(--o3-pane);
+    border: 1px solid rgb(var(--o3-border));
+    border-radius: 0;
+    box-shadow: var(--card-shadow);
+}
+.ui-card:hover { border-color: rgb(var(--o3-border)); }
+
+/* Navigation pane (Outlook 2003): blue gradient buttons, orange hover/selection with navy border */
+nav > a.ui-card {
+    background-image: var(--o3-toolbar);
+    border: 1px solid rgb(var(--o3-border));
+    border-radius: 0;
+    box-shadow: none;
+}
+nav > a.ui-card:hover {
+    background-image: var(--o3-hover);
+    border-color: rgb(var(--o3-navy));
+}
+.nav-active {
+    background: var(--o3-checked) !important;
+    border-color: rgb(var(--o3-navy)) !important;
+    border-left-width: 1px !important;
+}
+
+/* Text boxes: XP blue-grey border, pane-header blue when focused */
+:root input:focus,
+:root textarea:focus,
+:root select:focus {
+    border-color: rgb(var(--c-accent));
+    box-shadow: none;
+}
+
+/* Command buttons in the page body: toolbar face; orange with a navy border when hovered,
+   darker orange when pressed. Round icon buttons and buttons filled or lettered in a status colour keep their look. */
+:root main button.border:not(.rounded-full):not(.bg-primary):not([class*="bg-red"]):not([class*="bg-yellow"]):not([class*="bg-green"]):not([class*="text-red"]):not([class*="text-orange"]):not([class*="text-yellow"]) {
+    background-color: #cbe1fc;
+    background-image: var(--o3-toolbar);
+    border-color: rgb(var(--o3-border));
+    border-radius: 0;
+}
+:root main button.border:not(.rounded-full):not(.bg-primary):not([class*="bg-red"]):not([class*="bg-yellow"]):not([class*="bg-green"]):not([class*="text-red"]):not([class*="text-orange"]):not([class*="text-yellow"]):hover,
+:root main button.border:not(.rounded-full):not(.bg-primary):not([class*="bg-red"]):not([class*="bg-yellow"]):not([class*="bg-green"]):not([class*="text-red"]):not([class*="text-orange"]):not([class*="text-yellow"]):hover * {
+    color: rgb(var(--c-primary));
+}
+:root main button.border:not(.rounded-full):not(.bg-primary):not([class*="bg-red"]):not([class*="bg-yellow"]):not([class*="bg-green"]):not([class*="text-red"]):not([class*="text-orange"]):not([class*="text-yellow"]):hover {
+    background-image: var(--o3-hover);
+    border-color: rgb(var(--o3-navy));
+}
+:root main button.border:not(.rounded-full):not(.bg-primary):not([class*="bg-red"]):not([class*="bg-yellow"]):not([class*="bg-green"]):not([class*="text-red"]):not([class*="text-orange"]):not([class*="text-yellow"]):active {
+    background-image: var(--o3-pressed);
+    border-color: rgb(var(--o3-navy));
+}
+/* Buttons lettered in a status colour (Restart Gateway, Manual Server ...) keep their colours but get a
+   light face, so their text never sits straight on the blue workspace (red there was 2.8:1). */
+:root main button.border[class*="text-red"]:not(:hover),
+:root main button.border[class*="text-orange"]:not(:hover),
+:root main button.border[class*="text-yellow"]:not(:hover),
+:root main button.border[class*="text-green"]:not(:hover) {
+    background-color: rgb(255 255 255 / 0.85);
+}

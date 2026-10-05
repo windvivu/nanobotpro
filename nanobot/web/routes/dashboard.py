@@ -7,6 +7,22 @@ from loguru import logger
 router = APIRouter()
 
 
+def active_profile(workspace) -> tuple[str, str]:
+    """(id, name) of the profile in use, from profiles/profiles.json; ("default", "Default") without
+    one. The sidebar card shows it on every page that renders the card (custom)."""
+    import json
+
+    try:
+        pdata = json.loads((workspace / "profiles" / "profiles.json").read_text(encoding="utf-8"))
+        active_id = pdata.get("active")
+        for p in pdata.get("profiles", []):
+            if active_id and p.get("id") == active_id:
+                return active_id, p.get("name") or active_id
+    except Exception:
+        pass
+    return "default", "Default"
+
+
 @router.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
     """Render the main dashboard page."""
@@ -74,24 +90,23 @@ async def dashboard(request: Request):
 
     # Resolve active tools for display
     tools_config = config.tools
-    preset = tools_config.tool_preset
+    brain = getattr(config, "brain_memory", None)
+    from nanobot.agent.tool_roles import ROLE_ICONS, ROLES, normalize_role, role_flags
+
+    preset = normalize_role(tools_config.tool_preset)  # tool role (agent/tool_roles.py)
     tool_groups = []
-    if preset == "chatbot":
-        tool_status = {"Message": True, "File": False, "Exec": False, "Web": True, "Spawn": False, "Cron": False, "MCP": True}
-    elif preset == "coder":
-        tool_status = {"Message": True, "File": True, "Exec": tools_config.sandbox_mode != "disabled", "Web": True, "Spawn": False, "Cron": False, "MCP": True}
-    elif preset == "custom":
-        tool_status = {
-            "Message": True,
-            "File": tools_config.enable_file_tools,
-            "Exec": tools_config.sandbox_mode != "disabled",
-            "Web": tools_config.enable_web_tools,
-            "Spawn": tools_config.enable_spawn,
-            "Cron": tools_config.enable_cron,
-            "MCP": tools_config.enable_mcp,
-        }
-    else:  # developer
-        tool_status = {"Message": True, "File": True, "Exec": tools_config.sandbox_mode != "disabled", "Web": True, "Spawn": True, "Cron": True, "MCP": True}
+    file_on, exec_on, web_on, spawn_on, cron_on, mcp_on = role_flags(
+        preset,
+        sandbox_mode=tools_config.sandbox_mode,
+        custom_tools=tools_config.custom_tools,
+        enable_file_tools=tools_config.enable_file_tools,
+        enable_web_tools=tools_config.enable_web_tools,
+        enable_spawn=tools_config.enable_spawn,
+        enable_cron=tools_config.enable_cron,
+        enable_mcp=tools_config.enable_mcp,
+    )
+    tool_status = {"Message": True, "File": file_on, "Exec": exec_on, "Web": web_on,
+                   "Spawn": spawn_on, "Cron": cron_on, "MCP": mcp_on}
 
     agent = getattr(app_state, "agent", None)
     token_usage_tracker = getattr(agent, "token_usage", None)
@@ -115,13 +130,20 @@ async def dashboard(request: Request):
         "active_channels": active_channels,
         "provider": effective_model.provider,
         "tool_preset": preset,
+        "tool_role_label": ROLES[preset].label,
+        "tool_role_icon": ROLE_ICONS[preset],
         "tool_status": tool_status,
         "sandbox_mode": tools_config.sandbox_mode,
         "profile_name": profile_name,
+        "profile_id": active_profile(workspace)[0],
         "profile_preview": profile_preview,
         "profile_created": profile_created,
         "profile_has_memory": profile_has_memory,
         "token_usage": token_usage,
+        # Brain Memory switches for the header badge (custom): Settings > Brain Memory
+        "brain_enabled": bool(getattr(brain, "enabled", False)),
+        "brain_read": bool(getattr(brain, "retrieval_enabled", False)),
+        "brain_write": bool(getattr(brain, "learning_enabled", False)),
     }
 
     return app_state.templates.TemplateResponse(request, "dashboard.html", context)

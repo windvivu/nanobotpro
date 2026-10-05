@@ -1,0 +1,73 @@
+/* Matrix theme: effect-only rules (digital rain, CRT overlay). Included at the end of the
+   Tailwind style block in base.html; shared component rules stay in base.html. */
+    @keyframes matrix-rain {
+        0% { transform: translateY(-100%); }
+        100% { transform: translateY(100vh); }
+    }
+    @keyframes scanline {
+        0% { transform: translateY(-100%); }
+        100% { transform: translateY(100%); }
+    }
+    .matrix-rain-container {
+        position: fixed;
+        inset: 0;
+        background: #000;
+        overflow: hidden;
+        z-index: -2;
+    }
+    .matrix-foreground-container {
+        position: fixed;
+        inset: 0;
+        overflow: hidden;
+        z-index: 100;
+        pointer-events: none;
+    }
+    .matrix-column {
+        position: absolute;
+        top: -100%;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 1.1rem;
+        line-height: 1;
+        writing-mode: vertical-rl;
+        text-orientation: upright;
+        color: rgb(var(--c-primary));
+        user-select: none;
+        pointer-events: none;
+        white-space: nowrap;
+        text-shadow: 0 0 8px rgb(var(--c-accent) / calc(0.8 * var(--glow)));
+    }
+    .matrix-column-foreground {
+        position: absolute;
+        top: -100%;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 1.8rem;
+        line-height: 1;
+        writing-mode: vertical-rl;
+        text-orientation: upright;
+        color: rgb(var(--c-primary));
+        user-select: none;
+        pointer-events: none;
+        white-space: nowrap;
+        text-shadow: 0 0 15px rgb(var(--c-accent) / calc(1 * var(--glow))), 0 0 30px rgb(var(--c-accent) / calc(0.5 * var(--glow)));
+        opacity: 0.95;
+        filter: brightness(1.2);
+        font-weight: 700;
+    }
+    .crt-overlay {
+        position: fixed;
+        inset: 0;
+        background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+        background-size: 100% 4px, 3px 100%;
+        pointer-events: none;
+        z-index: 50;
+    }
+    .crt-scanline {
+        position: fixed;
+        inset: 0;
+        height: 2px;
+        background: rgb(var(--c-primary) / 0.1);
+        animation: scanline 8s linear infinite;
+        z-index: 51;
+        pointer-events: none;
+    }
+    .rain-anim { animation: matrix-rain linear infinite; }

@@ -1,7 +1,7 @@
         <!-- ============================================================ -->
         <!-- Section: Providers -->
         <!-- ============================================================ -->
-        <div class="matrix-card p-6">
+        <div class="ui-card p-6">
             <div class="flex items-center justify-between mb-4 border-b border-primary/20 pb-4 cursor-pointer"
                 onclick="toggleSection('providers-body')">
                 <div class="flex items-center gap-3">
@@ -72,11 +72,11 @@
                         <div class="flex flex-col gap-1">
                             <label class="text-[9px] font-bold uppercase tracking-[0.3em] text-primary/70">API Key</label>
                             <div class="relative">
-                                <input type="password" id="active-provider-key" value=""
-                                    autocomplete="off" data-bwignore="true" data-1p-ignore="true"
+                                <input type="text" id="active-provider-key" value=""
+                                    autocomplete="off" spellcheck="false" data-bwignore="true" data-1p-ignore="true"
                                     data-lpignore="true" data-form-type="other"
                                     oninput="syncActiveProvider('key')"
-                                    class="w-full bg-black/60 border border-primary/30 focus:border-primary outline-none px-3 py-2 text-primary font-mono text-xs transition-all duration-300 pr-10">
+                                    class="w-full bg-black/60 border border-primary/30 focus:border-primary outline-none px-3 py-2 text-primary font-mono text-xs transition-all duration-300 pr-10 secret-field">
                                 <button type="button" onclick="toggleReveal(this)"
                                     class="absolute right-2 top-1/2 -translate-y-1/2 text-primary/30 hover:text-primary transition-colors">
                                     <span class="material-symbols-outlined text-[16px]">visibility</span>
@@ -156,7 +156,7 @@
                                 </div>
                             </div>
                             <div id="codex-logged-area" class="hidden flex items-center gap-3">
-                                <span class="w-2 h-2 rounded-full bg-primary shadow-[0_0_5px_#00FF41]"></span>
+                                <span class="w-2 h-2 rounded-full bg-primary shadow-glow-5"></span>
                                 <span class="text-[10px] font-mono text-primary/70">Đã đăng nhập <span id="codex-account-id" class="text-primary/50"></span></span>
                                 <button type="button" onclick="codexLogout()"
                                     class="ml-auto px-2 py-1 border border-red-500/30 text-red-400/60 hover:text-red-400 hover:border-red-500 transition-all text-[9px] font-bold uppercase tracking-wider">Logout</button>
@@ -178,7 +178,7 @@
                                 </div>
                             </div>
                             <div id="copilot-logged-area" class="hidden flex items-center gap-3">
-                                <span class="w-2 h-2 rounded-full bg-primary shadow-[0_0_5px_#00FF41]"></span>
+                                <span class="w-2 h-2 rounded-full bg-primary shadow-glow-5"></span>
                                 <span class="text-[10px] font-mono text-primary/70">GitHub Copilot đã xác thực</span>
                                 <button type="button" onclick="copilotLogout()"
                                     class="ml-auto px-2 py-1 border border-red-500/30 text-red-400/60 hover:text-red-400 hover:border-red-500 transition-all text-[9px] font-bold uppercase tracking-wider">Logout</button>
@@ -213,7 +213,7 @@
                                 </div>
                             </div>
                             <div id="xai-logged-area" class="hidden flex items-center gap-3">
-                                <span class="w-2 h-2 rounded-full bg-primary shadow-[0_0_5px_#00FF41]"></span>
+                                <span class="w-2 h-2 rounded-full bg-primary shadow-glow-5"></span>
                                 <span class="text-[10px] font-mono text-primary/70">xAI OAuth logged in <span id="xai-account-id" class="text-primary/50"></span></span>
                                 <button type="button" onclick="xaiLogout()"
                                     class="ml-auto px-2 py-1 border border-red-500/30 text-red-400/60 hover:text-red-400 hover:border-red-500 transition-all text-[9px] font-bold uppercase tracking-wider">Logout</button>
@@ -241,7 +241,7 @@
                                 <input type="checkbox" id="multi_credential_profile_enabled" onchange="toggleMultiCredentialProfiles()"
                                     class="sr-only peer" />
                                 <div class="w-14 h-7 bg-black/60 border border-primary/50 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300"></div>
-                                <div class="absolute top-[3px] left-[3px] w-5 h-5 bg-primary/40 peer-checked:bg-primary peer-checked:shadow-[0_0_10px_#00FF41] peer-checked:translate-x-7 transition-all duration-300"></div>
+                                <div class="absolute top-[3px] left-[3px] w-5 h-5 bg-primary/40 peer-checked:bg-primary peer-checked:shadow-glow-10 peer-checked:translate-x-7 transition-all duration-300"></div>
                             </div>
                         </div>
                     </label>
@@ -269,16 +269,16 @@
                                     <select id="provider_profile_provider" onchange="providerProfileProviderChanged()"
                                         class="w-full bg-black/60 border border-primary/50 focus:border-primary outline-none px-4 py-3 text-primary font-mono text-sm transition-all duration-300 appearance-none cursor-pointer">
                                         {% for opt in provider_options if opt not in ['auto', 'bedrock'] %}
-                                        <option value="{{ opt }}" style="background: #0a0a0a; color: #00FF41;">{{ provider_label(opt) }}</option>
+                                        <option value="{{ opt }}" style="background: rgb(var(--c-surface)); color: rgb(var(--c-primary));">{{ provider_label(opt) }}</option>
                                         {% endfor %}
                                     </select>
                                 </div>
                                 <div id="provider-profile-api-key-wrap" class="flex flex-col gap-2">
                                     <label for="provider_profile_api_key" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt; API_Key</label>
-                                    <input type="password" id="provider_profile_api_key"
-                                        autocomplete="off" data-bwignore="true" data-1p-ignore="true"
+                                    <input type="text" id="provider_profile_api_key"
+                                        autocomplete="off" spellcheck="false" data-bwignore="true" data-1p-ignore="true"
                                         data-lpignore="true" data-form-type="other"
-                                        class="w-full bg-black/60 border border-primary/50 focus:border-primary outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300" />
+                                        class="w-full bg-black/60 border border-primary/50 focus:border-primary outline-none px-4 py-3 text-primary font-mono text-sm placeholder-primary/20 transition-all duration-300 secret-field" />
                                 </div>
                                 <div id="provider-profile-api-base-wrap" class="flex flex-col gap-2">
                                     <label for="provider_profile_api_base" class="text-[10px] font-bold uppercase tracking-[0.3em] text-primary/90">&gt; API_Base</label>

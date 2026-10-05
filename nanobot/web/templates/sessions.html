@@ -1,18 +1,18 @@
 {% extends "base.html" %}
 
-{% block title %}Sessions — Nanobot OS{% endblock %}
+{% block title %}{{ tr('nav.sessions') }} — Nanobot OS{% endblock %}
 
 {% block content %}
 <!-- Sidebar -->
 <aside class="w-full lg:w-72 flex flex-col gap-6">
-    <div class="matrix-card p-6 flex flex-col items-center text-center gap-4">
+    <div class="ui-card p-6 flex flex-col items-center text-center gap-4">
         <div
             class="w-20 h-20 flex items-center justify-center text-primary glow-text border-2 border-primary/30 rounded-full relative">
             <div class="absolute inset-0 border border-primary animate-pulse rounded-full opacity-20"></div>
             <span class="material-symbols-outlined text-4xl">database</span>
         </div>
         <div>
-            <h2 class="text-lg font-bold glow-text tracking-widest uppercase">Session_DB</h2>
+            <h2 class="text-lg font-bold glow-text tracking-widest uppercase">{{ tr('page.session_db') }}</h2>
             <p class="text-[10px] text-primary/50 font-mono">{{ total_count }} RECORDS FOUND</p>
         </div>
     </div>
@@ -26,18 +26,18 @@
 <!-- Main Content -->
 <div class="flex-1 flex flex-col gap-8">
     <!-- Header -->
-    <div class="matrix-card p-6">
+    <div class="ui-card p-6">
         <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
                 <span class="material-symbols-outlined glow-text">storage</span>
-                <h3 class="text-xs font-bold uppercase tracking-widest glow-text">Conversation Sessions</h3>
+                <h3 class="text-xs font-bold uppercase tracking-widest glow-text">{{ tr('page.conversation_sessions') }}</h3>
             </div>
             <div class="flex items-center gap-4">
                 <span class="text-[10px] text-primary/30 font-mono">TOTAL: {{ total_count }}</span>
                 <button type="button" onclick="document.getElementById('resetSessionsModal').style.display='flex'"
                     class="px-4 py-2 border border-yellow-500/30 bg-black/40 text-yellow-400/60 font-bold uppercase tracking-widest text-[10px] hover:border-yellow-500 hover:text-yellow-400 hover:bg-yellow-500/10 transition-all duration-300 flex items-center gap-2">
                     <span class="material-symbols-outlined text-[14px]">restart_alt</span>
-                    Reset All Sessions
+                    {{ tr('page.reset_all_sessions') }}
                 </button>
             </div>
         </div>
@@ -45,10 +45,10 @@
 
     {% if request.query_params.get('reset') == '1' %}
     <div id="resetToast"
-        class="fixed top-6 right-6 z-50 matrix-card border-primary bg-black/95 px-6 py-4 flex items-center gap-4 shadow-[0_0_20px_rgba(0,255,65,0.3)]"
+        class="fixed top-6 right-6 z-50 ui-card border-primary bg-black/95 px-6 py-4 flex items-center gap-4 shadow-glow-20-30"
         style="animation: toastIn 0.3s ease-out;">
         <span class="material-symbols-outlined text-primary glow-text">check_circle</span>
-        <span class="text-sm font-bold glow-text uppercase tracking-widest">Sessions Cleared</span>
+        <span class="text-sm font-bold glow-text uppercase tracking-widest">{{ tr('page.sessions_cleared') }}</span>
         <button onclick="document.getElementById('resetToast').style.display='none'"
             class="ml-4 text-primary/40 hover:text-primary transition-colors">
             <span class="material-symbols-outlined text-sm">close</span>
@@ -58,7 +58,7 @@
 
     {% if sessions %}
     <!-- Session Table -->
-    <div class="matrix-card overflow-hidden flex flex-col" style="max-height: calc(100vh - 280px);">
+    <div class="ui-card overflow-hidden flex flex-col" style="max-height: calc(100vh - 280px);">
         <!-- Table Header -->
         <div
             class="grid grid-cols-12 gap-4 px-6 py-3 border-b border-primary/30 text-[10px] font-bold uppercase tracking-[0.2em] text-primary/50 flex-shrink-0">
@@ -70,12 +70,12 @@
         </div>
 
         <!-- Session Rows — scrollable -->
-        <div class="overflow-y-auto flex-1" style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;">
+        <div class="overflow-y-auto flex-1" style="scrollbar-width: thin; scrollbar-color: rgb(var(--c-primary)) transparent;">
         {% for session in sessions %}
         <a href="/sessions/{{ session.key }}"
             class="grid grid-cols-12 gap-4 px-6 py-4 border-b border-primary/10 hover:bg-primary/5 transition-all group items-center cursor-pointer block">
             <div class="col-span-5 flex items-center gap-3">
-                <span class="w-2 h-2 bg-primary rounded-full shadow-[0_0_5px_#00FF41] flex-shrink-0"></span>
+                <span class="w-2 h-2 bg-primary rounded-full shadow-glow-5 flex-shrink-0"></span>
                 <span class="text-sm font-mono text-primary truncate">{{ session.key }}</span>
             </div>
             <div class="col-span-2 text-xs text-primary/50 font-mono">{{ session.created_at }}</div>
@@ -95,16 +95,15 @@
 
     {% else %}
     <!-- Empty State -->
-    <div class="matrix-card p-12 flex flex-col items-center text-center gap-4">
+    <div class="ui-card p-12 flex flex-col items-center text-center gap-4">
         <span class="material-symbols-outlined text-6xl text-primary/20">folder_off</span>
-        <h3 class="text-sm font-bold uppercase tracking-widest text-primary/40">No Sessions Found</h3>
-        <p class="text-[10px] text-primary/20 uppercase tracking-wider">Sessions will appear here once conversations
-            are initiated</p>
+        <h3 class="text-sm font-bold uppercase tracking-widest text-primary/40">{{ tr('page.no_sessions') }}</h3>
+        <p class="text-[10px] text-primary/20 uppercase tracking-wider">{{ tr('page.sessions_appear') }}</p>
     </div>
     {% endif %}
 
     <!-- Terminal Log Footer -->
-    <div class="matrix-card p-4 font-mono text-[11px] leading-tight space-y-1">
+    <div class="ui-card p-4 font-mono text-[11px] leading-tight space-y-1">
         <div class="flex gap-2">
             <span class="text-primary/40">[DB]</span>
             <span class="text-primary">Session database scan complete... <span class="text-white">{{ total_count }}
@@ -125,10 +124,10 @@
 <!-- Reset Sessions Confirm Modal -->
 <div id="resetSessionsModal" class="fixed inset-0 z-50 bg-black/80 items-center justify-center" style="display: none;">
     <div
-        class="matrix-card p-6 w-full max-w-md flex flex-col gap-5 border-yellow-500/40 shadow-[0_0_30px_rgba(255,200,0,0.15)]">
+        class="ui-card p-6 w-full max-w-md flex flex-col gap-5 border-yellow-500/40 shadow-[0_0_30px_rgba(255,200,0,0.15)]">
         <div class="flex items-center gap-3">
             <span class="material-symbols-outlined text-yellow-500">restart_alt</span>
-            <h3 class="text-sm font-bold uppercase tracking-widest text-yellow-400">Reset All Sessions</h3>
+            <h3 class="text-sm font-bold uppercase tracking-widest text-yellow-400">{{ tr('page.reset_all_sessions') }}</h3>
         </div>
         <p class="text-xs text-primary/70 leading-relaxed">
             This will clear <strong class="text-yellow-400">all chat sessions</strong> across every channel
@@ -142,11 +141,11 @@
             <button type="submit"
                 class="flex-1 px-6 py-3 border border-yellow-500/50 bg-yellow-500/10 text-yellow-400 font-bold uppercase tracking-widest text-sm hover:bg-yellow-500/20 transition-all duration-300 flex items-center justify-center gap-2">
                 <span class="material-symbols-outlined text-sm">restart_alt</span>
-                Reset Now
+                {{ tr('page.reset_now') }}
             </button>
             <button type="button" onclick="document.getElementById('resetSessionsModal').style.display='none'"
                 class="px-6 py-3 border border-primary/20 text-primary/40 font-bold uppercase tracking-widest text-sm hover:text-primary transition-colors">
-                Cancel
+                {{ tr('page.cancel') }}
             </button>
         </form>
     </div>

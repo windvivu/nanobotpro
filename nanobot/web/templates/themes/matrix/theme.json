@@ -1,0 +1,10 @@
+{
+    "label": "Matrix",
+    "edition": "SYSTEM_VERSION: ULTIMATE_MATRIX_EDITION",
+    "footer": "Wake up, Neo... The Matrix has you.",
+    "logout_prompt": "Are you sure you want to disconnect from the Matrix?",
+    "login_avatar": "/static/neo.jpg",
+    "login_avatar_alt": "Neo",
+    "login_tagline": "Follow the white rabbit.",
+    "boot_line": "Loading matrix parameters"
+}

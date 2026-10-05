@@ -2,30 +2,53 @@
 
 import base64
 import hashlib
+import hmac
+import json
 import secrets
 import time
-from functools import wraps
+from pathlib import Path
 
 from fastapi import Request
-from fastapi.responses import RedirectResponse
 
-# In-memory session store: {token: expiry_timestamp}
+# Session store: {sha256(token): expiry_timestamp}; the cookie carries the token itself. In memory, and
+# also in a file once keep_sessions_in() is called, so logins survive a gateway restart (custom)
 _sessions: dict[str, float] = {}
+_session_file: Path | None = None
+_password_mark = ""  # which password the logins in the file were made with
 _SESSION_TTL = 24 * 60 * 60  # 24 hours
 _COOKIE_NAME = "nanobot_session"  # base name, actual name set by init_cookie_name()
+_CSRF_COOKIE_NAME = "nanobot_csrf"
 
 
 def init_cookie_name(bot_id: str = "") -> str:
     """Set cookie name unique per bot_id to avoid conflicts on same host."""
-    global _COOKIE_NAME
+    global _COOKIE_NAME, _CSRF_COOKIE_NAME
     if bot_id:
         _COOKIE_NAME = f"nanobot_session_{bot_id}"
+        _CSRF_COOKIE_NAME = f"nanobot_csrf_{bot_id}"
     return _COOKIE_NAME
 
 
 def get_cookie_name() -> str:
     """Return the current cookie name."""
     return _COOKIE_NAME
+
+
+def get_csrf_cookie_name() -> str:
+    """Return the browser-readable CSRF cookie name for the current bot."""
+    return _CSRF_COOKIE_NAME
+
+
+def create_csrf_token() -> str:
+    """Create a synchronizer token for a logged-in browser session."""
+    return secrets.token_urlsafe(32)
+
+
+def csrf_valid(request: Request) -> bool:
+    """Check the double-submit CSRF cookie/header pair."""
+    cookie = request.cookies.get(get_csrf_cookie_name(), "")
+    header = request.headers.get("x-csrf-token", "")
+    return bool(cookie and header and hmac.compare_digest(cookie, header))
 
 
 def _hash_password(password: str) -> str:
@@ -40,10 +63,48 @@ def verify_password(input_password: str, stored_password: str) -> bool:
     return _hash_password(input_password) == _hash_password(stored_password)
 
 
+def _session_key(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def keep_sessions_in(path: Path, password: str) -> None:
+    """Keep logins in `path` too, so the restart button, which starts a new process, does not log
+    everyone out. The file holds hashes of the tokens, never the tokens. Logins made with another
+    password are not restored: after changing the password, a restart logs everyone out (custom)."""
+    global _session_file, _password_mark
+    _session_file = path
+    _password_mark = hmac.new(b"nanobot-web-logins", password.encode(), hashlib.sha256).hexdigest()
+    try:
+        stored = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if not isinstance(stored, dict) or stored.get("password") != _password_mark:
+        return
+    now = time.time()
+    for key, expiry in (stored.get("sessions") or {}).items():
+        if isinstance(key, str) and isinstance(expiry, (int, float)) and expiry > now:
+            _sessions[key] = float(expiry)
+
+
+def _save_sessions() -> None:
+    if _session_file is None:
+        return
+    now = time.time()
+    live = {key: expiry for key, expiry in _sessions.items() if expiry > now}
+    try:
+        _session_file.parent.mkdir(parents=True, exist_ok=True)
+        temp = _session_file.with_name(_session_file.name + ".tmp")
+        temp.write_text(json.dumps({"password": _password_mark, "sessions": live}), encoding="utf-8")
+        temp.replace(_session_file)
+    except OSError:
+        pass  # logins still work; they just will not survive a restart
+
+
 def create_session() -> str:
     """Create a new session token."""
     token = secrets.token_hex(32)
-    _sessions[token] = time.time() + _SESSION_TTL
+    _sessions[_session_key(token)] = time.time() + _SESSION_TTL
+    _save_sessions()
     return token
 
 
@@ -51,18 +112,20 @@ def validate_session(token: str | None) -> bool:
     """Check if a session token is valid and not expired."""
     if not token:
         return False
-    expiry = _sessions.get(token)
+    key = _session_key(token)
+    expiry = _sessions.get(key)
     if not expiry:
         return False
     if time.time() > expiry:
-        _sessions.pop(token, None)
+        _sessions.pop(key, None)
         return False
     return True
 
 
 def clear_session(token: str) -> None:
     """Remove a session token."""
-    _sessions.pop(token, None)
+    _sessions.pop(_session_key(token), None)
+    _save_sessions()
 
 
 def is_authenticated(request: Request) -> bool:
@@ -78,7 +141,8 @@ def auth_required(password: str):
 
 # Paths that don't require authentication (middleware won't redirect these)
 # Note: these endpoints do their OWN Basic Auth check inside
-PUBLIC_PATHS = {"/login", "/static", "/healthz", "/api/health", "/api/fleet/message", "/api/fleet/claim", "/api/fleet/release", "/api/fleet/config-mcp", "/api/fleet/remove-mcp", "/api/fleet/restart", "/api/password-status"}
+# /api/password-status is not public (custom): the login page showed the default password to anyone
+PUBLIC_PATHS = {"/login", "/static", "/healthz", "/api/health", "/api/fleet/message", "/api/fleet/claim", "/api/fleet/release", "/api/fleet/config-mcp", "/api/fleet/remove-mcp", "/api/fleet/restart"}
 
 
 def verify_basic_auth(authorization_header: str | None, stored_password: str) -> bool:

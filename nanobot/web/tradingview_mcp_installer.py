@@ -261,6 +261,7 @@ def build_tradingview_mcp_config() -> MCPServerConfig:
         env={},
         tool_timeout=30,
         enabled_tools=["*"],
+        roles=["trader", "full"],  # its chart tools only show in these tool roles (agent/tool_roles.py)
     )
 
 

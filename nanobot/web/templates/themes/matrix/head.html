@@ -1,0 +1,22 @@
+{#- Matrix theme: design tokens, included in <head> by base.html.
+    Colours are space-separated RGB channels, used as rgb(var(--c-x) / <alpha>) in CSS
+    and as Tailwind colours (text-primary/40, ...) through tailwind.config in base.html. #}
+<style>
+    :root {
+        --c-canvas: 0 0 0;          /* page background */
+        --c-primary: 0 255 65;      /* main ink: text, borders, fills */
+        --c-accent: 0 255 65;       /* highlights: glows, focus, checked controls */
+        --c-surface: 10 10 10;      /* cards, dropdown options */
+        --c-black: 0 0 0;           /* Tailwind "black": overlays, dark panels, text on primary */
+        --c-white: 255 255 255;     /* Tailwind "white" */
+        --c-success: 74 222 128;
+        --c-warning: 250 204 21;
+        --c-danger: 239 68 68;
+        --c-danger-soft: 255 107 107;
+        --glow: 1;                  /* strength of every glow; 0 = flat UI */
+        --text-floor: 0.45;         /* faint text never goes below this (base.html): subtext stays readable */
+        --c-red-500: 241 94 94;     /* a touch lighter: 4.5:1 for faint red text on the cards */
+        --font-ui: 'JetBrains Mono', monospace;
+        --logo-filter: brightness(0.85) sepia(1) hue-rotate(80deg) saturate(4);
+    }
+</style>

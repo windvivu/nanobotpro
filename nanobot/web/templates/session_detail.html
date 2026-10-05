@@ -1,18 +1,18 @@
 {% extends "base.html" %}
 
-{% block title %}Session: {{ session_key }} — Nanobot OS{% endblock %}
+{% block title %}{{ tr('nav.sessions') }}: {{ session_key }} — Nanobot OS{% endblock %}
 
 {% block content %}
 <!-- Sidebar -->
 <aside class="w-full lg:w-72 flex flex-col gap-6">
-    <div class="matrix-card p-6 flex flex-col items-center text-center gap-4">
+    <div class="ui-card p-6 flex flex-col items-center text-center gap-4">
         <div
             class="w-20 h-20 flex items-center justify-center text-primary glow-text border-2 border-primary/30 rounded-full relative">
             <div class="absolute inset-0 border border-primary animate-pulse rounded-full opacity-20"></div>
             <span class="material-symbols-outlined text-4xl">chat</span>
         </div>
         <div>
-            <h2 class="text-lg font-bold glow-text tracking-widest uppercase">Chat_Log</h2>
+            <h2 class="text-lg font-bold glow-text tracking-widest uppercase">{{ tr('page.chat_log') }}</h2>
             <p class="text-[10px] text-primary/50 font-mono truncate max-w-[200px]">{{ session_key }}</p>
         </div>
     </div>
@@ -23,13 +23,13 @@
     {% include "_sidebar_nav.html" %}
 
     <!-- Session Info -->
-    <div class="matrix-card p-4 text-[10px] leading-relaxed text-primary/40 uppercase tracking-tighter">
+    <div class="ui-card p-4 text-[10px] leading-relaxed text-primary/40 uppercase tracking-tighter">
         <div class="flex justify-between mb-1">
             <span>Total_Messages</span>
             <span class="text-primary/70">{{ message_count }}</span>
         </div>
         <div class="w-full bg-primary/10 h-1 mb-3">
-            <div class="bg-primary h-full shadow-[0_0_5px_#00FF41]" style="width: {{ [message_count, 100] | min }}%">
+            <div class="bg-primary h-full shadow-glow-5" style="width: {{ [message_count, 100] | min }}%">
             </div>
         </div>
     </div>
@@ -38,7 +38,7 @@
 <!-- Main Content -->
 <div class="flex-1 flex flex-col gap-4">
     <!-- Header -->
-    <div class="matrix-card p-4 flex items-center justify-between">
+    <div class="ui-card p-4 flex items-center justify-between">
         <div class="flex items-center gap-3">
             <span class="material-symbols-outlined glow-text text-sm">forum</span>
             <h3 class="text-xs font-bold uppercase tracking-widest glow-text">Conversation Log</h3>
@@ -49,7 +49,7 @@
     {% if messages %}
     <!-- Chat Messages -->
     <div class="flex flex-col gap-4 max-h-[calc(100vh-180px)] overflow-y-auto pr-2" id="chatContainer"
-        style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;">
+        style="scrollbar-width: thin; scrollbar-color: rgb(var(--c-primary)) transparent;">
 
         {% for msg in messages %}
         {% if msg.role == "user" %}
@@ -97,7 +97,7 @@
                     {% endif %}
                 </div>
                 <div class="bg-black/60 border border-primary/10 px-3 py-1 text-[11px] font-mono leading-snug text-left text-primary/40 whitespace-normal break-words max-h-24 overflow-y-auto"
-                    style="scrollbar-width: thin; scrollbar-color: #00FF4133 transparent;">{{ msg.content[:300] }}{% if
+                    style="scrollbar-width: thin; scrollbar-color: rgb(var(--c-primary) / 0.2) transparent;">{{ msg.content[:300] }}{% if
                     msg.content | length > 300 %}...{% endif %}</div>
             </div>
         </div>
@@ -120,7 +120,7 @@
     </div>
     {% else %}
     <!-- Empty State -->
-    <div class="matrix-card p-12 flex flex-col items-center text-center gap-4">
+    <div class="ui-card p-12 flex flex-col items-center text-center gap-4">
         <span class="material-symbols-outlined text-6xl text-primary/20">chat_bubble_outline</span>
         <h3 class="text-sm font-bold uppercase tracking-widest text-primary/40">No Messages</h3>
         <p class="text-[10px] text-primary/20 uppercase tracking-wider">This session has no messages yet</p>
@@ -128,7 +128,7 @@
     {% endif %}
 
     <!-- Terminal Log Footer -->
-    <div class="matrix-card p-4 font-mono text-[11px] leading-tight space-y-1 mt-auto">
+    <div class="ui-card p-4 font-mono text-[11px] leading-tight space-y-1 mt-auto">
         <div class="flex gap-2">
             <span class="text-primary/40">[LOG]</span>
             <span class="text-primary">Session loaded: {{ session_key }}</span>

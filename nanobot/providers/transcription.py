@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import Callable
 import mimetypes
 import os
+import ssl
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,24 @@ _AUDIO_MIME_OVERRIDES = {
     ".weba": "audio/webm",
     ".webm": "audio/webm",
 }
+
+
+class TranscriptionError(Exception):
+    """Why a transcription failed (custom). transcribe() returns "" instead unless it is asked to raise
+    this: the dashboard's voice route shows the reason, the channels only log it."""
+
+
+def is_certificate_error(exc: BaseException | None) -> bool:
+    """Whether a request failed because the server's certificate did not verify (custom). Trying again
+    cannot help: an antivirus that inspects HTTPS (Kaspersky, for one) signs sites with its own root,
+    which Python does not trust. httpx keeps the ssl error a few links down the exception chain."""
+    seen: set[int] = set()
+    while exc is not None and id(exc) not in seen:
+        if isinstance(exc, ssl.SSLCertVerificationError):
+            return True
+        seen.add(id(exc))
+        exc = exc.__cause__ or exc.__context__
+    return False
 
 
 def _resolve_transcription_url(api_base: str | None, default_url: str) -> str:
@@ -61,11 +80,17 @@ async def _post_with_retry(
     provider_label: str,
     extract_text: Callable[[dict[str, Any]], str],
 ) -> str:
+    """Post, retrying what may pass on another try. A failure is logged here, then raised as
+    TranscriptionError saying why (custom: it returned "" before)."""
     for attempt in range(_MAX_RETRIES + 1):
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(**build_request())
         except _RETRYABLE_EXCEPTIONS as e:
+            if is_certificate_error(e):  # fails the same way on every try: no retry (custom)
+                logger.error("{} transcription error: the server's certificate does not verify: {}",
+                             provider_label, e)
+                raise TranscriptionError(str(e)) from e
             if attempt < _MAX_RETRIES:
                 logger.warning(
                     "{} transcription transient error (attempt {}/{}): {}",
@@ -82,10 +107,10 @@ async def _post_with_retry(
                 _MAX_RETRIES + 1,
                 e,
             )
-            return ""
+            raise TranscriptionError(str(e) or type(e).__name__) from e
         except Exception as e:
             logger.exception("{} transcription error: {}", provider_label, e)
-            return ""
+            raise TranscriptionError(str(e) or type(e).__name__) from e
 
         if response.status_code in _RETRYABLE_STATUS and attempt < _MAX_RETRIES:
             logger.warning(
@@ -100,32 +125,27 @@ async def _post_with_retry(
 
         try:
             response.raise_for_status()
-        except httpx.HTTPStatusError:
+        except httpx.HTTPStatusError as e:
             body = response.text.strip().replace("\n", " ")[:500]
-            logger.error(
-                "{} transcription HTTP {}{}{}",
-                provider_label,
-                response.status_code,
-                f" {response.reason_phrase}" if response.reason_phrase else "",
-                f": {body}" if body else "",
-            )
-            return ""
+            status = f"HTTP {response.status_code} {response.reason_phrase or ''}".strip()
+            logger.error("{} transcription {}{}", provider_label, status, f": {body}" if body else "")
+            raise TranscriptionError(status) from e
         except Exception as e:
             logger.exception("{} transcription error: {}", provider_label, e)
-            return ""
+            raise TranscriptionError(str(e) or type(e).__name__) from e
 
         try:
             payload = response.json()
         except Exception as e:
             logger.exception("{} transcription error: malformed response body: {}", provider_label, e)
-            return ""
+            raise TranscriptionError("malformed response body") from e
         if not isinstance(payload, dict):
             logger.error(
                 "{} transcription error: unexpected response shape: {!r}",
                 provider_label,
                 type(payload).__name__,
             )
-            return ""
+            raise TranscriptionError("unexpected response shape")
         return extract_text(payload)
     return ""
 
@@ -143,7 +163,7 @@ async def _post_transcription_with_retry(
         data = path.read_bytes()
     except OSError as e:
         logger.exception("{} transcription error: cannot read audio file: {}", provider_label, e)
-        return ""
+        raise TranscriptionError(f"cannot read audio file: {e}") from e
     headers = {"Authorization": f"Bearer {api_key}"}
 
     def build_request() -> dict[str, Any]:
@@ -176,24 +196,30 @@ class OpenAITranscriptionProvider:
         self.model = model or "whisper-1"
         self.language = language or None
 
-    async def transcribe(self, file_path: str | Path) -> str:
-        """Transcribe an audio file using OpenAI Whisper."""
-        if not self.api_key:
-            logger.warning("OpenAI API key not configured for transcription")
-            return ""
+    async def transcribe(self, file_path: str | Path, *, raise_errors: bool = False) -> str:
+        """Transcribe an audio file using OpenAI Whisper. "" when that fails (logged); with raise_errors,
+        the TranscriptionError saying why (custom)."""
+        try:
+            if not self.api_key:
+                logger.warning("OpenAI API key not configured for transcription")
+                raise TranscriptionError("OpenAI API key not configured")
 
-        path = Path(file_path)
-        if not path.exists():
-            logger.error("Audio file not found: {}", file_path)
+            path = Path(file_path)
+            if not path.exists():
+                logger.error("Audio file not found: {}", file_path)
+                raise TranscriptionError("audio file not found")
+            return await _post_transcription_with_retry(
+                self.api_url,
+                api_key=self.api_key,
+                path=path,
+                model=self.model,
+                provider_label="OpenAI",
+                language=self.language,
+            )
+        except TranscriptionError:
+            if raise_errors:
+                raise
             return ""
-        return await _post_transcription_with_retry(
-            self.api_url,
-            api_key=self.api_key,
-            path=path,
-            model=self.model,
-            provider_label="OpenAI",
-            language=self.language,
-        )
 
 
 class GroqTranscriptionProvider:
@@ -218,29 +244,36 @@ class GroqTranscriptionProvider:
         self.model = model or "whisper-large-v3"
         self.language = language or None
 
-    async def transcribe(self, file_path: str | Path) -> str:
+    async def transcribe(self, file_path: str | Path, *, raise_errors: bool = False) -> str:
         """
         Transcribe an audio file using Groq.
 
         Args:
             file_path: Path to the audio file.
+            raise_errors: Raise the TranscriptionError saying why it failed instead of returning ""
+                (custom: the dashboard's voice route shows the reason).
 
         Returns:
-            Transcribed text.
+            Transcribed text; "" when it fails, which is logged.
         """
-        if not self.api_key:
-            logger.warning("Groq API key not configured for transcription")
-            return ""
+        try:
+            if not self.api_key:
+                logger.warning("Groq API key not configured for transcription")
+                raise TranscriptionError("Groq API key not configured")
 
-        path = Path(file_path)
-        if not path.exists():
-            logger.error("Audio file not found: {}", file_path)
+            path = Path(file_path)
+            if not path.exists():
+                logger.error("Audio file not found: {}", file_path)
+                raise TranscriptionError("audio file not found")
+            return await _post_transcription_with_retry(
+                self.api_url,
+                api_key=self.api_key,
+                path=path,
+                model=self.model,
+                provider_label="Groq",
+                language=self.language,
+            )
+        except TranscriptionError:
+            if raise_errors:
+                raise
             return ""
-        return await _post_transcription_with_retry(
-            self.api_url,
-            api_key=self.api_key,
-            path=path,
-            model=self.model,
-            provider_label="Groq",
-            language=self.language,
-        )

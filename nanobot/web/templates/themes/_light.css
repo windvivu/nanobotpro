@@ -1,0 +1,39 @@
+/* Shared rules for themes with a light background (light, office2010), included by their
+   theme.css after _flat.css. Not a theme itself (no head.html). */
+
+/* The System Prompt and Console drawers keep a dark terminal background (inline style):
+   point the tokens inside them back to a dark palette so their text stays readable. */
+#prompt-viewer-panel,
+#console-viewer-panel {
+    --c-primary: 201 209 217;
+    --c-accent: 88 166 255;
+    --c-surface: 22 27 34;
+    --c-black: 8 11 16;
+    --c-white: 240 246 252;
+    --c-success: 63 185 80;
+    --c-warning: 210 153 34;
+    --c-danger: 248 81 73;
+    --c-danger-soft: 255 123 114;
+    --c-red-300: initial;
+    --c-red-400: initial;
+    --c-red-500: initial;
+    --c-red-950: initial;
+    --c-yellow-200: initial;
+    --c-yellow-300: initial;
+    --c-yellow-400: initial;
+    --c-yellow-500: initial;
+    --c-orange-400: initial;
+    --c-orange-500: initial;
+    --c-green-400: initial;
+    --c-blue-400: initial;
+    color-scheme: dark;
+}
+
+/* Header badges are styled inline in neon yellow, unreadable on white */
+#fleet-badge,
+#fleet-badge span,
+#default-pwd-badge,
+#default-pwd-badge span {
+    color: rgb(161 98 7) !important;
+    text-shadow: none !important;
+}

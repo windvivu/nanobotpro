@@ -196,8 +196,6 @@ class AdminbotManager:
         return workspace_path
 
     def delete_bot(self, bot_id_or_name: str, *, delete_workspace: bool = False) -> BotRecord:
-        # Read saved state directly — do not refresh, so identity-lookup failures
-        # cannot silently downgrade a running bot to stopped and bypass the guard.
         bot = None
         for candidate in self.registry.list_bots():
             if candidate.id == bot_id_or_name or candidate.name == bot_id_or_name:
@@ -205,6 +203,9 @@ class AdminbotManager:
                 break
         if bot is None:
             raise RuntimeError(f"Bot '{bot_id_or_name}' was not found.")
+
+        bot = self.process_manager.refresh_status(bot)
+        self.registry.upsert_bot(bot)
         if bot.process.status == "running" or bot.process.pid is not None:
             raise RuntimeError(
                 f"Bot '{bot.name}' may still be running (pid={bot.process.pid}). Stop it before deleting."

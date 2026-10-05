@@ -11,6 +11,7 @@ from nanobot.agent.tools.schema import (
     StringSchema,
     tool_parameters_schema,
 )
+from nanobot.agent.tools.turn_state import TurnLocal
 from nanobot.cron.service import CronService
 from nanobot.cron.types import CronJob, CronJobState, CronSchedule
 
@@ -51,6 +52,10 @@ _CRON_PARAMETERS = tool_parameters_schema(
 @tool_parameters(_CRON_PARAMETERS)
 class CronTool(Tool):
     """Tool to schedule reminders and recurring tasks."""
+
+    # One instance serves every session: the chat a reminder goes to is per turn (custom)
+    _channel = TurnLocal()
+    _chat_id = TurnLocal()
 
     def __init__(self, cron_service: CronService, default_timezone: str = "UTC"):
         self._cron = cron_service

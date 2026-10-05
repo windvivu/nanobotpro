@@ -1,0 +1,836 @@
+{% extends "base.html" %}
+
+{% block title %}{{ tr('graph.brain_graph') }} — Nanobot OS{% endblock %}
+
+{% block content %}
+<style>
+    .brain-switch {
+        display: inline-flex;
+        align-items: center;
+        gap: .65rem;
+        min-height: 2rem;
+        cursor: pointer;
+        user-select: none;
+    }
+    .brain-switch > input {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        pointer-events: none;
+    }
+    .brain-switch-track {
+        position: relative;
+        display: inline-flex;
+        flex: 0 0 auto;
+        align-items: center;
+        width: 2.75rem;
+        height: 1.5rem;
+        padding: .15rem;
+        border: 1px solid rgb(var(--c-primary) / .35);
+        border-radius: 999px;
+        background: rgb(var(--c-primary) / .08);
+        transition: background .18s ease, border-color .18s ease, box-shadow .18s ease;
+    }
+    .brain-switch-thumb {
+        width: 1.05rem;
+        height: 1.05rem;
+        border-radius: 999px;
+        background: rgb(var(--c-primary) / .62);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, .35);
+        transition: transform .18s ease, background .18s ease;
+    }
+    .brain-switch > input:checked + .brain-switch-track .brain-switch-thumb {
+        transform: translateX(1.2rem);
+    }
+    .brain-switch > input:focus-visible + .brain-switch-track {
+        outline: 2px solid rgb(var(--c-primary) / .8);
+        outline-offset: 2px;
+    }
+    .brain-switch-copy {
+        display: flex;
+        flex-direction: column;
+        gap: .15rem;
+        line-height: 1.25;
+    }
+    .brain-switch-help {
+        color: rgb(var(--c-primary) / .62);
+        font-size: .68rem;
+        font-weight: 400;
+    }
+    .brain-switch-retrieval > input:checked + .brain-switch-track {
+        border-color: rgb(34 211 238 / .85);
+        background: rgb(8 145 178 / .28);
+        box-shadow: 0 0 12px rgb(34 211 238 / .2);
+    }
+    .brain-switch-retrieval > input:checked + .brain-switch-track .brain-switch-thumb {
+        background: rgb(103 232 249);
+    }
+    .brain-switch-learning > input:checked + .brain-switch-track {
+        border-color: rgb(251 191 36 / .9);
+        background: rgb(180 83 9 / .28);
+        box-shadow: 0 0 12px rgb(251 191 36 / .2);
+    }
+    .brain-switch-learning > input:checked + .brain-switch-track .brain-switch-thumb {
+        background: rgb(253 224 71);
+    }
+    /* Keep the accent on the switch; labels use the theme ink for contrast. */
+    .brain-switch-label-retrieval,
+    .brain-switch-label-learning { color: rgb(var(--c-primary) / .95); }
+
+    #graph-fullscreen-shell:fullscreen {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        width: 100vw;
+        height: 100vh;
+        min-height: 0;
+        padding: 1rem;
+        overflow: hidden;
+        background: rgb(var(--c-canvas));
+    }
+    #graph-fullscreen-shell:fullscreen #graph-workspace {
+        display: grid;
+        grid-template-columns: minmax(16rem, 28rem) minmax(0, 1fr);
+        gap: 1rem;
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+    #graph-fullscreen-shell:fullscreen #graph-workspace > aside,
+    #graph-fullscreen-shell:fullscreen #graph-workspace > .ui-card {
+        height: 100% !important;
+        min-height: 0 !important;
+    }
+    #graph-fullscreen-shell:fullscreen #brain-graph {
+        height: 100% !important;
+    }
+    @media (max-width: 767px) {
+        #graph-fullscreen-shell:fullscreen {
+            overflow-y: auto;
+        }
+        #graph-fullscreen-shell:fullscreen #graph-workspace {
+            display: flex;
+            flex-direction: column;
+            flex: 1 0 auto;
+        }
+        #graph-fullscreen-shell:fullscreen #graph-workspace > aside {
+            height: min(30vh, 14rem) !important;
+            flex: 0 0 auto;
+        }
+        #graph-fullscreen-shell:fullscreen #graph-workspace > .ui-card {
+            height: max(60vh, 24rem) !important;
+            flex: 1 0 auto;
+        }
+    }
+</style>
+<aside class="w-full lg:w-72 flex flex-col gap-6">
+    <div class="ui-card p-6">
+        {% set active_page = "memory_graph" %}
+        {% include "_sidebar_nav.html" %}
+    </div>
+    <div class="ui-card p-4 text-xs font-mono text-primary/70 space-y-2">
+        <div class="text-primary glow-text">{{ tr('graph.brain_graph') }}</div>
+        <div>{{ tr('graph.source_markdown') }}</div>
+        <div>{{ tr('graph.bounded_snapshot') }}</div>
+        {% if graph_available %}
+        <div id="graph-status" role="status" aria-live="polite">{{ tr('graph.loading') }}</div>
+        {% else %}
+        <div id="graph-status" role="status" aria-live="polite">{{ tr('graph.setup_required') }}</div>
+        {% endif %}
+    </div>
+</aside>
+
+{% if graph_available %}
+<section class="flex-1 min-w-0 flex flex-col gap-4">
+    <div class="ui-card p-4" id="brain-settings">
+        <button id="brain-settings-toggle" type="button" class="w-full flex items-center justify-between text-left border-b border-primary/20 pb-3" aria-expanded="false" aria-controls="brain-settings-body">
+            <span>
+                <span class="block text-sm font-bold uppercase tracking-widest glow-text">{{ tr('graph.settings') }}</span>
+                <span class="block text-[10px] font-mono text-primary/55 mt-1">{{ tr('graph.settings_help') }}</span>
+            </span>
+            <span class="flex items-center gap-3">
+                <span id="brain-settings-status" class="text-[10px] font-mono text-primary/60">{{ tr('graph.loading') }}</span>
+                <span id="brain-settings-chevron" class="material-symbols-outlined text-primary/70">expand_more</span>
+            </span>
+        </button>
+        <div id="brain-settings-body" class="hidden pt-4 space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
+                <label class="brain-switch brain-switch-retrieval font-mono text-xs">
+                    <input id="brain-retrieval" type="checkbox">
+                    <span class="brain-switch-track" aria-hidden="true"><span class="brain-switch-thumb"></span></span>
+                    <span class="brain-switch-copy">
+                        <span class="brain-switch-label-retrieval">{{ tr('graph.read_facts') }}</span>
+                        <span class="brain-switch-help">{{ tr('graph.read_facts_help') }}</span>
+                    </span>
+                </label>
+                <label class="brain-switch brain-switch-learning font-mono text-xs">
+                    <input id="brain-learning" type="checkbox">
+                    <span class="brain-switch-track" aria-hidden="true"><span class="brain-switch-thumb"></span></span>
+                    <span class="brain-switch-copy">
+                        <span class="brain-switch-label-learning">{{ tr('graph.learn_sessions') }}</span>
+                        <span class="brain-switch-help">{{ tr('graph.learn_sessions_help') }}</span>
+                    </span>
+                </label>
+                <label class="flex items-center gap-2"><input id="brain-stage-only" type="checkbox" checked> {{ tr('graph.stage_only') }}</label>
+                <p class="text-[10px] font-mono text-primary/50 md:col-span-2">{{ tr('graph.stage_help') }}</p>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
+                <div class="text-[10px] font-mono text-primary/65">{{ tr('graph.read_sessions') }}
+                    <label class="flex items-center gap-2 mt-1"><input id="brain-retrieval-all" type="checkbox" checked> {{ tr('graph.all_sessions') }}</label>
+                    <div id="brain-retrieval-sessions" class="mt-1 max-h-32 overflow-y-auto space-y-1 border border-primary/30 bg-black/20 p-2"></div>
+                </div>
+                <div class="text-[10px] font-mono text-primary/65 md:pt-6">{{ tr('graph.learning_sessions') }}
+                    <div id="brain-learning-sessions" class="mt-1 max-h-32 overflow-y-auto space-y-1 border border-primary/30 bg-black/20 p-2"></div>
+                </div>
+                <div class="h-full flex flex-col text-[10px] font-mono text-primary/65">{{ tr('graph.migration_sources') }}
+                    <label class="flex items-center gap-2 mt-1 text-primary/80"><input id="brain-migration" type="checkbox"> {{ tr('graph.allow_migration') }}</label>
+                    <div id="brain-migration-sources" class="mt-1 h-48 max-h-48 overflow-y-auto space-y-1 border border-primary/30 bg-black/20 p-2"></div>
+                </div>
+                <div id="brain-learning-policy" class="hidden h-full grid-cols-1 gap-3 text-[10px] font-mono md:pt-0">
+                    <label class="text-primary/70">{{ tr('graph.daily_jobs') }}
+                        <input id="brain-learning-daily-limit" class="block mt-1 w-full bg-black/20 border border-primary/30 px-2 py-1 text-sm text-primary" type="number" min="1" max="50" step="1" value="25">
+                        <span class="block mt-1 text-primary/50">{{ tr('graph.daily_jobs_help') }}</span>
+                    </label>
+                    <label class="text-primary/70">{{ tr('graph.retries') }}
+                        <input id="brain-learning-retries" class="block mt-1 w-full bg-black/10 border border-primary/20 px-2 py-1 text-sm text-primary/70" type="number" value="3" readonly aria-readonly="true">
+                        <span class="block mt-1 text-primary/50">{{ tr('graph.retries_help') }}</span>
+                    </label>
+                    <label class="text-primary/70">{{ tr('graph.input_bytes') }}
+                        <input id="brain-learning-input-bytes" class="block mt-1 w-full bg-black/20 border border-primary/30 px-2 py-1 text-sm text-primary" type="number" min="16384" max="131072" step="1024" value="32768">
+                        <span class="block mt-1 text-primary/50">{{ tr('graph.input_bytes_help') }}</span>
+                    </label>
+                </div>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+                <button id="brain-migration-run" type="button" disabled class="px-3 py-2 border border-primary/30 text-xs uppercase hover:bg-primary/10 disabled:opacity-40 disabled:cursor-not-allowed"><span id="brain-migration-spinner" class="material-symbols-outlined text-sm align-middle animate-spin hidden" aria-hidden="true">progress_activity</span> <span id="brain-migration-action-label">{{ tr('graph.stage_sources') }}</span></button>
+            </div>
+        </div>
+    </div>
+    <div id="graph-fullscreen-shell" class="flex flex-col gap-4 min-w-0">
+    <div class="ui-card p-4 flex flex-wrap gap-3 items-end">
+        <label class="text-xs font-mono text-primary/70">{{ tr('graph.search_nodes') }}
+            <input id="graph-query" class="block mt-1 bg-black/20 border border-primary/30 px-2 py-1 text-sm"
+                maxlength="200" autocomplete="off" placeholder="{{ tr('graph.source_title') }}">
+        </label>
+        <label class="text-xs font-mono text-primary/70">{{ tr('graph.topic') }}
+            <input id="graph-topic" class="block mt-1 bg-black/20 border border-primary/30 px-2 py-1 text-sm"
+                maxlength="200" autocomplete="off">
+        </label>
+        <label class="text-xs font-mono text-primary/70">{{ tr('graph.status') }}
+            <select id="graph-filter-status" class="block mt-1 bg-black/20 border border-primary/30 px-2 py-1 text-sm">
+                <option value="active">{{ tr('graph.active') }}</option>
+                <option value="superseded">{{ tr('graph.superseded') }}</option>
+                <option value="quarantined">{{ tr('graph.quarantined') }}</option>
+                <option value="rejected">{{ tr('graph.rejected') }}</option>
+            </select>
+        </label>
+        <label class="text-xs font-mono text-primary/70">{{ tr('graph.min_confidence') }}
+            <input id="graph-confidence" class="block mt-1 bg-black/20 border border-primary/30 px-2 py-1 text-sm"
+                type="number" min="0" max="1" step="0.05" value="0">
+        </label>
+        <label class="text-xs font-mono text-primary/70">{{ tr('graph.max_nodes') }}
+            <select id="graph-limit" class="block mt-1 bg-black/20 border border-primary/30 px-2 py-1 text-sm">
+                <option value="100">100</option>
+                <option value="250">250</option>
+                <option value="500" selected>500</option>
+            </select>
+        </label>
+        <button id="graph-refresh" class="px-3 py-2 border border-primary/50 text-xs uppercase hover:bg-primary/20">{{ tr('common.refresh') }}</button>
+        <button id="graph-rebuild" class="px-3 py-2 border border-primary/50 text-xs uppercase hover:bg-primary/20">{{ tr('common.rebuild') }}</button>
+    </div>
+    <div id="graph-workspace" class="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-4 items-start">
+        <aside class="ui-card p-4 min-w-0 max-h-[min(70vh,48rem)] md:h-[min(70vh,48rem)] md:min-h-[28rem] overflow-y-auto" aria-label="{{ tr('graph.node_details') }}">
+            <h2 class="text-xs font-bold uppercase tracking-widest text-primary/70 mb-4">{{ tr('graph.node_details') }}</h2>
+            <p id="fact-placeholder" class="text-sm text-primary/60 leading-relaxed">{{ tr('graph.select_fact') }}</p>
+            <article id="fact-detail" class="hidden break-words" aria-live="polite">
+                <h3 id="fact-title" class="text-lg font-bold text-primary"></h3>
+                <div id="fact-meta" class="text-xs font-mono text-primary/60 mt-1"></div>
+                <p id="fact-body" class="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-primary/80"></p>
+                <p id="fact-citation" class="mt-3 text-xs font-mono text-primary/50 break-all"></p>
+            </article>
+        </aside>
+        <div class="ui-card p-2 relative min-w-0 min-h-[28rem] md:h-[min(70vh,48rem)] overflow-hidden">
+            <div id="brain-graph" class="w-full h-[min(70vh,48rem)] md:h-full" aria-label="{{ tr('graph.brain_graph') }}"></div>
+            <div id="graph-empty" class="absolute inset-0 hidden items-center justify-center text-primary/50 text-sm">{{ tr('graph.no_match') }}</div>
+            <div id="graph-view-controls" role="group" aria-label="{{ tr('graph.view_controls') }}" class="absolute top-3 right-3 z-10 flex items-center gap-1 ui-card p-1">
+                <label class="flex items-center gap-1 px-2 text-[10px] font-mono text-primary/70" title="{{ tr('graph.display_mode') }}">
+                    <span class="sr-only">{{ tr('graph.display_mode') }}</span>
+                    <select id="graph-display-mode" class="bg-transparent border-0 px-1 py-1 text-[10px] text-primary focus:outline-none" aria-label="{{ tr('graph.display_mode') }}">
+                        <option value="network">{{ tr('graph.network') }}</option>
+                        <option value="nebula">{{ tr('graph.nebula') }}</option>
+                    </select>
+                </label>
+                <button id="graph-zoom-out" type="button" disabled title="{{ tr('graph.zoom_out') }}" aria-label="{{ tr('graph.zoom_out') }}" class="px-3 py-2 text-xs hover:bg-primary/10 disabled:opacity-40 disabled:cursor-not-allowed">−</button>
+                <button id="graph-zoom-in" type="button" disabled title="{{ tr('graph.zoom_in') }}" aria-label="{{ tr('graph.zoom_in') }}" class="px-3 py-2 text-xs hover:bg-primary/10 disabled:opacity-40 disabled:cursor-not-allowed">+</button>
+                <button id="graph-fit" type="button" disabled title="{{ tr('graph.fit') }}" class="px-3 py-2 text-xs hover:bg-primary/10 disabled:opacity-40 disabled:cursor-not-allowed">{{ tr('graph.fit') }}</button>
+                <button id="graph-reset-view" type="button" disabled title="{{ tr('graph.reset_view') }}" class="px-3 py-2 text-xs hover:bg-primary/10 disabled:opacity-40 disabled:cursor-not-allowed">{{ tr('graph.reset_view') }}</button>
+                <button id="graph-fullscreen" type="button" title="{{ tr('graph.open_fullscreen') }}" aria-label="{{ tr('graph.open_fullscreen') }}" class="px-3 py-2 text-xs hover:bg-primary/10">{{ tr('common.fullscreen') }}</button>
+            </div>
+        </div>
+    </div>
+    </div>
+    <div class="ui-card p-4">
+        <button id="brain-learning-log-toggle" type="button" class="w-full flex items-center justify-between text-left border-b border-primary/20 pb-3" aria-expanded="false" aria-controls="brain-learning-log-body">
+            <span>
+                <span class="block text-sm font-bold uppercase tracking-widest glow-text">{{ tr('graph.learning_log') }}</span>
+                <span class="block text-[10px] font-mono text-primary/55 mt-1">{{ tr('graph.learning_log_help') }}</span>
+            </span>
+            <span class="flex items-center gap-3">
+                <span id="brain-learning-log-status" class="text-[10px] font-mono text-primary/60">{{ tr('graph.collapsed') }}</span>
+                <span id="brain-learning-log-chevron" class="material-symbols-outlined text-primary/70">expand_more</span>
+            </span>
+        </button>
+        <div id="brain-learning-log-body" class="hidden pt-4 space-y-3">
+            <div class="flex flex-wrap items-center gap-2">
+                <button id="brain-learning-log-refresh" type="button" class="px-3 py-2 border border-primary/40 text-xs uppercase hover:bg-primary/10">{{ tr('graph.refresh_log') }}</button>
+                <button id="brain-undo-migration" type="button" disabled class="px-3 py-2 border border-red-400/50 text-red-300 text-xs uppercase hover:bg-red-400/10 disabled:opacity-40 disabled:cursor-not-allowed">{{ tr('graph.undo_migration') }}</button>
+                <span id="brain-undo-status" class="text-[10px] font-mono text-primary/55"></span>
+            </div>
+            <div id="brain-learning-log" class="space-y-1 text-[10px] font-mono" aria-live="polite"></div>
+        </div>
+    </div>
+</section>
+{% else %}
+<section class="flex-1 min-w-0">
+    <div class="ui-card p-8 max-w-3xl">
+        <div class="flex items-center gap-3 mb-4">
+            <span class="material-symbols-outlined text-primary glow-text">hub</span>
+            <h1 class="text-lg font-bold uppercase tracking-widest glow-text">{{ tr('graph.brain_graph') }}</h1>
+        </div>
+        <p class="text-sm text-primary/75 leading-relaxed">
+            Graph UI đã sẵn sàng nhưng Brain Memory đang tắt dữ liệu. Bật
+            <code class="text-primary">brainMemory.enabled</code> và
+            <code class="text-primary">brainMemory.graphEnabled</code> để đọc các fact đã migration.
+            Trang này không tự bật retrieval hoặc learning.
+        </p>
+        <div class="mt-6 flex flex-wrap gap-3">
+            <a href="/config" class="px-4 py-2 border border-primary/50 text-xs uppercase hover:bg-primary/20">{{ tr('common.open_configuration') }}</a>
+            <a href="/docs/obsidian-memory/README.md" class="px-4 py-2 border border-primary/30 text-xs uppercase hover:bg-primary/10">{{ tr('graph.migration_guide') }}</a>
+        </div>
+    </div>
+</section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if graph_available %}
+<script src="/static/vendor/force-graph-1.51.4.min.js"></script>
+<script>
+(() => {
+    const uiText = {{ ui_translations() | tojson }};
+    const tr = (key, fallback = key, values = {}) => {
+        let text = uiText[key] || fallback;
+        Object.entries(values).forEach(([name, value]) => { text = text.replace(`{${name}}`, String(value)); });
+        return text;
+    };
+    const container = document.getElementById('brain-graph');
+    const status = document.getElementById('graph-status');
+    const empty = document.getElementById('graph-empty');
+    const detail = document.getElementById('fact-detail');
+    const detailPlaceholder = document.getElementById('fact-placeholder');
+    const fullscreenShell = document.getElementById('graph-fullscreen-shell');
+    const graphWorkspace = document.getElementById('graph-workspace');
+    const fullscreenButton = document.getElementById('graph-fullscreen');
+    let snapshot = { nodes: [], links: [] };
+    let savedMigrationEnabled = false;
+    let migrationSettingsDirty = false;
+    let migrationRunning = false;
+    let migrationInProgress = false;
+    let migrationSourceTimer = null;
+    let migrationStatusTimer = null;
+    let settingsSaveTimer = null;
+    let settingsSaveRunning = false;
+    let settingsSaveAgain = false;
+    let settingsRevision = 0;
+    let learningLogTimer = null;
+    let graphDisplayMode = 'network';
+    // Resolve theme tokens once to rgba syntax understood by both Canvas and
+    // the color parser bundled with force-graph 1.51.4.
+    const colour = (name, alpha = 1) => {
+        const rgb = getComputedStyle(document.documentElement).getPropertyValue('--c-' + name).trim().split(/\s+/).map(Number);
+        return `rgba(${rgb.join(',')},${alpha})`;
+    };
+    const colours = { fact: colour('accent'), topic: colour('warning'), entity: colour('primary'), link: colour('primary', .28) };
+    const nebulaRgb = {
+        fact: [92, 208, 255],
+        topic: [255, 188, 96],
+        entity: [190, 130, 255],
+    };
+    const nebulaColour = (kind, alpha = 1) => {
+        const rgb = nebulaRgb[kind] || nebulaRgb.entity;
+        return `rgba(${rgb.join(',')},${alpha})`;
+    };
+    const graphPanel = container.parentElement;
+    const nebulaSurface = 'radial-gradient(circle at 18% 22%, rgba(63, 147, 255, .22), transparent 34%), radial-gradient(circle at 78% 68%, rgba(190, 92, 255, .2), transparent 38%), radial-gradient(circle at 55% 38%, rgba(28, 221, 206, .12), transparent 46%), #080b1c';
+    let fitPending = false;
+    const graph = ForceGraph()(container)
+        .backgroundColor('transparent')
+        .nodeId('id')
+        .linkSource('source')
+        .linkTarget('target')
+        .nodeVal(node => node.kind === 'fact' ? 6 : 3)
+        .nodeColor(node => graphDisplayMode === 'nebula' ? nebulaColour(node.kind, .94) : colours[node.kind])
+        .linkColor(() => graphDisplayMode === 'nebula' ? 'rgba(145, 164, 255, .2)' : colours.link)
+        .linkWidth(link => graphDisplayMode === 'nebula'
+            ? (link.kind === 'wikilink' ? 1.2 : .7)
+            : (link.kind === 'wikilink' ? 1.5 : 1))
+        .nodeLabel(() => '')
+        .nodeCanvasObjectMode(() => graphDisplayMode === 'nebula' ? 'replace' : 'after')
+        .nodeCanvasObject((node, context, globalScale) => {
+            if (graphDisplayMode === 'nebula') {
+                const radius = node.kind === 'fact' ? 4.5 : 3;
+                const haloRadius = radius * (node.kind === 'fact' ? 5 : 4);
+                const glow = context.createRadialGradient(node.x, node.y, 0, node.x, node.y, haloRadius);
+                glow.addColorStop(0, nebulaColour(node.kind, .8));
+                glow.addColorStop(.24, nebulaColour(node.kind, .3));
+                glow.addColorStop(1, nebulaColour(node.kind, 0));
+                context.save();
+                context.fillStyle = glow;
+                context.beginPath();
+                context.arc(node.x, node.y, haloRadius, 0, 2 * Math.PI, false);
+                context.fill();
+                context.fillStyle = nebulaColour(node.kind, .96);
+                context.beginPath();
+                context.arc(node.x, node.y, radius, 0, 2 * Math.PI, false);
+                context.fill();
+                if (node.kind === 'fact' && globalScale > .72) {
+                    const label = String(node.label || '').slice(0, 48);
+                    context.font = `${10 / globalScale}px monospace`;
+                    context.fillStyle = nebulaColour(node.kind, .82);
+                    context.textAlign = 'left';
+                    context.textBaseline = 'middle';
+                    context.fillText(label, node.x + 8 / globalScale, node.y);
+                }
+                context.restore();
+                return;
+            }
+            if (node.kind !== 'fact') return;
+            const label = String(node.label || '').slice(0, 48);
+            const fontSize = 12 / globalScale;
+            context.font = `${fontSize}px monospace`;
+            context.fillStyle = colours.entity;
+            context.textAlign = 'left';
+            context.textBaseline = 'middle';
+            context.fillText(label, node.x + 8 / globalScale, node.y);
+        })
+        .onNodeClick(node => openFact(node.id).catch(e => status.textContent = e.message))
+        .cooldownTicks(120)
+        .onEngineStop(() => {
+            if (fitPending && snapshot.nodes.length) graph.zoomToFit(500, 32);
+            fitPending = false;
+        });
+    function applyGraphDisplayMode() {
+        const nebula = graphDisplayMode === 'nebula';
+        graphPanel.style.background = nebula ? nebulaSurface : '';
+        graphPanel.classList.toggle('nebula-mode', nebula);
+        const data = graph.graphData();
+        if (data.nodes.length) graph.graphData(data);
+    }
+    const resize = () => graph.width(container.clientWidth).height(container.clientHeight);
+    const observer = new ResizeObserver(resize);
+    observer.observe(container);
+    resize();
+    window.addEventListener('pagehide', () => {
+        observer.disconnect(); graph.pauseAnimation();
+        if (learningLogTimer) clearInterval(learningLogTimer);
+        if (migrationSourceTimer) clearInterval(migrationSourceTimer);
+        if (migrationStatusTimer) clearInterval(migrationStatusTimer);
+    });
+
+    function csrfToken() {
+        const match = document.cookie.match(/(?:^|; )nanobot_csrf(?:_[^=]+)?=([^;]*)/);
+        return match ? decodeURIComponent(match[1]) : '';
+    }
+    async function readApiResponse(response) {
+        const data = await response.json().catch(() => null);
+        if (!response.ok) {
+            throw new Error(typeof data?.detail === 'string' ? data.detail : `HTTP ${response.status}`);
+        }
+        if (!data) throw new Error('Invalid server response. Refresh the page and try again.');
+        return data;
+    }
+    const selectedValues = id => Array.from(document.querySelectorAll(`#${id} input[type="checkbox"]:checked`)).map(input => input.value);
+    function fillOptions(id, values, selected) {
+        const list = document.getElementById(id);
+        list.replaceChildren(...values.map(value => {
+            const label = document.createElement('label'); label.className = 'flex items-center gap-2 py-1 text-primary/75';
+            const input = document.createElement('input'); input.type = 'checkbox'; input.value = value; input.checked = selected.includes(value);
+            const text = document.createElement('span'); text.textContent = value;
+            label.append(input, text); return label;
+        }));
+    }
+    function setListDisabled(id, disabled) {
+        const list = document.getElementById(id);
+        list.classList.toggle('opacity-40', disabled);
+        list.querySelectorAll('input').forEach(input => { input.disabled = disabled; });
+    }
+    function setMigrationControlsDisabled(disabled) {
+        setListDisabled('brain-migration-sources', disabled);
+        const busy = migrationRunning || migrationInProgress || settingsSaveRunning;
+        document.getElementById('brain-migration-run').disabled = disabled || busy || !selectedValues('brain-migration-sources').length;
+        document.getElementById('brain-migration-spinner').classList.toggle('hidden', !busy);
+        if (migrationRunning || migrationInProgress) {
+            document.getElementById('brain-migration-action-label').textContent = tr('graph.migration_progress');
+        } else if (settingsSaveRunning) {
+            document.getElementById('brain-migration-action-label').textContent = tr('graph.saving_settings');
+        } else {
+            updateMigrationAction();
+        }
+    }
+    function updateMigrationControls() {
+        const checked = document.getElementById('brain-migration').checked;
+        const disabled = !checked || !savedMigrationEnabled || migrationSettingsDirty;
+        setMigrationControlsDisabled(disabled);
+        if (checked && (!savedMigrationEnabled || migrationSettingsDirty)) {
+            document.getElementById('brain-settings-status').textContent = tr('graph.waiting_save');
+        }
+    }
+    function updateMigrationAction() {
+        document.getElementById('brain-migration-action-label').textContent =
+            document.getElementById('brain-stage-only').checked
+                ? 'Stage selected sources'
+                : 'Migrate selected sources now';
+    }
+    function setLearningControlsDisabled(disabled) {
+        setListDisabled('brain-learning-sessions', disabled);
+        const policy = document.getElementById('brain-learning-policy');
+        policy.classList.toggle('hidden', disabled);
+        policy.classList.toggle('grid', !disabled);
+    }
+    async function loadSettings() {
+        const response = await fetch('/api/memory/settings');
+        if (!response.ok) throw new Error(await response.text() || `HTTP ${response.status}`);
+        const data = await response.json();
+        document.getElementById('brain-retrieval').checked = data.retrieval_enabled;
+        document.getElementById('brain-learning').checked = data.learning_enabled;
+        document.getElementById('brain-learning-daily-limit').value = data.learning_daily_job_limit;
+        document.getElementById('brain-learning-input-bytes').value = data.learning_input_bytes;
+        document.getElementById('brain-learning-retries').value = data.learning_max_attempts;
+        document.getElementById('brain-migration').checked = data.migration_enabled;
+        savedMigrationEnabled = Boolean(data.enabled && data.migration_enabled);
+        migrationSettingsDirty = false;
+        document.getElementById('brain-stage-only').checked = data.migration_stage_only;
+        updateMigrationAction();
+        const sessions = data.sources.filter(item => item.session_id).map(item => item.session_id);
+        const allRetrieval = data.retrieval_sessions === null;
+        document.getElementById('brain-retrieval-all').checked = allRetrieval;
+        fillOptions('brain-retrieval-sessions', sessions, data.retrieval_sessions || []);
+        setListDisabled('brain-retrieval-sessions', allRetrieval);
+        fillOptions('brain-learning-sessions', sessions, data.learning_sessions || []);
+        setLearningControlsDisabled(!data.learning_enabled);
+        const migrationSources = data.sources
+            .filter(item => !item.migration_completed)
+            .map(item => item.source_ref);
+        fillOptions('brain-migration-sources', migrationSources, data.migration_sources || []);
+        document.getElementById('brain-settings-status').textContent = tr('graph.sources_available', '{count} migration sources available', {count: migrationSources.length});
+        updateMigrationControls();
+    }
+    async function saveSettings() {
+        const response = await fetch('/api/memory/settings', { method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken()}, body: JSON.stringify({
+            retrieval_enabled: document.getElementById('brain-retrieval').checked,
+            retrieval_sessions: document.getElementById('brain-retrieval-all').checked ? null : selectedValues('brain-retrieval-sessions'),
+            learning_enabled: document.getElementById('brain-learning').checked,
+            learning_daily_job_limit: Number(document.getElementById('brain-learning-daily-limit').value),
+            learning_input_bytes: Number(document.getElementById('brain-learning-input-bytes').value),
+            learning_sessions: selectedValues('brain-learning-sessions'),
+            migration_enabled: document.getElementById('brain-migration').checked,
+            migration_sources: selectedValues('brain-migration-sources'),
+            migration_stage_only: document.getElementById('brain-stage-only').checked,
+        }) });
+        const data = await readApiResponse(response);
+        savedMigrationEnabled = Boolean(data.enabled && data.migration_enabled);
+        migrationSettingsDirty = false;
+        document.getElementById('brain-migration').checked = savedMigrationEnabled;
+        updateMigrationControls();
+        document.getElementById('brain-settings-status').textContent = tr('graph.auto_saved');
+    }
+    function queueSettingsSave() {
+        settingsRevision += 1;
+        migrationSettingsDirty = true;
+        updateMigrationControls();
+        if (settingsSaveTimer) clearTimeout(settingsSaveTimer);
+        settingsSaveTimer = setTimeout(() => flushSettingsSave().catch(e => {
+            document.getElementById('brain-settings-status').textContent = e.message;
+            updateMigrationControls();
+        }), 300);
+    }
+    async function flushSettingsSave() {
+        settingsSaveTimer = null;
+        if (settingsSaveRunning) {
+            settingsSaveAgain = true;
+            return;
+        }
+        settingsSaveRunning = true;
+        const revision = settingsRevision;
+        document.getElementById('brain-settings-status').textContent = tr('graph.saving');
+        updateMigrationControls();
+        try {
+            await saveSettings();
+            if (settingsRevision !== revision) {
+                migrationSettingsDirty = true;
+                settingsSaveAgain = true;
+            }
+        } finally {
+            settingsSaveRunning = false;
+            updateMigrationControls();
+            if (settingsSaveAgain) {
+                settingsSaveAgain = false;
+                queueSettingsSave();
+            }
+        }
+    }
+    async function stageSources() {
+        if (migrationRunning) return;
+        migrationRunning = true;
+        updateMigrationControls();
+        try {
+            const response = await fetch('/api/memory/migrate', { method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken()}, body: JSON.stringify({source_refs: selectedValues('brain-migration-sources')}) });
+            const data = await readApiResponse(response);
+            document.getElementById('brain-settings-status').textContent = data.queued
+                ? tr('graph.sources_staged_queued', '{count} source(s) staged and queued for learning', {count: data.results.length})
+                : tr('graph.sources_staged', '{count} source(s) staged', {count: data.results.length});
+            if (data.queued) watchMigrationSources();
+            await loadLearningStatus().catch(() => {});
+        } finally {
+            migrationRunning = false;
+            updateMigrationControls();
+        }
+    }
+    async function refreshMigrationSources() {
+        const response = await fetch('/api/memory/settings');
+        const data = await readApiResponse(response);
+        const current = new Set(selectedValues('brain-migration-sources'));
+        const migrationSources = data.sources
+            .filter(item => !item.migration_completed)
+            .map(item => item.source_ref);
+        fillOptions('brain-migration-sources', migrationSources, migrationSources.filter(ref => current.has(ref)));
+        updateMigrationControls();
+    }
+    function watchMigrationSources() {
+        if (migrationSourceTimer) clearInterval(migrationSourceTimer);
+        let polls = 0;
+        migrationSourceTimer = setInterval(async () => {
+            polls += 1;
+            try { await refreshMigrationSources(); } catch (_) {}
+            if (polls >= 20) {
+                clearInterval(migrationSourceTimer);
+                migrationSourceTimer = null;
+            }
+        }, 3000);
+    }
+    function watchMigrationStatus() {
+        if (migrationStatusTimer) clearInterval(migrationStatusTimer);
+        migrationStatusTimer = setInterval(() => {
+            loadLearningStatus().catch(() => {});
+        }, 3000);
+    }
+    function undoReasonText(reason) {
+        return ({
+            ready: tr('graph.undo_ready'),
+            learning_in_progress: tr('graph.waiting_learning'),
+            protected_by_later_promotion: tr('graph.undo_protected'),
+            no_accepted_promotion: tr('graph.undo_no_accepted'),
+            no_new_facts: tr('graph.undo_no_new_facts'),
+            already_undone: tr('graph.undo_already'),
+        })[reason] || '';
+    }
+    async function loadLearningStatus() {
+        const response = await fetch('/api/memory/learning/status');
+        if (!response.ok) throw new Error(await response.text() || `HTTP ${response.status}`);
+        const data = await response.json();
+        const log = document.getElementById('brain-learning-log');
+        const jobs = data.jobs || [];
+        log.replaceChildren();
+        if (!jobs.length) {
+            const emptyLog = document.createElement('div');
+            emptyLog.className = 'text-primary/50';
+            emptyLog.textContent = tr('graph.no_jobs');
+            log.append(emptyLog);
+        } else {
+            jobs.slice(0, 30).forEach(job => {
+                const row = document.createElement('div');
+                row.className = 'flex flex-wrap gap-x-3 gap-y-1 border-b border-primary/10 py-1 text-primary/70';
+                const source = document.createElement('span');
+                source.className = 'min-w-48 text-primary/85';
+                source.textContent = job.source_ref || job.job_id;
+                const phase = document.createElement('span');
+                const history = (job.phase_history || []).map(item => item.phase).filter((value, index, values) => value && values.indexOf(value) === index);
+                phase.textContent = `${history.join(' → ') || job.phase} · ${job.status}`;
+                const attempts = document.createElement('span');
+                attempts.textContent = tr('graph.attempts', 'attempts {count}', {count: job.attempts});
+                row.append(source, phase, attempts);
+                log.append(row);
+            });
+        }
+        // Completed sources disappear from the selector after promotion.
+        // Refresh only when an accepted job is still represented by a
+        // checkbox, preserving unsaved user selections.
+        const acceptedRefs = new Set(jobs.filter(job => job.status === 'accepted').map(job => job.source_ref));
+        if (acceptedRefs.size && Array.from(document.querySelectorAll('#brain-migration-sources input')).some(input => acceptedRefs.has(input.value))) {
+            await refreshMigrationSources();
+        }
+        const latest = data.latest_migration;
+        migrationInProgress = Boolean(latest && latest.in_progress);
+        updateMigrationControls();
+        const undo = document.getElementById('brain-undo-migration');
+        const undoStatus = document.getElementById('brain-undo-status');
+        undo.disabled = !latest || !latest.undo_available;
+        undo.dataset.batchId = latest?.batch_id || '';
+        undoStatus.textContent = latest ? undoReasonText(latest.undo_reason) : tr('graph.no_migration_batch');
+        const worker = data.worker || {};
+        const workerLabel = worker.running
+            ? `queue ${worker.queue_depth || 0}/${worker.queue_capacity || 0}`
+            : 'worker idle';
+        document.getElementById('brain-learning-log-status').textContent = `${jobs.length} job(s) · ${workerLabel}`;
+        if (migrationInProgress && !learningLogTimer && !migrationStatusTimer) watchMigrationStatus();
+        if (!migrationInProgress && migrationStatusTimer) {
+            clearInterval(migrationStatusTimer);
+            migrationStatusTimer = null;
+        }
+    }
+    async function undoLastMigration() {
+        const button = document.getElementById('brain-undo-migration');
+        const batchId = button.dataset.batchId || '';
+        if (!batchId || button.disabled || !window.confirm('Undo the latest migration facts? A backup will be kept in Brain Memory trash.')) return;
+        button.disabled = true;
+        const response = await fetch('/api/memory/migration/undo', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken()},
+            body: JSON.stringify({batch_id: batchId}),
+        });
+        if (!response.ok) throw new Error(await response.text() || `HTTP ${response.status}`);
+        await loadLearningStatus();
+        await load(true);
+    }
+    async function load(rebuild = false) {
+        const params = new URLSearchParams({ status: document.getElementById('graph-filter-status').value, min_confidence: document.getElementById('graph-confidence').value, limit: document.getElementById('graph-limit').value });
+        const topic = document.getElementById('graph-topic').value.trim(); if (topic) params.set('topic', topic);
+        const query = document.getElementById('graph-query').value.trim(); if (query) params.set('query', query);
+        status.textContent = rebuild ? tr('graph.rebuilding') : tr('graph.loading');
+        const headers = rebuild ? { 'X-CSRF-Token': csrfToken() } : {};
+        const response = await fetch((rebuild ? '/api/memory/graph/rebuild?' : '/api/memory/graph?') + params, { method: rebuild ? 'POST' : 'GET', headers });
+        if (!response.ok) throw new Error(await response.text() || `HTTP ${response.status}`);
+        snapshot = await response.json();
+        detail.classList.add('hidden');
+        detailPlaceholder.classList.remove('hidden');
+        fitPending = true;
+        graph.graphData(snapshot);
+        document.querySelectorAll('#graph-view-controls button:not(#graph-fullscreen)').forEach(button => {
+            button.disabled = snapshot.nodes.length === 0;
+        });
+        empty.classList.toggle('hidden', snapshot.nodes.length > 0); empty.classList.toggle('flex', snapshot.nodes.length === 0);
+        status.textContent = tr('graph.nodes_links', '{nodes} nodes · {links} links', {nodes: snapshot.nodes.length, links: snapshot.links.length});
+    }
+    async function openFact(id) {
+        if (!id.startsWith('fact-')) return;
+        const response = await fetch('/api/memory/facts/' + encodeURIComponent(id));
+        if (!response.ok) throw new Error('Fact unavailable. Refresh the graph and try again.');
+        const fact = await response.json();
+        document.getElementById('fact-title').textContent = fact.title;
+        document.getElementById('fact-meta').textContent = `${fact.type} · ${fact.topic} · ${tr('graph.confidence', 'confidence {value}', {value: fact.confidence})}`;
+        document.getElementById('fact-body').textContent = fact.body;
+        document.getElementById('fact-citation').textContent = `${fact.citation.source_ref}:${fact.citation.line_start}-${fact.citation.line_end}`;
+        detail.classList.remove('hidden');
+        detailPlaceholder.classList.add('hidden');
+    }
+    function zoomView(factor) {
+        fitPending = false;
+        graph.zoom(Math.max(graph.minZoom(), Math.min(graph.maxZoom(), graph.zoom() * factor)), 250);
+    }
+    document.getElementById('graph-zoom-out').addEventListener('click', () => zoomView(1 / 1.25));
+    document.getElementById('graph-zoom-in').addEventListener('click', () => zoomView(1.25));
+    document.getElementById('graph-fit').addEventListener('click', () => {
+        fitPending = false;
+        if (snapshot.nodes.length) graph.zoomToFit(400, 64);
+    });
+    document.getElementById('graph-reset-view').addEventListener('click', () => {
+        fitPending = false;
+        graph.centerAt(0, 0, 400);
+        graph.zoom(1, 400);
+    });
+    document.getElementById('graph-display-mode').addEventListener('change', event => {
+        graphDisplayMode = event.target.value === 'nebula' ? 'nebula' : 'network';
+        applyGraphDisplayMode();
+    });
+    function updateFullscreenButton() {
+        const active = document.fullscreenElement === fullscreenShell;
+        fullscreenButton.textContent = active ? tr('graph.exit_fullscreen') : tr('common.fullscreen');
+        fullscreenButton.setAttribute('aria-label', active ? 'Exit graph fullscreen' : 'Open graph and node details in fullscreen');
+        fullscreenButton.title = active ? tr('graph.exit_fullscreen') : tr('graph.open_fullscreen');
+        requestAnimationFrame(resize);
+    }
+    fullscreenButton.addEventListener('click', async () => {
+        try {
+            if (document.fullscreenElement === fullscreenShell) {
+                await document.exitFullscreen();
+            } else if (fullscreenShell.requestFullscreen) {
+                await fullscreenShell.requestFullscreen();
+            } else {
+                throw new Error(tr('graph.fullscreen_unsupported'));
+            }
+        } catch (error) {
+            status.textContent = error.message;
+        }
+    });
+    document.addEventListener('fullscreenchange', updateFullscreenButton);
+    document.getElementById('graph-refresh').addEventListener('click', () => load().catch(e => status.textContent = e.message));
+    document.getElementById('graph-rebuild').addEventListener('click', () => load(true).catch(e => status.textContent = e.message));
+    let graphQueryTimer = null;
+    document.getElementById('graph-query').addEventListener('input', () => {
+        if (graphQueryTimer) clearTimeout(graphQueryTimer);
+        graphQueryTimer = setTimeout(() => load().catch(e => status.textContent = e.message), 300);
+    });
+    document.getElementById('brain-retrieval-all').addEventListener('change', event => { setListDisabled('brain-retrieval-sessions', event.target.checked); queueSettingsSave(); });
+    document.getElementById('brain-learning').addEventListener('change', event => { setLearningControlsDisabled(!event.target.checked); queueSettingsSave(); });
+    document.getElementById('brain-migration').addEventListener('change', () => {
+        queueSettingsSave();
+    });
+    document.getElementById('brain-stage-only').addEventListener('change', () => {
+        updateMigrationAction();
+        queueSettingsSave();
+    });
+    ['brain-retrieval-sessions', 'brain-learning-sessions', 'brain-migration-sources'].forEach(id => {
+        document.getElementById(id).addEventListener('change', () => {
+            updateMigrationControls();
+            queueSettingsSave();
+        });
+    });
+    ['brain-learning-daily-limit', 'brain-learning-input-bytes'].forEach(id => {
+        document.getElementById(id).addEventListener('change', queueSettingsSave);
+    });
+    document.getElementById('brain-migration-run').addEventListener('click', () => stageSources().catch(e => document.getElementById('brain-settings-status').textContent = e.message));
+    document.getElementById('brain-learning-log-toggle').addEventListener('click', event => {
+        const toggle = event.currentTarget;
+        const body = document.getElementById('brain-learning-log-body');
+        const expanded = toggle.getAttribute('aria-expanded') === 'true';
+        toggle.setAttribute('aria-expanded', String(!expanded));
+        body.classList.toggle('hidden', expanded);
+        document.getElementById('brain-learning-log-chevron').textContent = expanded ? 'expand_more' : 'expand_less';
+        if (!expanded) {
+            loadLearningStatus().catch(e => document.getElementById('brain-learning-log-status').textContent = e.message);
+            learningLogTimer = setInterval(() => loadLearningStatus().catch(() => {}), 3000);
+        } else if (learningLogTimer) {
+            clearInterval(learningLogTimer);
+            learningLogTimer = null;
+            loadLearningStatus().catch(() => {});
+        }
+    });
+    document.getElementById('brain-learning-log-refresh').addEventListener('click', () => loadLearningStatus().catch(e => document.getElementById('brain-learning-log-status').textContent = e.message));
+    document.getElementById('brain-undo-migration').addEventListener('click', () => undoLastMigration().catch(e => {
+        document.getElementById('brain-undo-status').textContent = e.message;
+        loadLearningStatus().catch(() => {});
+    }));
+    document.getElementById('brain-settings-toggle').addEventListener('click', event => {
+        const toggle = event.currentTarget, body = document.getElementById('brain-settings-body');
+        const expanded = toggle.getAttribute('aria-expanded') === 'true';
+        toggle.setAttribute('aria-expanded', String(!expanded)); body.classList.toggle('hidden', expanded);
+        document.getElementById('brain-settings-chevron').textContent = expanded ? 'expand_more' : 'expand_less';
+    });
+    loadSettings()
+        .then(() => loadLearningStatus())
+        .catch(e => document.getElementById('brain-settings-status').textContent = e.message);
+    load().catch(e => status.textContent = e.message);
+})();
+</script>
+{% endif %}
+{% endblock %}

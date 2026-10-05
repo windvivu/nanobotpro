@@ -608,6 +608,8 @@ class Consolidator:
 # Keep code and prompt aligned — if you bump this, the LLM's instruction string
 # updates automatically.
 _STALE_THRESHOLD_DAYS = 14
+# Dream's skill proposals: the bot does not load them until an admin moves them to skills/ (custom)
+PROPOSED_SKILLS_DIR = "skills-proposed"
 
 
 class Dream:
@@ -656,12 +658,25 @@ class Dream:
             allowed_dir=workspace,
             extra_allowed_dirs=extra_read,
         ))
-        tools.register(EditFileTool(workspace=workspace, allowed_dir=workspace))
-        # write_file resolves relative paths from workspace root, but can only
-        # write under skills/ so the prompt can safely use skills/<name>/SKILL.md.
-        skills_dir = workspace / "skills"
-        skills_dir.mkdir(parents=True, exist_ok=True)
-        tools.register(WriteFileTool(workspace=workspace, allowed_dir=skills_dir))
+        # Dream edits MEMORY.md only: USER.md and SOUL.md are kept by the bot's admins, so a chat cannot
+        # rewrite who the user is or how the bot behaves (custom, identity hardening)
+        memory_file = self.store.memory_file.resolve()
+
+        class _MemoryOnlyEditTool(EditFileTool):
+            def _resolve(self, path: str) -> Path:
+                resolved = super()._resolve(path)
+                if resolved != memory_file:
+                    raise PermissionError(
+                        f"Dream edits memory/MEMORY.md only; {path} is kept by the bot's admins")
+                return resolved
+
+        tools.register(_MemoryOnlyEditTool(workspace=workspace, allowed_dir=workspace))
+        # write_file resolves relative paths from workspace root, but can only write under
+        # skills-proposed/: a new skill is a proposal the bot does not load until an admin moves it to
+        # skills/, so a chat cannot plant instructions in every prompt (custom, identity hardening)
+        proposed_dir = workspace / PROPOSED_SKILLS_DIR
+        proposed_dir.mkdir(parents=True, exist_ok=True)
+        tools.register(WriteFileTool(workspace=workspace, allowed_dir=proposed_dir))
         return tools
 
     # -- skill listing --------------------------------------------------------
@@ -674,7 +689,7 @@ class Dream:
 
         desc_re = _re.compile(r"^description:\s*(.+)$", _re.MULTILINE | _re.IGNORECASE)
         entries: dict[str, str] = {}
-        for base in (self.store.workspace / "skills", BUILTIN_SKILLS_DIR):
+        for base in (self.store.workspace / "skills", self.store.workspace / PROPOSED_SKILLS_DIR, BUILTIN_SKILLS_DIR):
             if not base.exists():
                 continue
             for d in base.iterdir():

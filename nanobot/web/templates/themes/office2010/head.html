@@ -1,0 +1,45 @@
+{#- Office 2010 theme (Blue colour scheme): ribbon-style header, Outlook 2010 navigation pane,
+    amber hover/selection highlights, Segoe UI. Same token contract as themes/matrix/head.html;
+    like the light theme, the Tailwind "black"/"white" roles are swapped. #}
+<style>
+    :root {
+        --c-canvas: 214 225 240;    /* workspace blue */
+        --c-primary: 30 57 91;      /* navy ink, the colour of ribbon labels */
+        --c-accent: 43 87 151;      /* Word 2010 blue: focus, links, checked controls */
+        --c-surface: 255 255 255;   /* panes, dropdown options */
+        --c-black: 255 255 255;     /* Tailwind "black" (swapped): inputs, panels, text on primary */
+        --c-white: 21 33 51;        /* Tailwind "white" (swapped): strong text */
+        --c-success: 56 142 60;
+        --c-warning: 166 112 0;
+        --c-danger: 192 0 0;
+        --c-danger-soft: 192 0 0;
+        --c-red-300: 160 0 0;
+        --c-red-400: 192 0 0;
+        --c-red-500: 192 0 0;
+        --c-red-950: 253 228 228;
+        --c-yellow-200: 113 63 18;
+        --c-yellow-300: 133 77 14;
+        --c-yellow-400: 120 81 0;
+        --c-yellow-500: 120 81 0;
+        --c-orange-400: 148 68 0;
+        --c-orange-500: 182 80 0;
+        --c-green-400: 41 103 44;
+        --c-blue-400: 43 87 151;
+        --glow: 0;                  /* no glows */
+        --text-floor: 0.63;         /* faint text never goes below this (base.html): subtext stays readable */
+        --font-ui: 'Segoe UI', Tahoma, Arial, sans-serif;
+        --logo-filter: brightness(0.95) sepia(1) hue-rotate(180deg) saturate(2.5);
+        --card-shadow: 0 1px 2px rgb(30 57 91 / 0.12);
+        color-scheme: light;
+
+        /* Office 2010 surfaces, used by theme.css */
+        --office-border: 167 188 216;
+        --office-ribbon: linear-gradient(180deg, #ffffff 0%, #eaf0f8 55%, #dce6f4 100%);
+        --office-pane: linear-gradient(180deg, #ffffff 0%, #f4f7fc 100%);
+        --office-button: linear-gradient(180deg, #ffffff 0%, #e4ecf7 100%);
+        --office-hover: linear-gradient(180deg, #fffcea 0%, #ffeeb0 100%);
+        --office-hover-border: 235 203 107;
+        --office-selected: linear-gradient(180deg, #ffe9a8 0%, #ffd265 100%);
+        --office-selected-border: 201 161 60;
+    }
+</style>

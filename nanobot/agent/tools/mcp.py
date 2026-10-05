@@ -1,9 +1,11 @@
 """MCP client: connects to MCP servers and wraps their tools as native nanobot tools."""
 
 import asyncio
+import json
 import os
 import re
 import shutil
+from collections.abc import Mapping
 from contextlib import AsyncExitStack
 from dataclasses import asdict, dataclass
 from time import monotonic
@@ -224,6 +226,8 @@ class MCPServerRuntime:
         self._session: Any | None = None
         self._transport_type = ""
         self._registered_tool_names: set[str] = set()
+        self._tool_defs: list[Any] = []
+        self._hidden = False  # AgentLoop hides servers outside the current tool role
         self._lock = asyncio.Lock()
 
     async def connect(self) -> None:
@@ -238,16 +242,17 @@ class MCPServerRuntime:
                     self.server_name,
                 )
                 transport_type, session = await _open_mcp_session(self.cfg, stack)
+                self._stack = stack
+                self._session = session
+                self._transport_type = transport_type
                 logger.debug(
                     "MCP server='{}' tool='(none)' phase='list_tools' retry_attempted=False",
                     self.server_name,
                 )
-                tools = await session.list_tools()
-                self._stack = stack
-                self._session = session
-                self._transport_type = transport_type
-                self._register_tools(tools)
-            except Exception as exc:
+                tool_defs = await _list_tools_paginated(session)
+                self._tool_defs = tool_defs
+                self._register_tools(self._tool_defs)
+            except BaseException as exc:
                 _log_mcp_error(
                     server_name=self.server_name,
                     tool_name="",
@@ -256,10 +261,7 @@ class MCPServerRuntime:
                     retry_attempted=False,
                     level="error",
                 )
-                try:
-                    await stack.aclose()
-                except Exception:
-                    pass
+                await self._close_locked(unregister_tools=True)
                 raise
 
     async def close(self) -> None:
@@ -377,17 +379,47 @@ class MCPServerRuntime:
         )
         await self.connect()
 
+    def rebind_registry(self, registry: ToolRegistry) -> None:
+        """Move this live runtime's wrappers to a replacement registry.
+
+        AgentLoop can rebuild its built-in registry when tool presets change. The
+        MCP session remains valid in that case, so re-register the last tool list
+        instead of leaving the live runtime attached to the discarded registry.
+        """
+        if registry is self.registry and not self._hidden:
+            return
+        for tool_name in sorted(self._registered_tool_names):
+            self.registry.unregister(tool_name)
+        self.registry = registry
+        self._registered_tool_names.clear()
+        self._hidden = False
+        self._register_tools(self._tool_defs)
+
+    def hide_tools(self) -> None:
+        """Take this server's tools out of the registry but keep the session open.
+
+        AgentLoop hides the servers that do not belong to the current tool role;
+        rebind_registry() shows them again, without reconnecting.
+        """
+        for tool_name in sorted(self._registered_tool_names):
+            self.registry.unregister(tool_name)
+        self._registered_tool_names.clear()
+        self._hidden = True
+
     def _register_tools(self, tools: Any) -> None:
+        if self._hidden:  # outside the current tool role: a reconnect must not show it again
+            return
+        tool_defs = list(getattr(tools, "tools", tools))
         enabled_tools = set(self.cfg.enabled_tools)
         allow_all_tools = "*" in enabled_tools
         registered_count = 0
         matched_enabled_tools: set[str] = set()
-        available_raw_names = [tool_def.name for tool_def in tools.tools]
+        available_raw_names = [tool_def.name for tool_def in tool_defs]
         available_wrapped_names = [
-            f"mcp_{self.server_name}_{tool_def.name}" for tool_def in tools.tools
+            f"mcp_{self.server_name}_{tool_def.name}" for tool_def in tool_defs
         ]
 
-        for tool_def in tools.tools:
+        for tool_def in tool_defs:
             wrapped_name = f"mcp_{self.server_name}_{tool_def.name}"
             if (
                 not allow_all_tools
@@ -442,6 +474,48 @@ class MCPServerRuntime:
             self._stack = None
         self._session = None
         self._transport_type = ""
+        self._tool_defs.clear()
+
+
+def _image_block_data_url(block: Any, types: Any) -> str | None:
+    """A base64 ``data:`` URL for an MCP content block that carries an image, else None (from upstream).
+
+    Handles ``ImageContent`` and an ``EmbeddedResource`` wrapping an ``image/*`` blob. The ``getattr``
+    guards keep it safe when the installed (or a test's fake) ``mcp`` SDK lacks one of these types.
+    """
+    image_cls = getattr(types, "ImageContent", None)
+    if image_cls is not None and isinstance(block, image_cls):
+        mime = getattr(block, "mimeType", None) or "image/png"
+        return f"data:{mime};base64,{block.data}"
+
+    embedded_cls = getattr(types, "EmbeddedResource", None)
+    blob_cls = getattr(types, "BlobResourceContents", None)
+    if embedded_cls is not None and isinstance(block, embedded_cls):
+        resource = getattr(block, "resource", None)
+        if blob_cls is not None and isinstance(resource, blob_cls):
+            mime = getattr(resource, "mimeType", None) or ""
+            if isinstance(mime, str) and mime.startswith("image/"):
+                return f"data:{mime};base64,{resource.blob}"
+    return None
+
+
+def _mcp_image_tool_result(text_parts: list[str], artifacts: list[dict[str, Any]]) -> str:
+    """The compact result of an MCP call that returned images (from upstream): the saved files' paths
+    and metadata only. The base64 stays out of the model's context, and the files can be sent with the
+    message tool."""
+    payload: dict[str, Any] = {
+        "artifacts": artifacts,
+        "next_step": (
+            "These images were returned by an MCP tool and saved as local artifacts. "
+            "Call the message tool with the artifact 'path' values in the media "
+            "parameter to deliver the images to the user. Do not paste base64 or raw "
+            "paths into your reply unless the user asks for debug details."
+        ),
+    }
+    text = "\n".join(part for part in text_parts if part)
+    if text:
+        payload["text"] = text
+    return json.dumps(payload, ensure_ascii=False)
 
 
 class MCPToolWrapper(Tool):
@@ -470,8 +544,6 @@ class MCPToolWrapper(Tool):
         return self._parameters
 
     async def execute(self, **kwargs: Any) -> str:
-        from mcp import types
-
         result = await self._runtime.call_tool(
             self._original_name,
             kwargs,
@@ -480,14 +552,50 @@ class MCPToolWrapper(Tool):
         )
         if isinstance(result, str):
             return result
+        return self._render_call_result(result.content, kwargs)
 
-        parts = []
-        for block in result.content:
+    def _render_call_result(self, content: Any, arguments: Mapping[str, Any]) -> str:
+        """The tool result for MCP content blocks (from upstream). Text is joined as before. An image is
+        saved as an artifact under the media folder, as the image generation tool saves its images, and
+        the result lists the files: as text, its base64 was cut to max_tool_result_chars, so neither the
+        model nor the user ever got the image, and it filled the context."""
+        from mcp import types
+
+        text_parts: list[str] = []
+        artifacts: list[dict[str, Any]] = []
+        for block in content:
             if isinstance(block, types.TextContent):
-                parts.append(block.text)
-            else:
-                parts.append(str(block))
-        return "\n".join(parts) or "(no output)"
+                text_parts.append(block.text)
+                continue
+            data_url = _image_block_data_url(block, types)
+            if data_url is not None:
+                stored = self._store_image_block(data_url, arguments)
+                if stored is not None:
+                    artifacts.append(stored)
+                else:
+                    text_parts.append("(MCP tool returned an image that could not be stored)")
+                continue
+            text_parts.append(str(block))
+
+        if artifacts:
+            return _mcp_image_tool_result(text_parts, artifacts)
+        return "\n".join(text_parts) or "(no output)"
+
+    def _store_image_block(self, data_url: str, arguments: Mapping[str, Any]) -> dict[str, Any] | None:
+        """Save one image under <media>/generated/<date>/; its metadata, or None if it cannot be saved."""
+        from nanobot.utils.artifacts import ArtifactError, store_generated_image_artifact
+
+        try:
+            return store_generated_image_artifact(
+                data_url,
+                prompt=str(arguments.get("prompt") or ""),
+                model=str(arguments.get("model") or ""),
+                save_dir="generated",
+                provider=f"mcp:{self._server_name}",
+            )
+        except (ArtifactError, OSError) as exc:
+            logger.warning("MCP tool '{}' returned an image that could not be stored: {}", self._name, exc)
+            return None
 
 
 def _resolve_mcp_transport(cfg: Any) -> str:
@@ -558,6 +666,27 @@ async def _open_mcp_session(cfg: Any, stack: AsyncExitStack) -> tuple[str, Any]:
     return transport_type, session
 
 
+async def _list_tools_paginated(session: Any) -> list[Any]:
+    """Discover every MCP tool page before anything is published to a registry."""
+    from mcp import types
+
+    page = await session.list_tools()
+    tool_defs = list(getattr(page, "tools", ()) or ())
+    seen_cursors: set[str] = set()
+    while True:
+        cursor = getattr(page, "nextCursor", None)
+        if cursor is None:
+            break
+        if not isinstance(cursor, str) or not cursor:
+            raise ValueError("MCP tools/list returned an invalid pagination cursor")
+        if cursor in seen_cursors:
+            raise ValueError("MCP tools/list returned a repeated pagination cursor")
+        seen_cursors.add(cursor)
+        page = await session.list_tools(params=types.PaginatedRequestParams(cursor=cursor))
+        tool_defs.extend(getattr(page, "tools", ()) or ())
+    return tool_defs
+
+
 def _inspection_error(exc: BaseException) -> tuple[str, str]:
     """Map an exception to a stable message that cannot echo credentials."""
     if isinstance(exc, MCPConfigurationError):
@@ -582,13 +711,13 @@ async def inspect_mcp_server(
     async def _inspect() -> tuple[str, Any]:
         async with AsyncExitStack() as stack:
             transport, session = await _open_mcp_session(cfg, stack)
-            listed = await session.list_tools()
+            tool_defs = await _list_tools_paginated(session)
             tools = tuple(
                 {
                     "name": str(tool.name),
                     "description": " ".join(str(tool.description or "").split())[:160],
                 }
-                for tool in listed.tools
+                for tool in tool_defs
             )
             return transport, tools
 

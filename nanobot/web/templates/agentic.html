@@ -1,19 +1,19 @@
 {% extends "base.html" %}
 
-{% block title %}Agentic Actions — Nanobot OS{% endblock %}
+{% block title %}{{ tr('nav.agentic') }} — Nanobot OS{% endblock %}
 
 {% block content %}
 <!-- Sidebar -->
 <aside class="w-full lg:w-72 flex flex-col gap-6">
-    <div class="matrix-card p-6 flex flex-col items-center text-center gap-4">
+    <div class="ui-card p-6 flex flex-col items-center text-center gap-4">
         <div
             class="w-20 h-20 flex items-center justify-center text-primary glow-text border-2 border-primary/30 rounded-full relative">
             <div class="absolute inset-0 border border-primary animate-pulse rounded-full opacity-20"></div>
             <span class="material-symbols-outlined text-4xl">precision_manufacturing</span>
         </div>
         <div>
-            <h2 class="text-lg font-bold glow-text tracking-widest uppercase">Agentic Actions</h2>
-            <p class="text-[10px] text-primary/50 font-mono">AGENTS · HEARTBEAT · TOOLS</p>
+            <h2 class="text-lg font-bold glow-text tracking-widest uppercase">{{ tr('nav.agentic') }}</h2>
+            <p class="text-[10px] text-primary/50 font-mono">{{ tr('page.agentic_sources') }}</p>
         </div>
     </div>
 
@@ -23,7 +23,7 @@
     {% include "_sidebar_nav.html" %}
 
     <!-- File info -->
-    <div class="matrix-card p-4 text-[10px] leading-relaxed text-primary/40 uppercase tracking-tighter space-y-1">
+    <div class="ui-card p-4 text-[10px] leading-relaxed text-primary/40 uppercase tracking-tighter space-y-1">
         <div class="flex justify-between">
             <span>AGENTS.md</span>
             <span class="text-primary/70">{{ agents.size ~ ' B' if agents.exists else 'N/A' }}</span>
@@ -44,7 +44,7 @@
 
     {% if saved %}
     <div id="flashMsg"
-        class="fixed top-6 right-6 z-50 matrix-card border-primary bg-black/95 px-6 py-4 flex items-center gap-4 shadow-[0_0_20px_rgba(0,255,65,0.3)]"
+        class="fixed top-6 right-6 z-50 ui-card border-primary bg-black/95 px-6 py-4 flex items-center gap-4 shadow-glow-20-30"
         style="animation: toastIn 0.3s ease-out;">
         <span class="material-symbols-outlined text-primary glow-text">check_circle</span>
         <span class="text-sm font-bold glow-text uppercase tracking-widest">{{ saved_file }} Saved</span>
@@ -56,14 +56,14 @@
     {% endif %}
 
     {% if error %}
-    <div class="matrix-card border-red-500 bg-red-950/30 px-6 py-4 flex items-center gap-4">
+    <div class="ui-card border-red-500 bg-red-950/30 px-6 py-4 flex items-center gap-4">
         <span class="material-symbols-outlined text-red-500 blinking">error</span>
         <span class="text-sm font-bold text-red-400 uppercase tracking-widest">{{ error }}</span>
     </div>
     {% endif %}
 
     <!-- Tab Headers -->
-    <div class="matrix-card p-0 flex">
+    <div class="ui-card p-0 flex">
         <button id="tab-agents" onclick="switchTab('agents')"
             class="flex-1 px-6 py-4 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest border-b-2 transition-all">
             <span class="material-symbols-outlined text-sm">smart_toy</span>AGENTS.md
@@ -92,16 +92,16 @@
         <form method="POST" action="/agentic/agents" class="flex flex-col gap-4 flex-1">
             <div class="flex gap-4 flex-1 items-stretch">
                 <div class="flex-1 min-w-0 flex flex-col">
-                    <div class="matrix-card p-4 flex-1 flex flex-col">
+                    <div class="ui-card p-4 flex-1 flex flex-col">
                         <textarea name="content" id="editor-agents"
-                            class="flex-1 w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.15)] outline-none p-4 text-primary/90 font-mono text-xs leading-relaxed resize-none min-h-[380px] transition-all duration-300"
-                            style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;"
+                            class="flex-1 w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-glow-15-15 outline-none p-4 text-primary/90 font-mono text-xs leading-relaxed resize-none min-h-[380px] transition-all duration-300"
+                            style="scrollbar-width: thin; scrollbar-color: rgb(var(--c-primary)) transparent;"
                             spellcheck="false">{{ agents.content }}</textarea>
                     </div>
                 </div>
                 {% if default_agents %}
                 <div id="tplPanel-agents" class="flex-col min-w-0" style="flex: 0 0 45%; display: none;">
-                    <div class="matrix-card p-4 border-white/20 flex-1 flex flex-col h-full">
+                    <div class="ui-card p-4 border-white/20 flex-1 flex flex-col h-full">
                         <div class="flex items-center justify-between mb-3 flex-shrink-0">
                             <div class="flex items-center gap-2">
                                 <span class="material-symbols-outlined text-white/60 text-sm">description</span>
@@ -133,7 +133,7 @@
                 <button type="submit"
                     class="px-8 py-3 border border-primary bg-primary/10 text-primary font-bold uppercase tracking-[0.3em] text-sm hover:bg-primary hover:text-black transition-all duration-300 glow-text flex items-center gap-3 group">
                     <span class="material-symbols-outlined text-sm group-hover:text-black transition-colors">save</span>
-                    Save AGENTS.md <span class="blinking">_</span>
+                    Save AGENTS.md <span class="blinking ui-cursor">_</span>
                 </button>
                 <span class="text-[10px] text-primary/30 uppercase tracking-wider">Agent instructions — read on every
                     context build</span>
@@ -155,16 +155,16 @@
         <form method="POST" action="/agentic/heartbeat" class="flex flex-col gap-4 flex-1">
             <div class="flex gap-4 flex-1 items-stretch">
                 <div class="flex-1 min-w-0 flex flex-col">
-                    <div class="matrix-card p-4 flex-1 flex flex-col">
+                    <div class="ui-card p-4 flex-1 flex flex-col">
                         <textarea name="content" id="editor-heartbeat"
-                            class="flex-1 w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.15)] outline-none p-4 text-primary/90 font-mono text-xs leading-relaxed resize-none min-h-[380px] transition-all duration-300"
-                            style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;"
+                            class="flex-1 w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-glow-15-15 outline-none p-4 text-primary/90 font-mono text-xs leading-relaxed resize-none min-h-[380px] transition-all duration-300"
+                            style="scrollbar-width: thin; scrollbar-color: rgb(var(--c-primary)) transparent;"
                             spellcheck="false">{{ heartbeat.content }}</textarea>
                     </div>
                 </div>
                 {% if default_heartbeat %}
                 <div id="tplPanel-heartbeat" class="flex-col min-w-0" style="flex: 0 0 45%; display: none;">
-                    <div class="matrix-card p-4 border-white/20 flex-1 flex flex-col h-full">
+                    <div class="ui-card p-4 border-white/20 flex-1 flex flex-col h-full">
                         <div class="flex items-center justify-between mb-3 flex-shrink-0">
                             <div class="flex items-center gap-2">
                                 <span class="material-symbols-outlined text-white/60 text-sm">description</span>
@@ -196,7 +196,7 @@
                 <button type="submit"
                     class="px-8 py-3 border border-primary bg-primary/10 text-primary font-bold uppercase tracking-[0.3em] text-sm hover:bg-primary hover:text-black transition-all duration-300 glow-text flex items-center gap-3 group">
                     <span class="material-symbols-outlined text-sm group-hover:text-black transition-colors">save</span>
-                    Save HEARTBEAT.md <span class="blinking">_</span>
+                    Save HEARTBEAT.md <span class="blinking ui-cursor">_</span>
                 </button>
                 <span class="text-[10px] text-primary/30 uppercase tracking-wider">Periodic tasks — checked every
                     heartbeat interval</span>
@@ -218,16 +218,16 @@
         <form method="POST" action="/agentic/tools" class="flex flex-col gap-4 flex-1">
             <div class="flex gap-4 flex-1 items-stretch">
                 <div class="flex-1 min-w-0 flex flex-col">
-                    <div class="matrix-card p-4 flex-1 flex flex-col">
+                    <div class="ui-card p-4 flex-1 flex flex-col">
                         <textarea name="content" id="editor-tools"
-                            class="flex-1 w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.15)] outline-none p-4 text-primary/90 font-mono text-xs leading-relaxed resize-none min-h-[380px] transition-all duration-300"
-                            style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;"
+                            class="flex-1 w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-glow-15-15 outline-none p-4 text-primary/90 font-mono text-xs leading-relaxed resize-none min-h-[380px] transition-all duration-300"
+                            style="scrollbar-width: thin; scrollbar-color: rgb(var(--c-primary)) transparent;"
                             spellcheck="false">{{ tools.content }}</textarea>
                     </div>
                 </div>
                 {% if default_tools %}
                 <div id="tplPanel-tools" class="flex-col min-w-0" style="flex: 0 0 45%; display: none;">
-                    <div class="matrix-card p-4 border-white/20 flex-1 flex flex-col h-full">
+                    <div class="ui-card p-4 border-white/20 flex-1 flex flex-col h-full">
                         <div class="flex items-center justify-between mb-3 flex-shrink-0">
                             <div class="flex items-center gap-2">
                                 <span class="material-symbols-outlined text-white/60 text-sm">description</span>
@@ -259,7 +259,7 @@
                 <button type="submit"
                     class="px-8 py-3 border border-primary bg-primary/10 text-primary font-bold uppercase tracking-[0.3em] text-sm hover:bg-primary hover:text-black transition-all duration-300 glow-text flex items-center gap-3 group">
                     <span class="material-symbols-outlined text-sm group-hover:text-black transition-colors">save</span>
-                    Save TOOLS.md <span class="blinking">_</span>
+                    Save TOOLS.md <span class="blinking ui-cursor">_</span>
                 </button>
                 <span class="text-[10px] text-primary/30 uppercase tracking-wider">Tool constraints — safety limits and
                     usage notes</span>
@@ -268,7 +268,7 @@
     </div>
 
     <!-- Terminal Footer -->
-    <div class="matrix-card p-4 font-mono text-[11px] leading-tight space-y-1">
+    <div class="ui-card p-4 font-mono text-[11px] leading-tight space-y-1">
         <div class="flex gap-2">
             <span class="text-primary/40">[ACT]</span>
             <span class="text-primary">Workspace: {{ workspace }}</span>
@@ -314,19 +314,19 @@
     }
 
     .tab-active {
-        border-color: #00FF41;
-        color: #00FF41;
-        text-shadow: 0 0 8px #00FF41;
-        background: rgba(0, 255, 65, 0.05);
+        border-color: rgb(var(--c-primary));
+        color: rgb(var(--c-primary));
+        text-shadow: 0 0 8px rgb(var(--c-accent) / var(--glow));
+        background: rgb(var(--c-primary) / 0.05);
     }
 
     .tab-inactive {
         border-color: transparent;
-        color: rgba(0, 255, 65, 0.4);
+        color: rgb(var(--c-primary) / var(--text-alpha-40));
     }
 
     .tab-inactive:hover {
-        color: rgba(0, 255, 65, 0.7);
+        color: rgb(var(--c-primary) / 0.7);
     }
 </style>
 <script>

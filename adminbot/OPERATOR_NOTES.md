@@ -10,6 +10,8 @@ Use a plain `nanobot gateway --web` when you only need one bot.
 
 ## Start Adminbot
 
+The launchers (`nanobot-launcher.*`, `nanobot-single.*`) open the dashboard in the default browser as soon as it answers. On Linux this needs a desktop (`xdg-open`); on a VPS or in Docker nothing is opened. Set `NANOBOT_NO_BROWSER=1` to skip it, e.g. when a bot starts with the machine.
+
 Recommended wrapper:
 
 ```powershell
@@ -164,13 +166,13 @@ adminbot status alpha
 
 ### Missing venv
 
-If the launcher says `Missing local venv Python`, create/install the environment:
+The launchers (`nanobot-launcher.*`, `nanobot-single.*`) set up the environment on the first run through `scripts/ensure-venv.ps1` / `scripts/ensure-venv.sh`: an existing `venv/` or `.venv/` is reused, otherwise `venv/` is created with the first Python 3.11+ found, and `pip install -e ".[web,office]"` runs if nanobot or its Office dependencies are not installed in it yet. Docker images do not use this. If the automatic setup fails, do it by hand:
 
 ```powershell
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 python -m pip install -U pip
-python -m pip install -e ".[web,dev]"
+python -m pip install -e ".[web,dev,office]"
 ```
 
 ### Missing web dependencies
@@ -178,7 +180,7 @@ python -m pip install -e ".[web,dev]"
 If Adminbot web says dependencies are missing, install with web extras:
 
 ```powershell
-.\venv\Scripts\python.exe -m pip install -e ".[web]"
+.\venv\Scripts\python.exe -m pip install -e ".[web,office]"
 ```
 
 ### Port already busy
@@ -189,14 +191,7 @@ Adminbot itself also needs a free manager port, default `8900`.
 
 ### Ubuntu launcher cannot find Python
 
-`nanobot-launcher.sh` looks for:
-
-```text
-venv/bin/python
-.venv/bin/python
-```
-
-Create the venv in one of those locations, or run the module directly with your chosen Python:
+`nanobot-launcher.sh` uses `venv/bin/python` or `.venv/bin/python`, and creates `venv/` from the first of `python3`, `python`, `python3.13`, `python3.12`, `python3.11` that is 3.11+. If none qualifies, install Python 3.11+ (with its `-venv` package on Debian/Ubuntu), or run the module directly with your chosen Python:
 
 ```bash
 python -m adminbot.app.main web --port 8900

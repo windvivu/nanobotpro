@@ -1,0 +1,130 @@
+/* Sakura theme: shared flat and light-background rules plus blossom colours and drifting petals.
+   Included at the end of the Tailwind style block in base.html. */
+{% include "themes/_flat.css" %}
+{% include "themes/_light.css" %}
+
+/* Blossom-tinted corners on the white page */
+:root body { background: var(--sakura-backdrop), rgb(var(--c-canvas)); background-attachment: fixed; }
+
+/* Petals falling and swaying behind the app */
+.sakura {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+.sakura-petal {
+    position: absolute;
+    top: -6vh;
+    background: var(--sakura-petal);
+    border-radius: 150% 0 150% 0;
+    opacity: 0.85;
+    box-shadow: 0 1px 3px rgb(219 39 119 / 0.15);
+    will-change: transform;
+    animation: sakura-fall 20s linear infinite;
+}
+@keyframes sakura-fall {
+    0% { transform: translate3d(0, 0, 0) rotate(0deg); }
+    25% { transform: translate3d(4vw, 28vh, 0) rotate(90deg); }
+    50% { transform: translate3d(-2vw, 56vh, 0) rotate(180deg); }
+    75% { transform: translate3d(5vw, 84vh, 0) rotate(270deg); }
+    100% { transform: translate3d(1vw, 112vh, 0) rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .sakura-petal { animation: none; display: none; }
+}
+
+/* Cards: white, rounded, soft pink shadow */
+.ui-card {
+    background-color: rgb(255 255 255 / 0.88);
+    background-image: none;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgb(var(--sakura-border) / 0.7);
+    border-radius: 16px;
+    box-shadow: var(--card-shadow);
+}
+.ui-card:hover {
+    border-color: rgb(var(--sakura-border));
+    box-shadow: 0 12px 30px rgb(219 39 119 / 0.12), 0 1px 2px rgb(76 29 58 / 0.05);
+}
+header.ui-card {
+    background-color: rgb(255 255 255 / 0.72);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-width: 0 0 1px;
+    border-color: rgb(var(--sakura-border) / 0.8);
+    border-radius: 0;
+}
+#theme-menu { border-radius: 14px; }
+
+/* Title in blossom gradient */
+header h1 {
+    background: var(--sakura-gradient);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+/* Sidebar: soft pills, pink tint for the active one */
+nav > a.ui-card {
+    border-radius: 14px;
+    background-color: transparent;
+    border-color: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+}
+nav > a.ui-card:hover { background-color: rgb(219 39 119 / 0.07); }
+.nav-active {
+    background: rgb(219 39 119 / 0.12) !important;
+    border-color: rgb(var(--sakura-border)) !important;
+    border-left-width: 1px !important;
+}
+.nav-active span,
+.nav-active .nav-label { color: rgb(var(--c-accent)); }
+
+/* Rounded inputs */
+:root main input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+:root main textarea,
+:root main select { border-radius: 12px; }
+
+/* Buttons in the page body: white at rest, blossom gradient when hovered. Round icon buttons and
+   buttons filled or lettered in a status colour keep their look. */
+:root main button.border:not(.rounded-full):not(.bg-primary):not([class*="bg-red"]):not([class*="bg-yellow"]):not([class*="bg-green"]):not([class*="text-red"]):not([class*="text-orange"]):not([class*="text-yellow"]) {
+    background-color: rgb(255 255 255 / 0.85);
+    border-color: rgb(219 39 119 / 0.3);
+    border-radius: 12px;
+}
+:root main button.border:not(.rounded-full):not(.bg-primary):not([class*="bg-red"]):not([class*="bg-yellow"]):not([class*="bg-green"]):not([class*="text-red"]):not([class*="text-orange"]):not([class*="text-yellow"]):hover,
+:root main button.border:not(.rounded-full):not(.bg-primary):not([class*="bg-red"]):not([class*="bg-yellow"]):not([class*="bg-green"]):not([class*="text-red"]):not([class*="text-orange"]):not([class*="text-yellow"]):hover * {
+    color: #ffffff;
+}
+:root main button.border:not(.rounded-full):not(.bg-primary):not([class*="bg-red"]):not([class*="bg-yellow"]):not([class*="bg-green"]):not([class*="text-red"]):not([class*="text-orange"]):not([class*="text-yellow"]):hover {
+    background-image: var(--sakura-gradient);
+    border-color: transparent;
+    box-shadow: 0 6px 16px rgb(219 39 119 / 0.25);
+}
+
+/* Header buttons and status pill */
+header button.rounded-full {
+    background-color: rgb(255 255 255 / 0.7);
+    border-color: rgb(219 39 119 / 0.25);
+}
+#server-status-btn {
+    border-radius: 999px;
+    border-color: rgb(219 39 119 / 0.35);
+    background-color: rgb(255 255 255 / 0.7);
+}
+#server-status-btn:hover {
+    background-image: var(--sakura-gradient);
+    border-color: transparent;
+    color: #ffffff;
+}
+
+/* Scroll bars and selection in blossom pink */
+::-webkit-scrollbar-thumb { background: rgb(219 39 119 / 0.3); }
+::-webkit-scrollbar-thumb:hover { background: rgb(219 39 119 / 0.5); }
+::-webkit-scrollbar-track { background: transparent; }
+* { scrollbar-color: rgb(219 39 119 / 0.3) transparent; }
+::selection { background: rgb(219 39 119 / 0.85); color: #ffffff; }

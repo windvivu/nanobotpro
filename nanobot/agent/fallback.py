@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Callable
 
@@ -34,14 +35,23 @@ _AUTH_ERROR_MARKERS = (
 )
 _QUOTA_ERROR_MARKERS = (
     "insufficient_quota",
+    "insufficient quota",
     "quota_exceeded",
     "quota exceeded",
     "quota exhausted",
     "out of credits",
     "out of credit",
     "insufficient balance",
-    "billing",
-    "credit",
+    "insufficient_balance",
+    "insufficient credits",
+    "insufficient_credits",
+    "billing hard limit",
+    "billing_hard_limit_reached",
+    "billing not active",
+    "billing_not_active",
+    "payment required",
+    "credit balance too low",
+    "credit_balance_too_low",
 )
 
 
@@ -64,7 +74,10 @@ def _is_auth_or_config_error(response: LLMResponse) -> bool:
 
 def _is_quota_or_credit_error(response: LLMResponse) -> bool:
     text = _error_text(response)
-    return any(marker in text for marker in _QUOTA_ERROR_MARKERS)
+    return any(
+        re.search(rf"(?<!\w){re.escape(marker)}(?!\w)", text) is not None
+        for marker in _QUOTA_ERROR_MARKERS
+    )
 
 
 def should_try_fallback(response: LLMResponse) -> bool:

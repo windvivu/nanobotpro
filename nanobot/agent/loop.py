@@ -12,11 +12,13 @@ import sys
 import time
 from contextlib import AsyncExitStack, nullcontext
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from loguru import logger
 
 from nanobot.agent.context import ContextBuilder
+from nanobot.agent.group_chat import GROUP_CHANNELS, GROUP_MARK, PRIVATE_CHANNELS, group_flag
 from nanobot.agent.hook import AgentHook, AgentHookContext, CompositeHook
 from nanobot.agent.autocompact import AutoCompact
 from nanobot.agent.memory import Consolidator, Dream, MemoryStore
@@ -25,10 +27,19 @@ from nanobot.agent.subagent import SubagentManager
 from nanobot.agent.token_usage import TokenUsageTracker
 from nanobot.agent.tools.cron import CronTool
 from nanobot.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
+from nanobot.agent.tools.office import (
+    EditExcelTool,
+    ReadExcelTool,
+    ReadPdfTool,
+    ReadWordTool,
+    WriteExcelTool,
+    WriteWordTool,
+)
 from nanobot.agent.tools.apply_patch import ApplyPatchTool
 from nanobot.agent.tools.notebook import NotebookEditTool
 from nanobot.agent.tools.search import GlobTool, GrepTool
-from nanobot.agent.tools.message import MessageTool
+from nanobot.agent.tools.message import ANSWERED_WITH_FILES, MessageTool
+from nanobot.agent.tools.turn_state import begin_turn
 from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.agent.tools.exec_session import ExecSessionManager, ListExecSessionsTool, WriteStdinTool
 from nanobot.agent.tools.image_generation import ImageGenerationTool
@@ -138,6 +149,13 @@ class _LoopHook(AgentHook):
             u.get("completion_tokens", 0),
             u.get("cached_tokens", 0),
         )
+        # The bot sent its reply with files to this chat (message tool): that is the turn's answer.
+        # End the turn instead of asking the model for a final text that only repeats it (custom)
+        if context.stop_reason is None and any(tc.name == "message" for tc in context.tool_calls):
+            message_tool = self._loop.tools.get("message")
+            if isinstance(message_tool, MessageTool) and message_tool._answered_with_files:
+                context.final_content = message_tool._answer_content
+                context.stop_reason = ANSWERED_WITH_FILES
 
 
 
@@ -219,6 +237,7 @@ class AgentLoop:
         enable_spawn: bool = True,
         enable_cron: bool = True,
         enable_mcp: bool = True,
+        custom_tools: list[str] | None = None,
         disabled_skills: list[str] | None = None,
         timezone: str = "UTC",
         chatbot_config: Any | None = None,
@@ -228,6 +247,9 @@ class AgentLoop:
         session_ttl_minutes: int = 0,
         image_generation_config: "ImageGenerationToolConfig | None" = None,
         image_generation_provider_configs: "dict[str, ProviderConfig] | None" = None,
+        trader_mode: bool = False,
+        market_scanner_config: Any | None = None,
+        brain_memory_config: Any | None = None,
     ):
         from nanobot.config.schema import (
             AgentDefaults,
@@ -274,14 +296,21 @@ class AgentLoop:
         self.enable_spawn = enable_spawn
         self.enable_cron = enable_cron
         self.enable_mcp = enable_mcp
+        self.custom_tools = list(custom_tools or [])
         self._chatbot_config = chatbot_config
         self._extra_hooks: list[AgentHook] = hooks or []
         self._unified_session = unified_session
         self._image_generation_config = image_generation_config or ImageGenerationToolConfig()
         self._image_generation_provider_configs = dict(image_generation_provider_configs or {})
+        self.trader_mode = bool(trader_mode)
+        self.market_scanner_config = market_scanner_config
+        self.brain_memory_config = brain_memory_config
+        from nanobot.brain_memory.runtime import BrainRuntime
+        self.brain_runtime = BrainRuntime(self)
 
         self.context = ContextBuilder(workspace, disabled_skills=disabled_skills, timezone=timezone,
-                                      chatbot_config=chatbot_config)
+                                      chatbot_config=chatbot_config,
+                                      brain_memory_config=brain_memory_config)
         self.sessions = session_manager or SessionManager(workspace)
         self.tools = ToolRegistry()
         self._runtime_vars: dict[str, Any] = {}
@@ -296,6 +325,12 @@ class AgentLoop:
             max_tool_result_chars=self.max_tool_result_chars,
             exec_config=self.exec_config,
             restrict_to_workspace=(sandbox_mode == "workspace"),
+            # Same skills, iteration limit and context window as the bot (custom)
+            disabled_skills=disabled_skills,
+            max_iterations=self.max_iterations,
+            context_window_tokens=self.context_window_tokens,
+            context_block_limit=self.context_block_limit,
+            provider_retry_mode=self.provider_retry_mode,
         )
         self._running = False
         self._mcp_servers = mcp_servers or {}
@@ -340,6 +375,7 @@ class AgentLoop:
             max_iterations=_dream_cfg.max_iterations,
         )
         self._dream_interval_s: float = _dream_cfg.interval_h * 3600
+        self._dream_enabled = _dream_cfg.enabled  # agents.defaults.dream.enabled (custom)
         self._dream_task: asyncio.Task | None = None
         self.auto_compact = AutoCompact(
             sessions=self.sessions,
@@ -399,6 +435,8 @@ class AgentLoop:
         if subagents := getattr(self, "subagents", None):
             subagents.provider = self.provider
             subagents.model = snapshot.model
+            if subagent_runner := getattr(subagents, "runner", None):
+                subagent_runner.provider = self.provider  # it runs on its own runner (custom)
         if memory_consolidator := getattr(self, "memory_consolidator", None):
             memory_consolidator.provider = self.provider
             memory_consolidator.model = snapshot.model
@@ -418,30 +456,35 @@ class AgentLoop:
         ])
 
     def _resolve_tool_flags(self) -> tuple[bool, bool, bool, bool, bool, bool]:
-        """Resolve effective tool group flags from preset.
+        """Resolve effective tool group flags from the tool role (agent/tool_roles.py).
 
         Returns (eff_file, eff_exec, eff_web, eff_spawn, eff_cron, eff_mcp).
         """
-        preset = self.tool_preset
-        if preset == "chatbot":
-            return False, False, True, False, False, True
-        elif preset == "coder":
-            return True, self.sandbox_mode != "disabled", True, False, False, True
-        elif preset == "custom":
-            return (
-                self.enable_file_tools,
-                self.sandbox_mode != "disabled",
-                self.enable_web_tools,
-                self.enable_spawn,
-                self.enable_cron,
-                self.enable_mcp,
-            )
-        else:  # developer — all enabled
-            return True, self.sandbox_mode != "disabled", True, True, True, True
+        from nanobot.agent.tool_roles import role_flags
+
+        return role_flags(
+            self.tool_preset,
+            sandbox_mode=self.sandbox_mode,
+            custom_tools=getattr(self, "custom_tools", None),
+            enable_file_tools=getattr(self, "enable_file_tools", True),
+            enable_web_tools=getattr(self, "enable_web_tools", True),
+            enable_spawn=getattr(self, "enable_spawn", True),
+            enable_cron=getattr(self, "enable_cron", True),
+            enable_mcp=getattr(self, "enable_mcp", True),
+        )
 
     def _register_default_tools(self) -> None:
-        """Register the default set of tools based on preset and flags."""
+        """Register the default set of tools based on the tool role and flags."""
+        from nanobot.agent.tool_roles import allows_tool, custom_tool_filter, subagent_groups
+
         eff_file, eff_exec, eff_web, eff_spawn, eff_cron, eff_mcp = self._resolve_tool_flags()
+        role = getattr(self, "tool_preset", "full")
+        custom_tools = getattr(self, "custom_tools", None)
+        chosen = custom_tool_filter(role, custom_tools)  # custom role: tools picked one by one
+
+        def wanted(name: str) -> bool:
+            return chosen is None or name in chosen
+
         scope = None
         if eff_file or (eff_exec and self.exec_config.enable):
             scope = resolve_workspace_scope(
@@ -454,29 +497,39 @@ class AgentLoop:
         # File tools: respect sandbox boundary
         if eff_file:
             assert scope is not None
-            self.tools.register(
-                ReadFileTool(
-                    workspace=self.workspace,
-                    allowed_dir=scope.allowed_dir,
-                    extra_allowed_dirs=scope.extra_read_dirs,
-                )
-            )
-            for cls in (WriteFileTool, EditFileTool, ListDirTool, GlobTool, GrepTool):
+            if wanted("read_file"):
                 self.tools.register(
-                    cls(
+                    ReadFileTool(
                         workspace=self.workspace,
                         allowed_dir=scope.allowed_dir,
-                        extra_allowed_dirs=scope.extra_allowed_dirs,
+                        extra_allowed_dirs=scope.extra_read_dirs,
                     )
                 )
-            self.tools.register(
-                ApplyPatchTool(
+            for cls in (WriteFileTool, EditFileTool, ListDirTool, GlobTool, GrepTool, ApplyPatchTool):
+                tool = cls(
                     workspace=self.workspace,
                     allowed_dir=scope.allowed_dir,
                     extra_allowed_dirs=scope.extra_allowed_dirs,
                 )
-            )
-            self.tools.register(NotebookEditTool(workspace=self.workspace, allowed_dir=scope.allowed_dir))
+                # The file group flag already represents the role's file policy.  Keep the
+                # existing registration semantics for the built-in filesystem tools; only the
+                # structured Office group needs an additional role check below.
+                if wanted(tool.name):
+                    self.tools.register(tool)
+            if wanted("notebook_edit"):
+                self.tools.register(NotebookEditTool(workspace=self.workspace, allowed_dir=scope.allowed_dir))
+
+            # Structured Office tools use the same workspace boundary as file tools.
+            office_classes = (ReadExcelTool, WriteExcelTool, EditExcelTool,
+                              ReadWordTool, WriteWordTool, ReadPdfTool)
+            for cls in office_classes:
+                tool = cls(
+                    workspace=self.workspace,
+                    allowed_dir=scope.allowed_dir,
+                    extra_allowed_dirs=scope.extra_allowed_dirs,
+                )
+                if allows_tool(role, tool.name, custom_tools=custom_tools) and wanted(tool.name):
+                    self.tools.register(tool)
 
         # Exec tool: resolve effective working dir
         if eff_exec and self.exec_config.enable:
@@ -489,16 +542,33 @@ class AgentLoop:
                 path_append=self.exec_config.path_append,
                 session_manager=self.exec_session_manager,
             ))
-            self.tools.register(WriteStdinTool(manager=self.exec_session_manager))
-            self.tools.register(ListExecSessionsTool(manager=self.exec_session_manager))
+            if wanted("write_stdin"):
+                self.tools.register(WriteStdinTool(manager=self.exec_session_manager))
+            if wanted("list_exec_sessions"):
+                self.tools.register(ListExecSessionsTool(manager=self.exec_session_manager))
 
         # Web tools
         if eff_web:
-            self.tools.register(WebSearchTool(config=self.web_search_config, proxy=self.web_proxy))
-            self.tools.register(WebFetchTool(proxy=self.web_proxy))
+            if wanted("web_search"):
+                self.tools.register(WebSearchTool(config=self.web_search_config, proxy=self.web_proxy))
+            if wanted("web_fetch"):
+                self.tools.register(WebFetchTool(proxy=self.web_proxy))
 
         # Message tool (always enabled)
-        self.tools.register(MessageTool(send_callback=self.bus.publish_outbound, working_dir=str(self.workspace)))
+        # Attachments stay within what the bot may read (sandbox, allowedDirs, media folder) whatever the
+        # role: otherwise a chat could have it send any file on the machine (custom, identity hardening).
+        # A role without file or exec tools only needs the paths, not a sandbox folder.
+        attach = scope or resolve_workspace_scope(
+            workspace=self.workspace,
+            sandbox_mode=self.sandbox_mode,
+            workspace_subdir=self.exec_config.workspace_subdir,
+            allowed_dirs=self.exec_config.allowed_dirs,
+            create_dirs=False,
+        )
+        self.tools.register(MessageTool(
+            send_callback=self.bus.publish_outbound, working_dir=str(self.workspace),
+            allowed_dir=attach.allowed_dir, extra_allowed_dirs=attach.extra_read_dirs,
+        ))
 
         image_generation_config = getattr(self, "_image_generation_config", None)
         image_generation_provider_configs = getattr(self, "_image_generation_provider_configs", {})
@@ -515,21 +585,99 @@ class AgentLoop:
         if eff_spawn:
             self.tools.register(SpawnTool(manager=self.subagents))
 
+        # /goal: roles with the goal group (custom before roles: with the spawn switch)
         sessions = getattr(self, "sessions", None)
-        if sessions is not None and (
-            self.tool_preset in ("developer", "coder")
-            or (self.tool_preset == "custom" and self.enable_spawn)
-        ):
-            self.tools.register(LongTaskTool(sessions))
-            self.tools.register(CompleteGoalTool(sessions))
+        enable_spawn = getattr(self, "enable_spawn", True)
+        if sessions is not None:
+            if allows_tool(role, "long_task", custom_tools=custom_tools, enable_spawn=enable_spawn):
+                self.tools.register(LongTaskTool(sessions))
+            if allows_tool(role, "complete_goal", custom_tools=custom_tools, enable_spawn=enable_spawn):
+                self.tools.register(CompleteGoalTool(sessions))
 
         # Cron tool
         if eff_cron and self.cron_service:
             self.tools.register(CronTool(self.cron_service, default_timezone=self.context.timezone or "UTC"))
 
-        # MyTool: runtime inspection — always on except chatbot preset
-        if self.tool_preset != "chatbot":
+        # MyTool: runtime inspection — every role except chatbot
+        if allows_tool(role, "my", custom_tools=custom_tools):
             self.tools.register(MyTool(loop=self, modify_allowed=False))
+
+        # Sub-agents get the role's sub-agent tools, in the same sandbox and allowedDirs as the bot
+        subagents = getattr(self, "subagents", None)
+        if subagents is not None and hasattr(subagents, "set_tool_policy"):
+            subagents.set_tool_policy(
+                subagent_groups(role, custom_tools=custom_tools),
+                sandbox_mode=self.sandbox_mode,
+                workspace_subdir=self.exec_config.workspace_subdir,
+                allowed_dirs=self.exec_config.allowed_dirs,
+            )
+
+        sync_market_scanner = getattr(self, "_sync_market_scanner_tool", None)
+        if sync_market_scanner is not None:
+            sync_market_scanner()
+
+    def _sync_market_scanner_tool(self) -> None:
+        """Register guarded trader tools only while Trader Mode is enabled, in roles that have them."""
+        from nanobot.agent.tool_roles import allows_tool
+
+        self.tools.unregister("tradingview")
+        self.tools.unregister("market_scanner")
+        role = getattr(self, "tool_preset", "full")
+        custom_tools = getattr(self, "custom_tools", None)
+
+        tradingview_cfg = getattr(self, "_mcp_servers", {}).get("tradingview")
+        mcp_enabled = self._resolve_tool_flags()[-1]
+        if (
+            self.trader_mode
+            and allows_tool(role, "tradingview", custom_tools=custom_tools)
+            and mcp_enabled
+            and tradingview_cfg is not None
+            and getattr(tradingview_cfg, "enabled", False)
+        ):
+            from nanobot.agent.tools.tradingview import TradingViewTool
+
+            self.tools.register(
+                TradingViewTool(
+                    SimpleNamespace(
+                        enabled=True,
+                        repo_path="",
+                        cdp_port=9222,
+                        timeout=getattr(tradingview_cfg, "tool_timeout", 30),
+                    )
+                )
+            )
+
+        config = self.market_scanner_config
+        if (
+            not self.trader_mode
+            or config is None
+            or not getattr(config, "enabled", False)
+            or not allows_tool(role, "market_scanner", custom_tools=custom_tools)
+        ):
+            return
+
+        from nanobot.agent.tools.market_scanner import MarketScannerTool
+
+        self.tools.register(MarketScannerTool(config, registry=self.tools))
+
+    def _rebind_mcp_tools_to_current_registry(self) -> None:
+        """Restore live MCP wrappers after a tool registry rebuild. Only servers of the current tool
+        role show (MCPServerConfig.roles); the others stay connected with their tools hidden."""
+        if not self._mcp_connected or not self._resolve_tool_flags()[-1]:
+            return
+        from nanobot.agent.tool_roles import mcp_server_visible
+
+        role = getattr(self, "tool_preset", "full")
+        for runtime in self._mcp_runtimes.values():
+            cfg = getattr(runtime, "cfg", None)
+            if cfg is not None and not mcp_server_visible(role, cfg):
+                hide = getattr(runtime, "hide_tools", None)
+                if hide is not None:
+                    hide()
+                continue
+            rebind = getattr(runtime, "rebind_registry", None)
+            if rebind is not None:
+                rebind(self.tools)
 
     async def _connect_mcp(self) -> None:
         """Connect to configured MCP servers (one-time, lazy)."""
@@ -550,6 +698,7 @@ class AgentLoop:
                 self._mcp_stack,
             )
             self._mcp_connected = True
+            self._rebind_mcp_tools_to_current_registry()  # hide servers outside the tool role
         except BaseException as e:
             logger.error("Failed to connect MCP servers (will retry next message): {}", e)
             if self._mcp_stack:
@@ -597,6 +746,7 @@ class AgentLoop:
         self._mcp_stack.push_async_callback(runtime.close)
         self._mcp_runtimes[name] = runtime
         self._mcp_connected = bool(self._mcp_runtimes)
+        self._rebind_mcp_tools_to_current_registry()  # hide it if it is outside the tool role
         logger.info("MCP server '{}': runtime hot-loaded", name)
         return True
 
@@ -610,12 +760,12 @@ class AgentLoop:
         session_key: str | None = None,
     ) -> None:
         """Update context for all tools that need routing info."""
-        for name in ("message", "spawn", "cron", "long_task", "complete_goal"):
+        for name in ("message", "spawn", "cron", "long_task", "complete_goal", "my"):
             if tool := self.tools.get(name):
                 if hasattr(tool, "set_context"):
                     if name == "message":
                         tool.set_context(channel, chat_id, message_id, metadata)
-                    elif name in ("long_task", "complete_goal"):
+                    elif name in ("spawn", "long_task", "complete_goal", "my"):  # spawn, my: custom
                         tool.set_context(channel, chat_id, session_key=session_key)
                     else:
                         tool.set_context(channel, chat_id)
@@ -702,6 +852,21 @@ class AgentLoop:
             self._chatbot_config = config.chatbot
             self.context._chatbot_config = config.chatbot
 
+            # Brain Memory retrieval is optional and lazy. Drop the adapter so
+            # a changed root/flag is picked up on the next user query.
+            latest_brain_config = getattr(config, "brain_memory", None)
+            current_brain_config = getattr(self, "brain_memory_config", None)
+            if (
+                current_brain_config is None
+                or latest_brain_config is None
+                or latest_brain_config.model_dump() != current_brain_config.model_dump()
+            ):
+                self.brain_memory_config = latest_brain_config
+                self.context._brain_memory_config = latest_brain_config
+                self.context._brain_context = None
+                if runtime := getattr(self, "brain_runtime", None):
+                    runtime.config_changed()
+
             latest_image_config = config.tools.image_generation
             latest_image_provider_configs = image_gen_provider_configs(config)
             current_image_config = getattr(self, "_image_generation_config", None)
@@ -720,6 +885,17 @@ class AgentLoop:
 
             # Hot-reload tool preset — re-register tools when preset or flags change
             tc = config.tools
+            latest_trader_mode = bool(getattr(config, "trader_mode", False))
+            latest_market_scanner_config = getattr(config, "market_scanner", None)
+            current_market_scanner_config = getattr(self, "market_scanner_config", None)
+            if current_market_scanner_config is None or latest_market_scanner_config is None:
+                market_scanner_changed = current_market_scanner_config is not latest_market_scanner_config
+            else:
+                market_scanner_changed = (
+                    latest_market_scanner_config.model_dump()
+                    != current_market_scanner_config.model_dump()
+                )
+            trader_mode_changed = latest_trader_mode != getattr(self, "trader_mode", False)
             preset_changed = (
                 tc.tool_preset != self.tool_preset
                 or tc.enable_file_tools != self.enable_file_tools
@@ -727,6 +903,7 @@ class AgentLoop:
                 or tc.enable_spawn != self.enable_spawn
                 or tc.enable_cron != self.enable_cron
                 or tc.enable_mcp != self.enable_mcp
+                or list(tc.custom_tools) != list(getattr(self, "custom_tools", []))
                 or tc.sandbox_mode != self.sandbox_mode
             )
             if preset_changed:
@@ -737,10 +914,26 @@ class AgentLoop:
                 self.enable_spawn = tc.enable_spawn
                 self.enable_cron = tc.enable_cron
                 self.enable_mcp = tc.enable_mcp
+                self.custom_tools = list(tc.custom_tools)
                 self.sandbox_mode = tc.sandbox_mode
+                self.trader_mode = latest_trader_mode
+                self.market_scanner_config = latest_market_scanner_config
                 self.tools = ToolRegistry()
                 self._register_default_tools()
+                self._rebind_mcp_tools_to_current_registry()
                 logger.info("[Agent] Tool preset reloaded: '{}' -> '{}'", old_preset, tc.tool_preset)
+            elif trader_mode_changed or market_scanner_changed:
+                self.trader_mode = latest_trader_mode
+                self.market_scanner_config = latest_market_scanner_config
+                self._sync_market_scanner_tool()
+                logger.info(
+                    "[Agent] Trader tools reloaded: trader_mode={} scanner_enabled={}",
+                    self.trader_mode,
+                    bool(
+                        self.market_scanner_config
+                        and getattr(self.market_scanner_config, "enabled", False)
+                    ),
+                )
         except Exception as e:
             logger.info("[Agent] Config reload ERROR: {}", e)
 
@@ -852,7 +1045,7 @@ class AgentLoop:
         chat_id: str = "direct",
         message_id: str | None = None,
         message_metadata: dict | None = None,
-    ) -> tuple[str | None, list[str], list[dict]]:
+    ) -> tuple[str | None, list[str], list[dict], str | None]:
         """Run the agent iteration loop via AgentRunner + _LoopHook.
 
         *on_stream*: called with each content delta during streaming.
@@ -905,6 +1098,7 @@ class AgentLoop:
             progress_callback=on_progress,
             checkpoint_callback=_checkpoint,
             fallback_factory=self._fallback_factory_from_current_config(),
+            timing_id=(message_metadata or {}).get("_webchat_timing_id"),
         ))
 
         self._last_usage = result.usage
@@ -936,7 +1130,10 @@ class AgentLoop:
         """Run the agent loop, dispatching messages as tasks to stay responsive to /stop."""
         self._running = True
         await self._connect_mcp()
-        self._dream_task = asyncio.create_task(self._run_dream_loop())
+        if self._dream_enabled:  # Dream turned off: no scheduled runs from this loop either (custom)
+            self._dream_task = asyncio.create_task(self._run_dream_loop())
+        if runtime := getattr(self, "brain_runtime", None):
+            self._schedule_background(runtime.sync_migration_sources())
         logger.info("Agent loop started (nanobot v{}, model={})", __version__, self.model)
 
         while self._running:
@@ -1010,8 +1207,10 @@ class AgentLoop:
                     self._dispatch_task(next_msg)
                     continue
 
-                # Same session: batch together, reset timer
-                if next_msg.session_key == msg.session_key:
+                # Same session: batch together, reset timer. A sub-agent's result ("system") has the
+                # session key of the chat it came from, but never merges into a person's message (custom)
+                same_kind = (next_msg.channel == "system") == (msg.channel == "system")
+                if next_msg.session_key == msg.session_key and same_kind:
                     batched.append(next_msg)
                     deadline = time.monotonic() + debounce_s
                 else:
@@ -1020,21 +1219,74 @@ class AgentLoop:
 
             # Merge batched messages and dispatch
             if len(batched) > 1:
-                combined = "\n".join(m.content for m in batched)
-                merged = InboundMessage(
-                    channel=msg.channel,
-                    sender_id=msg.sender_id,
-                    chat_id=msg.chat_id,
-                    content=combined,
-                    timestamp=msg.timestamp,
-                    media=msg.media,
-                    metadata=msg.metadata,
-                    session_key_override=msg.session_key_override,
-                )
+                merged = self._merge_batched(batched)
                 logger.info("[Debounce] Batched {} messages for {}", len(batched), msg.session_key)
                 self._dispatch_task(merged)
             else:
                 self._dispatch_task(msg)
+
+    @staticmethod
+    def _merge_batched(batched: list[InboundMessage]) -> InboundMessage:
+        """One turn from the messages debounce batched for a session (custom).
+
+        When several people wrote, as in a group chat, each part starts with its sender's name unless
+        the channel already put it there (group_ambient), and metadata["senders"] lists them with their
+        IDs for the runtime context. The turn used to carry the first sender only, so the bot could not
+        tell who said what. The attachments of every part are kept, not only the first part's.
+        """
+        first = batched[0]
+
+        def name(m: InboundMessage) -> str:
+            return str((m.metadata or {}).get("sender_name") or "")
+
+        several = len({m.sender_id for m in batched}) > 1
+        parts = [
+            m.content if not several or (m.metadata or {}).get("group_ambient")
+            else f"{name(m) or m.sender_id}: {m.content}"
+            for m in batched
+        ]
+        metadata = dict(first.metadata or {})
+        if several:
+            senders: list[str] = []
+            for m in batched:
+                entry = f"{name(m)} ({m.sender_id})" if name(m) else m.sender_id
+                if entry not in senders:
+                    senders.append(entry)
+            metadata["senders"] = senders
+        return InboundMessage(
+            channel=first.channel,
+            sender_id=first.sender_id,
+            chat_id=first.chat_id,
+            content="\n".join(parts),
+            timestamp=first.timestamp,
+            media=[path for m in batched for path in (m.media or [])],
+            metadata=metadata,
+            session_key_override=first.session_key_override,
+        )
+
+    def _is_group_turn(self, msg: InboundMessage, channel: str, chat_id: str) -> bool:
+        """Whether this turn answers in a group chat, whose prompt leaves USER.md out (custom).
+
+        A fleet turn always counts as one (GROUP_CHANNELS). Otherwise the channel's own flag decides, and
+        a group marks the chat's session. A turn without a flag of its own, such as a sub-agent's result
+        or a reminder, follows that mark. Any other channel that says nothing counts as a group when the
+        chat's ID is not the sender's: when unsure, leave the owner's profile out.
+        """
+        if channel in GROUP_CHANNELS:
+            return True
+        chat_key = f"{channel}:{chat_id}"
+        flag = group_flag(msg.metadata)
+        if flag:
+            chat_session = self.sessions.get_or_create(chat_key)
+            if not chat_session.metadata.get(GROUP_MARK):
+                chat_session.metadata[GROUP_MARK] = True
+                self.sessions.save(chat_session)
+            return True
+        if flag is False or channel in PRIVATE_CHANNELS:
+            return False
+        if self.sessions.get_or_create(chat_key).metadata.get(GROUP_MARK):
+            return True
+        return msg.channel != "system" and bool(msg.sender_id) and msg.sender_id != chat_id
 
     def _dispatch_task(self, msg: InboundMessage) -> None:
         """Create an async task to dispatch a message."""
@@ -1058,6 +1310,8 @@ class AgentLoop:
                 break
             try:
                 did_work = await self.dream.run()
+                if runtime := getattr(self, "brain_runtime", None):
+                    await runtime.sync_migration_sources()
                 if did_work:
                     logger.info("Dream run completed (scheduled)")
                 else:
@@ -1149,6 +1403,8 @@ class AgentLoop:
                     if not t.done():
                         t.cancel()
             self._background_tasks.clear()
+        if runtime := getattr(self, "brain_runtime", None):
+            await runtime.stop()
         if self._mcp_stack:
             try:
                 await asyncio.wait_for(self._mcp_stack.aclose(), timeout=2.0)
@@ -1260,21 +1516,32 @@ class AgentLoop:
         on_multi_send: Callable[[str], Awaitable[None]] | None = None,  # Custom: send intermediate multi-message parts
     ) -> OutboundMessage | None:
         """Process a single inbound message and return the response."""
+        begin_turn()  # tool routing for this turn only, apart from other sessions' turns (custom)
         # System messages: parse origin from chat_id ("channel:chat_id")
         if msg.channel == "system":
             channel, chat_id = (msg.chat_id.split(":", 1) if ":" in msg.chat_id
                                 else ("cli", msg.chat_id))
             logger.info("Processing system message from {}", msg.sender_id)
-            key = f"{channel}:{chat_id}"
+            # A sub-agent's result names the session that spawned it (the unified one when unifiedSession
+            # is on): answer it there, with that conversation as history (custom, as upstream)
+            key = msg.session_key_override or f"{channel}:{chat_id}"
             session = self.sessions.get_or_create(key)
             if self._restore_runtime_checkpoint(session):
                 self.sessions.save(session)
             session, _compact_summary = self.auto_compact.prepare_session(session, key)
             await self.memory_consolidator.maybe_consolidate_by_tokens(session)
-            self._set_tool_context(channel, chat_id, msg.metadata.get("message_id"), msg.metadata, session_key=session.key)
+            # Whatever the bot sends in this turn, `message` tool calls included, is a late reply: Web Chat
+            # pushes only those to its tabs (custom)
+            late_metadata = {**msg.metadata, "_late_reply": True}
+            self._set_tool_context(channel, chat_id, msg.metadata.get("message_id"), late_metadata, session_key=session.key)
+            if isinstance(message_tool := self.tools.get("message"), MessageTool):
+                message_tool.start_turn()
             history = session.get_history(max_messages=0)
-            # Subagent results should be assistant role, other system messages use user role
-            current_role = "assistant" if msg.sender_id == "subagent" else "user"
+            # Every system message, a sub-agent's result included, is a user turn, as upstream now does:
+            # as an assistant turn it left the bot's own message last and the model sometimes repeated
+            # the runtime context back instead of answering (custom)
+            current_role = "user"
+            group_turn = self._is_group_turn(msg, channel, chat_id)
             messages = self.context.build_messages(
                 history=history,
                 current_message=msg.content, channel=channel, chat_id=chat_id,
@@ -1284,19 +1551,26 @@ class AgentLoop:
                 session_summary=_compact_summary,
                 current_role=current_role,
                 session_metadata=session.metadata,
+                memory_session=session.key,
+                include_user_profile=not group_turn,
             )
-            final_content, _, all_msgs = await self._run_agent_loop(
+            final_content, _, all_msgs, _ = await self._run_agent_loop(  # 4 values since 328fad4
                 messages,
                 session=session, channel=channel, chat_id=chat_id,
                 message_id=msg.metadata.get("message_id"),
-                message_metadata=msg.metadata,
+                message_metadata=late_metadata,
             )
             self._save_turn(session, all_msgs, 1 + len(history))
             self._clear_runtime_checkpoint(session)
             self.sessions.save(session)
             self._schedule_background(self.memory_consolidator.maybe_consolidate_by_tokens(session))
+            if isinstance(message_tool, MessageTool) and message_tool._sent_in_turn:
+                return None  # already sent to this chat with the message tool, as the normal branch does
+            # _late_reply: sent after the turn that asked for it, e.g. a sub-agent's result. Web Chat,
+            # which is not a channel, pushes these to its open tabs (web/routes/chat.py) (custom)
             return OutboundMessage(channel=channel, chat_id=chat_id,
-                                  content=final_content or "Background task completed.")
+                                  content=final_content or "Background task completed.",
+                                  metadata={"_late_reply": True})
 
         preview = msg.content[:80] + "..." if len(msg.content) > 80 else msg.content
         logger.info("Processing message from {}:{}: {}", msg.channel, msg.sender_id, preview)
@@ -1322,6 +1596,7 @@ class AgentLoop:
                 message_tool.start_turn()
 
         history = session.get_history(max_messages=0)
+        group_turn = self._is_group_turn(msg, msg.channel, msg.chat_id)
         initial_messages = self.context.build_messages(
             history=history,
             current_message=msg.content,
@@ -1332,6 +1607,9 @@ class AgentLoop:
             thread_type=msg.metadata.get("thread_type"),
             session_summary=_compact_summary,
             session_metadata=session.metadata,
+            senders=msg.metadata.get("senders"),
+            memory_session=session.key,
+            include_user_profile=not group_turn,
         )
 
         async def _bus_progress(content: str, *, tool_hint: bool = False) -> None:
@@ -1365,14 +1643,30 @@ class AgentLoop:
         self._clear_runtime_checkpoint(session)
         self.sessions.save(session)
         self._schedule_background(self.memory_consolidator.maybe_consolidate_by_tokens(session))
+        brain_config = getattr(self, "brain_memory_config", None)
+        runtime = getattr(self, "brain_runtime", None)
+        if brain_config and brain_config.learns_session(session.key):
+            # Capture this completed turn only; later session mutations cannot
+            # expand the selected source while learning runs in the background.
+            count = len(all_msgs) - 1 - len(history)
+            turn = [dict(m) for m in session.messages[-count:]] if count > 0 else []
+            if runtime is not None:
+                self._schedule_background(runtime.record_turn(session.key, turn))
+        if runtime is not None:
+            self._schedule_background(runtime.sync_migration_sources())
 
         # Custom: bypass _sent_in_turn suppression for direct_return callers (fleet, cron)
         if (mt := self.tools.get("message")) and isinstance(mt, MessageTool) and mt._sent_in_turn and not direct_return:
-            logger.warning(
-                "[Loop] Final response suppressed - message tool already sent in same turn: channel={} chat_id={}",
+            logger.info(
+                "[Loop] Reply already sent with the message tool in this turn: channel={} chat_id={}",
                 msg.channel, msg.chat_id,
             )
             return None
+        if stop_reason == ANSWERED_WITH_FILES:
+            # Web Chat, cron, heartbeat, fleet: the reply already went out with its files. Hand its text
+            # back, marked so the caller does not send it a second time (custom, answer with files)
+            return OutboundMessage(channel=msg.channel, chat_id=msg.chat_id, content=final_content,
+                                   metadata={**(msg.metadata or {}), "_answered_with_files": True})
 
         # Delegate multi-message splitting and typing delay to DeliveryPolicy
         from nanobot.agent.delivery import ResponseDeliveryPolicy
@@ -1524,11 +1818,19 @@ class AgentLoop:
         on_stream: Callable[[str], Awaitable[None]] | None = None,
         on_stream_end: Callable[..., Awaitable[None]] | None = None,
         on_multi_send: Callable[[str], Awaitable[None]] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> OutboundMessage | None:
         """Process a message directly (for CLI, cron, or fleet usage)."""
         await self._connect_mcp()
         # Custom: sender_id=chat_id (not "user") so session log shows actual caller name
-        msg = InboundMessage(channel=channel, sender_id=chat_id, chat_id=chat_id, content=content, media=media)
+        msg = InboundMessage(
+            channel=channel,
+            sender_id=chat_id,
+            chat_id=chat_id,
+            content=content,
+            media=media,
+            metadata=metadata or {},
+        )
         return await self._process_message(
             msg, session_key=session_key, on_progress=on_progress,
             on_stream=on_stream, on_stream_end=on_stream_end, direct_return=True,

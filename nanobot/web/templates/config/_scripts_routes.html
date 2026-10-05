@@ -340,13 +340,13 @@
         if (!select) return;
         const current = select.value;
         const presets = presetCrudParseRaw();
-        select.innerHTML = '<option value="" style="background: #0a0a0a; color: #00FF41;">Custom</option>';
+        select.innerHTML = '<option value="" style="background: rgb(var(--c-surface)); color: rgb(var(--c-primary));">Manual</option>';
         Object.keys(presets).sort().forEach((name) => {
             const option = document.createElement('option');
             option.value = name;
             option.textContent = name;
-            option.style.background = '#0a0a0a';
-            option.style.color = '#00FF41';
+            option.style.background = 'rgb(var(--c-surface))';
+            option.style.color = 'rgb(var(--c-primary))';
             select.appendChild(option);
         });
         select.value = Object.prototype.hasOwnProperty.call(presets, current) ? current : '';
@@ -373,9 +373,9 @@
             const chip = document.createElement('button');
             chip.type = 'button';
             chip.textContent = model;
-            chip.style.cssText = 'padding:2px 6px;border:1px solid rgba(0,255,65,0.2);font-size:9px;font-family:monospace;color:rgba(0,255,65,0.6);cursor:pointer;transition:all 0.15s;background:transparent;white-space:nowrap;';
-            chip.onmouseenter = () => { chip.style.color='#00FF41'; chip.style.borderColor='rgba(0,255,65,0.8)'; chip.style.background='rgba(0,255,65,0.08)'; };
-            chip.onmouseleave = () => { chip.style.color='rgba(0,255,65,0.6)'; chip.style.borderColor='rgba(0,255,65,0.2)'; chip.style.background='transparent'; };
+            chip.style.cssText = 'padding:2px 6px;border:1px solid rgb(var(--c-primary) / 0.2);font-size:9px;font-family:monospace;color:rgb(var(--c-primary) / 0.6);cursor:pointer;transition:all 0.15s;background:transparent;white-space:nowrap;';
+            chip.onmouseenter = () => { chip.style.color='rgb(var(--c-primary))'; chip.style.borderColor='rgb(var(--c-primary) / 0.8)'; chip.style.background='rgb(var(--c-primary) / 0.08)'; };
+            chip.onmouseleave = () => { chip.style.color='rgb(var(--c-primary) / 0.6)'; chip.style.borderColor='rgb(var(--c-primary) / 0.2)'; chip.style.background='transparent'; };
             chip.onclick = () => {
                 const input = document.getElementById('preset_model');
                 if (input) input.value = model;

@@ -51,3 +51,4 @@ docs_mcp_tradingview/
 .gitignore
 .mcp.json
 integrations/
+nanobot_symbolic_link

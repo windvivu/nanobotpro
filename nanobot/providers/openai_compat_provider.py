@@ -61,6 +61,11 @@ def _is_kimi_thinking_model(model_name: str) -> bool:
     return False
 
 
+def _model_slug(model_name: str) -> str:
+    """Return the provider-local model name without an optional namespace."""
+    return model_name.strip().lower().rsplit("/", 1)[-1]
+
+
 
 def _short_tool_id() -> str:
     """9-char alphanumeric ID compatible with all providers (incl. Mistral)."""
@@ -312,6 +317,31 @@ class OpenAICompatProvider(LLMProvider):
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = tool_choice or "auto"
+
+        # DeepSeek thinking endpoints reject assistant history entries that do
+        # not carry reasoning_content. Backfill only the missing field after
+        # message sanitization, preserving caller input and existing values.
+        slug = _model_slug(model_name)
+        explicit_thinking = (
+            reasoning_effort is not None
+            and semantic_effort not in ("none", "minimal")
+            and spec is not None
+            and spec.name == "deepseek"
+            and bool(spec and spec.thinking_style)
+        )
+        implicit_deepseek_thinking = (
+            spec is not None
+            and spec.name == "deepseek"
+            and semantic_effort not in ("none", "minimal", "minimum")
+            and (
+                slug == "deepseek-flash"
+                or any(token in model_name.lower() for token in ("deepseek-v4", "deepseek-reasoner"))
+            )
+        )
+        if explicit_thinking or implicit_deepseek_thinking:
+            for message in kwargs["messages"]:
+                if message.get("role") == "assistant" and "reasoning_content" not in message:
+                    message["reasoning_content"] = ""
 
         return kwargs
 

@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Edit {{ profile.name }} — Nanobot OS{% endblock %}
+{% block title %}{{ tr('page.profile_editor') }}: {{ profile.name }} — Nanobot OS{% endblock %}
 {% block content %}
 <!-- Sidebar -->
 <aside class="w-full lg:w-72 flex flex-col gap-6">
-    <div class="matrix-card p-6 flex flex-col items-center text-center gap-4">
+    <div class="ui-card p-6 flex flex-col items-center text-center gap-4">
         <div
             class="w-20 h-20 flex items-center justify-center text-primary glow-text border-2 border-primary/30 rounded-full relative">
             <div class="absolute inset-0 border border-primary animate-pulse rounded-full opacity-20"></div>
@@ -11,14 +11,14 @@
         </div>
         <div>
             <h2 class="text-lg font-bold glow-text tracking-widest uppercase">{{ profile.name }}</h2>
-            <p class="text-[10px] text-primary/50 font-mono">Profile Editor</p>
+            <p class="text-[10px] text-primary/50 font-mono">{{ tr('page.profile_editor') }}</p>
             {% if profile_id == active_id %}
             <span class="inline-flex items-center gap-1 mt-1 text-[9px] text-primary/70 uppercase tracking-wider">
-                <span class="w-1.5 h-1.5 bg-primary rounded-full animate-pulse shadow-[0_0_5px_#00FF41]"></span>Active
+                <span class="w-1.5 h-1.5 bg-primary rounded-full animate-pulse shadow-glow-5"></span>Active
             </span>
             {% else %}
             <span
-                class="inline-flex items-center gap-1 mt-1 text-[9px] text-primary/30 uppercase tracking-wider">Inactive</span>
+                class="inline-flex items-center gap-1 mt-1 text-[9px] text-primary/30 uppercase tracking-wider">{{ tr('page.inactive') }}</span>
             {% endif %}
         </div>
     </div>
@@ -29,7 +29,7 @@
     {% include "_sidebar_nav.html" %}
 
     <!-- File info -->
-    <div class="matrix-card p-4 text-[10px] leading-relaxed text-primary/40 uppercase tracking-tighter space-y-1">
+    <div class="ui-card p-4 text-[10px] leading-relaxed text-primary/40 uppercase tracking-tighter space-y-1">
         <div class="flex justify-between">
             <span>SOUL.md</span>
             <span class="text-primary/70">{{ soul.size ~ ' B' if soul.exists else 'N/A' }}</span>
@@ -54,7 +54,7 @@
 
     {% if saved %}
     <div id="flashMsg"
-        class="fixed top-6 right-6 z-50 matrix-card border-primary bg-black/95 px-6 py-4 flex items-center gap-4 shadow-[0_0_20px_rgba(0,255,65,0.3)]"
+        class="fixed top-6 right-6 z-50 ui-card border-primary bg-black/95 px-6 py-4 flex items-center gap-4 shadow-glow-20-30"
         style="animation: toastIn 0.3s ease-out;">
         <span class="material-symbols-outlined text-primary glow-text">check_circle</span>
         <span class="text-sm font-bold glow-text uppercase tracking-widest">File Saved</span>
@@ -66,7 +66,7 @@
     {% endif %}
 
     <!-- Header -->
-    <div class="matrix-card p-4 flex items-center justify-between">
+    <div class="ui-card p-4 flex items-center justify-between">
         <div class="flex items-center gap-3">
             <a href="/profiles" class="text-primary/40 hover:text-primary transition-colors">
                 <span class="material-symbols-outlined text-sm">arrow_back</span>
@@ -80,7 +80,7 @@
         <div class="flex items-center gap-3">
             {% if profile_id != active_id %}
             <span
-                class="px-3 py-1 border border-primary/20 text-[9px] text-primary/40 uppercase tracking-widest">Inactive</span>
+                class="px-3 py-1 border border-primary/20 text-[9px] text-primary/40 uppercase tracking-widest">{{ tr('page.inactive') }}</span>
             {% else %}
             <span
                 class="px-3 py-1 border border-primary/40 bg-primary/10 text-[9px] text-primary glow-text uppercase tracking-widest flex items-center gap-1">
@@ -91,7 +91,7 @@
     </div>
 
     <!-- Tab Headers -->
-    <div class="matrix-card p-0 flex">
+    <div class="ui-card p-0 flex">
         <button id="tab-soul" onclick="switchTab('soul')"
             class="flex-1 px-6 py-4 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest border-b-2 transition-all">
             <span class="material-symbols-outlined text-sm">auto_awesome</span>SOUL
@@ -125,17 +125,17 @@
             <input type="hidden" name="tab" value="soul">
             <div class="flex gap-4 flex-1 items-stretch">
                 <div class="flex-1 min-w-0 flex flex-col">
-                    <div class="matrix-card p-4 flex-1 flex flex-col">
+                    <div class="ui-card p-4 flex-1 flex flex-col">
                         <textarea name="content" id="soul-editor"
-                            class="flex-1 w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.15)] outline-none p-4 text-primary/90 font-mono text-xs leading-relaxed resize-none min-h-[400px] transition-all duration-300"
-                            style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;"
+                            class="flex-1 w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-glow-15-15 outline-none p-4 text-primary/90 font-mono text-xs leading-relaxed resize-none min-h-[400px] transition-all duration-300"
+                            style="scrollbar-width: thin; scrollbar-color: rgb(var(--c-primary)) transparent;"
                             spellcheck="false">{{ soul.content }}</textarea>
                     </div>
                 </div>
                 {% if default_soul %}
                 <div id="tplPanel-soul" class="w-[400px] flex-shrink-0 flex flex-col" style="display: none;">
                     <div
-                        class="matrix-card p-4 flex-1 flex flex-col border-primary/20 bg-black/30 overflow-hidden h-[500px]">
+                        class="ui-card p-4 flex-1 flex flex-col border-primary/20 bg-black/30 overflow-hidden h-[500px]">
                         <div class="flex items-center justify-between mb-2">
                             <span class="text-[10px] text-primary/40 uppercase tracking-widest font-bold">Default
                                 Template</span>
@@ -146,7 +146,7 @@
                         </div>
                         <pre id="tplContent-soul"
                             class="flex-1 overflow-auto text-[10px] text-white/80 font-mono leading-relaxed whitespace-pre-wrap break-words"
-                            style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;">{{ default_soul }}</pre>
+                            style="scrollbar-width: thin; scrollbar-color: rgb(var(--c-primary)) transparent;">{{ default_soul }}</pre>
                     </div>
                 </div>
                 {% endif %}
@@ -175,17 +175,17 @@
             <input type="hidden" name="tab" value="user">
             <div class="flex gap-4 flex-1 items-stretch">
                 <div class="flex-1 min-w-0 flex flex-col">
-                    <div class="matrix-card p-4 flex-1 flex flex-col">
+                    <div class="ui-card p-4 flex-1 flex flex-col">
                         <textarea name="content" id="user-editor"
-                            class="flex-1 w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.15)] outline-none p-4 text-primary/90 font-mono text-xs leading-relaxed resize-none min-h-[400px] transition-all duration-300"
-                            style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;"
+                            class="flex-1 w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-glow-15-15 outline-none p-4 text-primary/90 font-mono text-xs leading-relaxed resize-none min-h-[400px] transition-all duration-300"
+                            style="scrollbar-width: thin; scrollbar-color: rgb(var(--c-primary)) transparent;"
                             spellcheck="false">{{ user.content }}</textarea>
                     </div>
                 </div>
                 {% if default_user %}
                 <div id="tplPanel-user" class="w-[400px] flex-shrink-0 flex flex-col" style="display: none;">
                     <div
-                        class="matrix-card p-4 flex-1 flex flex-col border-primary/20 bg-black/30 overflow-hidden h-[500px]">
+                        class="ui-card p-4 flex-1 flex flex-col border-primary/20 bg-black/30 overflow-hidden h-[500px]">
                         <div class="flex items-center justify-between mb-2">
                             <span class="text-[10px] text-primary/40 uppercase tracking-widest font-bold">Default
                                 Template</span>
@@ -196,7 +196,7 @@
                         </div>
                         <pre id="tplContent-user"
                             class="flex-1 overflow-auto text-[10px] text-white/80 font-mono leading-relaxed whitespace-pre-wrap break-words"
-                            style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;">{{ default_user }}</pre>
+                            style="scrollbar-width: thin; scrollbar-color: rgb(var(--c-primary)) transparent;">{{ default_user }}</pre>
                     </div>
                 </div>
                 {% endif %}
@@ -231,17 +231,17 @@
             <input type="hidden" name="tab" value="memory">
             <div class="flex gap-4 flex-1 items-stretch">
                 <div class="flex-1 min-w-0 flex flex-col">
-                    <div class="matrix-card p-4 flex-1 flex flex-col">
+                    <div class="ui-card p-4 flex-1 flex flex-col">
                         <textarea name="content" id="memory-editor"
-                            class="flex-1 w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.15)] outline-none p-4 text-primary/90 font-mono text-xs leading-relaxed resize-none min-h-[400px] transition-all duration-300"
-                            style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;"
+                            class="flex-1 w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-glow-15-15 outline-none p-4 text-primary/90 font-mono text-xs leading-relaxed resize-none min-h-[400px] transition-all duration-300"
+                            style="scrollbar-width: thin; scrollbar-color: rgb(var(--c-primary)) transparent;"
                             spellcheck="false">{{ memory.content }}</textarea>
                     </div>
                 </div>
                 {% if default_memory %}
                 <div id="tplPanel-memory" class="w-[400px] flex-shrink-0 flex flex-col" style="display: none;">
                     <div
-                        class="matrix-card p-4 flex-1 flex flex-col border-primary/20 bg-black/30 overflow-hidden h-[500px]">
+                        class="ui-card p-4 flex-1 flex flex-col border-primary/20 bg-black/30 overflow-hidden h-[500px]">
                         <div class="flex items-center justify-between mb-2">
                             <span class="text-[10px] text-primary/40 uppercase tracking-widest font-bold">Default
                                 Template</span>
@@ -252,7 +252,7 @@
                         </div>
                         <pre id="tplContent-memory"
                             class="flex-1 overflow-auto text-[10px] text-white/80 font-mono leading-relaxed whitespace-pre-wrap break-words"
-                            style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;">{{ default_memory }}</pre>
+                            style="scrollbar-width: thin; scrollbar-color: rgb(var(--c-primary)) transparent;">{{ default_memory }}</pre>
                     </div>
                 </div>
                 {% endif %}
@@ -278,10 +278,10 @@
         </div>
         <form method="POST" action="/profiles/{{ profile_id }}/edit" class="flex flex-col gap-4 flex-1">
             <input type="hidden" name="tab" value="history">
-            <div class="matrix-card p-4 flex-1 flex flex-col">
+            <div class="ui-card p-4 flex-1 flex flex-col">
                 <textarea name="content" id="history-editor"
-                    class="flex-1 w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.15)] outline-none p-4 text-primary/90 font-mono text-xs leading-relaxed resize-none min-h-[400px] transition-all duration-300"
-                    style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;"
+                    class="flex-1 w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-glow-15-15 outline-none p-4 text-primary/90 font-mono text-xs leading-relaxed resize-none min-h-[400px] transition-all duration-300"
+                    style="scrollbar-width: thin; scrollbar-color: rgb(var(--c-primary)) transparent;"
                     spellcheck="false">{{ history.content }}</textarea>
             </div>
             <div class="flex justify-end">
@@ -294,7 +294,7 @@
     </div>
 
     <!-- Terminal Footer -->
-    <div class="matrix-card p-4 font-mono text-[10px] space-y-1 mt-auto">
+    <div class="ui-card p-4 font-mono text-[10px] space-y-1 mt-auto">
         <div class="flex gap-2">
             <span class="text-primary/40">[PRF]</span>
             <span class="text-primary">Editing: {{ profile.name }} ({{ profile_id }})</span>
@@ -310,7 +310,7 @@
 <!-- Reset Memory Confirm Modal -->
 <div id="resetMemoryModal" class="fixed inset-0 z-50 bg-black/80 items-center justify-center" style="display: none;">
     <div
-        class="matrix-card p-6 w-full max-w-md flex flex-col gap-5 border-red-500/40 shadow-[0_0_30px_rgba(255,0,0,0.15)]">
+        class="ui-card p-6 w-full max-w-md flex flex-col gap-5 border-red-500/40 shadow-[0_0_30px_rgba(255,0,0,0.15)]">
         <div class="flex items-center gap-3">
             <span class="material-symbols-outlined text-red-500">warning</span>
             <h3 class="text-sm font-bold uppercase tracking-widest text-red-400">Reset Memory</h3>
@@ -392,7 +392,7 @@
         const pre = document.getElementById('tplContent-' + tab);
         if (!pre) return;
         navigator.clipboard.writeText(pre.textContent).then(() => {
-            const btn = pre.closest('.matrix-card').querySelector('button');
+            const btn = pre.closest('.ui-card').querySelector('button');
             if (btn) {
                 const orig = btn.innerHTML;
                 btn.innerHTML = '<span class="material-symbols-outlined text-[12px]">check</span>Copied!';

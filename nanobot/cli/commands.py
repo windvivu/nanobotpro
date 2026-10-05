@@ -554,6 +554,25 @@ def _migrate_cron_store(config: "Config") -> None:
 # ============================================================================
 
 
+def _default_web_password() -> str:
+    """A generated dashboard password: 16 random characters (about 79 bits), readable without 0/o or
+    1/l/i. Keeps the "nanobot@" prefix the dashboard uses to warn that the default is still in use."""
+    import secrets
+
+    alphabet = "23456789abcdefghjkmnpqrstuvwxyz"
+    return "nanobot@" + "-".join("".join(secrets.choice(alphabet) for _ in range(4)) for _ in range(4))
+
+
+def _heartbeat_target(target: str, enabled_channels) -> tuple[str, str] | None:
+    """The chat heartbeat tasks run for and report to: gateway.heartbeat.target, "channel:chat_id" on an
+    enabled channel. None when it is unset or unusable, and then results are not sent. The latest chat
+    used to be picked, which on a bot several people use could be anyone's, a group included (custom)."""
+    channel, sep, chat_id = (target or "").strip().partition(":")
+    if not sep or not channel or not chat_id or channel not in set(enabled_channels):
+        return None
+    return channel, chat_id
+
+
 @app.command()
 def gateway(
     port: int | None = typer.Option(None, "--port", "-p", help="Gateway port"),
@@ -562,6 +581,7 @@ def gateway(
     config: str | None = typer.Option(None, "--config", "-c", help="Path to config file"),
     web: bool = typer.Option(False, "--web", help="Enable web dashboard"),
     web_host: str | None = typer.Option(None, "--host", help="Bind address for web dashboard (127.0.0.1 or 0.0.0.0)"),
+    theme: str | None = typer.Option(None, "--theme", help="Web dashboard theme: matrix (default), clean, light, office2003, office2010, winxp, aurora, sakura or latte"),
 ):
     """Start the nanobot gateway."""
     from nanobot.agent.loop import AgentLoop
@@ -581,12 +601,10 @@ def gateway(
     _warn_deprecated_config_keys()
     port = port if port is not None else config.gateway.port
 
-    # Custom: auto-generate default password when --web and password is empty
-    if web and not config.gateway.web.password:
-        import secrets
-        import string
-        suffix = "".join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(4))
-        default_pwd = f"nanobot@{suffix}"
+    # Custom: auto-generate a default password whenever the dashboard starts without one (by --web or by
+    # gateway.web.enabled), so it is never served without a login
+    if (web or config.gateway.web.enabled) and not config.gateway.web.password:
+        default_pwd = _default_web_password()
         config.gateway.web.password = default_pwd
         from nanobot.config.loader import save_config
         save_config(config)
@@ -635,6 +653,7 @@ def gateway(
         enable_spawn=config.tools.enable_spawn,
         enable_cron=config.tools.enable_cron,
         enable_mcp=config.tools.enable_mcp,
+        custom_tools=config.tools.custom_tools,
         disabled_skills=config.tools.disabled_skills,
         timezone=config.agents.defaults.timezone,
         chatbot_config=config.chatbot,
@@ -643,6 +662,9 @@ def gateway(
         session_ttl_minutes=config.agents.defaults.session_ttl_minutes,
         image_generation_config=config.tools.image_generation,
         image_generation_provider_configs=image_gen_provider_configs(config),
+        trader_mode=config.trader_mode,
+        market_scanner_config=config.market_scanner,
+        brain_memory_config=config.brain_memory,
     )
     agent._active_preset = effective_model.preset_name
     agent._provider_snapshot = provider_snapshot_from_config(config)
@@ -712,33 +734,28 @@ def gateway(
     agent.dream.max_batch_size = dream_cfg.max_batch_size
     agent.dream.max_iterations = dream_cfg.max_iterations
     from nanobot.cron.types import CronJob as _CronJob, CronPayload as _CronPayload
-    cron.register_system_job(_CronJob(
-        id="dream",
-        name="dream",
-        schedule=dream_cfg.build_schedule(config.agents.defaults.timezone),
-        payload=_CronPayload(kind="system_event"),
-    ))
-    console.print(f"[green]✓[/green] Dream: {dream_cfg.describe_schedule()}")
+    if dream_cfg.enabled:
+        cron.register_system_job(_CronJob(
+            id="dream",
+            name="dream",
+            schedule=dream_cfg.build_schedule(config.agents.defaults.timezone),
+            payload=_CronPayload(kind="system_event"),
+        ))
+        console.print(f"[green]✓[/green] Dream: {dream_cfg.describe_schedule()}")
+    else:
+        # agents.defaults.dream.enabled = false: no scheduled run, and the job kept in the cron store by an
+        # earlier start goes too. /dream still runs it by hand (as upstream, custom)
+        console.print("[yellow]○[/yellow] Dream: disabled")
+        cron.remove_system_job("dream")
 
     # Create channel manager
     from nanobot.channels.safe_manager import SafeChannelManager
     channels = SafeChannelManager(config, bus)
 
     def _pick_heartbeat_target() -> tuple[str, str]:
-        """Pick a routable channel/chat target for heartbeat-triggered messages."""
-        enabled = set(channels.enabled_channels)
-        # Prefer the most recently updated non-internal session on an enabled channel.
-        for item in session_manager.list_sessions():
-            key = item.get("key") or ""
-            if ":" not in key:
-                continue
-            channel, chat_id = key.split(":", 1)
-            if channel in {"cli", "system"}:
-                continue
-            if channel in enabled and chat_id:
-                return channel, chat_id
-        # Fallback keeps prior behavior but remains explicit.
-        return "cli", "direct"
+        """Where heartbeat tasks run and report: gateway.heartbeat.target only, never a guess from the latest
+        chat (custom, _heartbeat_target). ("cli", "direct") runs them without sending anything."""
+        return _heartbeat_target(hb_cfg.target, channels.enabled_channels) or ("cli", "direct")
 
     # Create heartbeat service
     async def on_heartbeat_execute(tasks: str) -> str:
@@ -762,6 +779,9 @@ def gateway(
         session.retain_recent_legal_suffix(hb_cfg.keep_recent_messages)
         agent.sessions.save(session)
 
+        # Its reply already went to the target chat with files (message tool): nothing more to send (custom)
+        if (getattr(resp, "metadata", None) or {}).get("_answered_with_files"):
+            return ""
         return resp.content if resp else ""
 
     async def on_heartbeat_notify(response: str) -> None:
@@ -792,7 +812,16 @@ def gateway(
     if cron_status["jobs"] > 0:
         console.print(f"[green]✓[/green] Cron: {cron_status['jobs']} scheduled jobs")
 
-    console.print(f"[green]✓[/green] Heartbeat: every {hb_cfg.interval_s}s")
+    hb_target = _heartbeat_target(hb_cfg.target, channels.enabled_channels)
+    if not hb_cfg.enabled:
+        console.print("[yellow]○[/yellow] Heartbeat: disabled")
+    elif hb_target:
+        console.print(f"[green]✓[/green] Heartbeat: every {hb_cfg.interval_s}s, results to {hb_target[0]}:{hb_target[1]}")
+    else:
+        # Custom: without gateway.heartbeat.target the tasks still run but their results go nowhere
+        why = (f"{hb_cfg.target.strip()} is not a chat on an enabled channel" if hb_cfg.target.strip()
+               else "set gateway.heartbeat.target to \"channel:chat_id\"")
+        console.print(f"[yellow]○[/yellow] Heartbeat: every {hb_cfg.interval_s}s, results not sent ({why})")
 
     async def run():
         web_task = None
@@ -801,11 +830,20 @@ def gateway(
             await heartbeat.start()
             # Start web dashboard if enabled
             if web or config.gateway.web.enabled:
+                from nanobot.config.paths import get_data_dir
+                from nanobot.web.auth import keep_sessions_in
                 from nanobot.web.cli import start_web
+
+                # Dashboard logins survive the restart button, which starts a new process: they are
+                # kept next to config.json, one file per bot (web/auth.py) (custom)
+                bot_id = getattr(config.gateway, "bot_id", "") or ""
+                keep_sessions_in(get_data_dir() / (f"web_sessions_{bot_id}.json" if bot_id else "web_sessions.json"),
+                                 config.gateway.web.password or "")
                 web_port = config.gateway.web.port
                 _web_host = web_host if web_host in ("127.0.0.1", "0.0.0.0") else config.gateway.web.host
                 web_task = asyncio.create_task(
-                    start_web(config, session_manager, agent, channel_manager=channels, port=web_port, host=_web_host)
+                    start_web(config, session_manager, agent, channel_manager=channels, port=web_port,
+                              host=_web_host, theme=theme)
                 )
                 console.print(f"[green]✓[/green] Web dashboard: http://{_web_host}:{web_port}")
             await asyncio.gather(
@@ -915,6 +953,7 @@ def agent(
         enable_spawn=config.tools.enable_spawn,
         enable_cron=config.tools.enable_cron,
         enable_mcp=config.tools.enable_mcp,
+        custom_tools=config.tools.custom_tools,
         disabled_skills=config.tools.disabled_skills,
         timezone=config.agents.defaults.timezone,
         chatbot_config=config.chatbot,
@@ -923,6 +962,9 @@ def agent(
         session_ttl_minutes=config.agents.defaults.session_ttl_minutes,
         image_generation_config=config.tools.image_generation,
         image_generation_provider_configs=image_gen_provider_configs(config),
+        trader_mode=config.trader_mode,
+        market_scanner_config=config.market_scanner,
+        brain_memory_config=config.brain_memory,
     )
     agent_loop._active_preset = effective_model.preset_name
     agent_loop._provider_snapshot = provider_snapshot_from_config(config)

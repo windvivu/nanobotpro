@@ -1,19 +1,19 @@
 {% extends "base.html" %}
 
-{% block title %}Personality — Nanobot OS{% endblock %}
+{% block title %}{{ tr('nav.personality') }} — Nanobot OS{% endblock %}
 
 {% block content %}
 <!-- Sidebar -->
 <aside class="w-full lg:w-72 flex flex-col gap-6">
-    <div class="matrix-card p-6 flex flex-col items-center text-center gap-4">
+    <div class="ui-card p-6 flex flex-col items-center text-center gap-4">
         <div
             class="w-20 h-20 flex items-center justify-center text-primary glow-text border-2 border-primary/30 rounded-full relative">
             <div class="absolute inset-0 border border-primary animate-pulse rounded-full opacity-20"></div>
             <span class="material-symbols-outlined text-4xl">psychology</span>
         </div>
         <div>
-            <h2 class="text-lg font-bold glow-text tracking-widest uppercase">Personality</h2>
-            <p class="text-[10px] text-primary/50 font-mono">SOUL · MEMORY · HISTORY</p>
+            <h2 class="text-lg font-bold glow-text tracking-widest uppercase">{{ tr('nav.personality') }}</h2>
+            <p class="text-[10px] text-primary/50 font-mono">{{ tr('page.personality_sources') }}</p>
         </div>
     </div>
 
@@ -23,7 +23,7 @@
     {% include "_sidebar_nav.html" %}
 
     <!-- File info -->
-    <div class="matrix-card p-4 text-[10px] leading-relaxed text-primary/40 uppercase tracking-tighter space-y-1">
+    <div class="ui-card p-4 text-[10px] leading-relaxed text-primary/40 uppercase tracking-tighter space-y-1">
         <div class="flex justify-between">
             <span>SOUL.md</span>
             <span class="text-primary/70">{{ soul.size ~ ' B' if soul.exists else 'N/A' }}</span>
@@ -44,7 +44,7 @@
 
     {% if saved %}
     <div id="flashMsg"
-        class="fixed top-6 right-6 z-50 matrix-card border-primary bg-black/95 px-6 py-4 flex items-center gap-4 shadow-[0_0_20px_rgba(0,255,65,0.3)]"
+        class="fixed top-6 right-6 z-50 ui-card border-primary bg-black/95 px-6 py-4 flex items-center gap-4 shadow-glow-20-30"
         style="animation: toastIn 0.3s ease-out;">
         <span class="material-symbols-outlined text-primary glow-text">check_circle</span>
         <span class="text-sm font-bold glow-text uppercase tracking-widest">SOUL.md Saved</span>
@@ -56,14 +56,14 @@
     {% endif %}
 
     {% if error %}
-    <div class="matrix-card border-red-500 bg-red-950/30 px-6 py-4 flex items-center gap-4">
+    <div class="ui-card border-red-500 bg-red-950/30 px-6 py-4 flex items-center gap-4">
         <span class="material-symbols-outlined text-red-500 blinking">error</span>
         <span class="text-sm font-bold text-red-400 uppercase tracking-widest">{{ error }}</span>
     </div>
     {% endif %}
 
     <!-- Tab Headers -->
-    <div class="matrix-card p-0 flex relative z-40 pointer-events-auto">
+    <div class="ui-card p-0 flex relative z-40 pointer-events-auto">
         <button type="button" id="tab-soul" onclick="switchTab('soul')"
             class="flex-1 px-6 py-4 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest border-b-2 transition-all">
             <span class="material-symbols-outlined text-sm">auto_awesome</span>SOUL
@@ -92,7 +92,7 @@
                     class="text-[10px] font-bold uppercase tracking-wider {{ 'glow-text' if active_profile != 'Default' else 'text-primary/50' }}">{{
                     active_profile }}</span>
                 {% if active_profile != 'Default' %}
-                <span class="w-1.5 h-1.5 bg-primary rounded-full animate-pulse shadow-[0_0_5px_#00FF41]"></span>
+                <span class="w-1.5 h-1.5 bg-primary rounded-full animate-pulse shadow-glow-5"></span>
                 {% endif %}
             </a>
             {% if default_soul %}
@@ -107,16 +107,16 @@
             <input type="hidden" name="file_key" value="soul">
             <div class="flex gap-4 flex-1 items-stretch">
                 <div class="flex-1 min-w-0 flex flex-col">
-                    <div class="matrix-card p-4 flex-1 flex flex-col">
+                    <div class="ui-card p-4 flex-1 flex flex-col">
                         <textarea name="content" id="soul-editor"
-                            class="flex-1 w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.15)] outline-none p-4 text-primary/90 font-mono text-xs leading-relaxed resize-none min-h-[380px] transition-all duration-300"
-                            style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;"
+                            class="flex-1 w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-glow-15-15 outline-none p-4 text-primary/90 font-mono text-xs leading-relaxed resize-none min-h-[380px] transition-all duration-300"
+                            style="scrollbar-width: thin; scrollbar-color: rgb(var(--c-primary)) transparent;"
                             spellcheck="false">{{ soul.content }}</textarea>
                     </div>
                 </div>
                 {% if default_soul %}
                 <div id="tplPanel-soul" class="flex-col min-w-0" style="flex: 0 0 45%; display: none;">
-                    <div class="matrix-card p-4 border-white/20 flex-1 flex flex-col h-full">
+                    <div class="ui-card p-4 border-white/20 flex-1 flex flex-col h-full">
                         <div class="flex items-center justify-between mb-3 flex-shrink-0">
                             <div class="flex items-center gap-2">
                                 <span class="material-symbols-outlined text-white/60 text-sm">description</span>
@@ -149,7 +149,7 @@
                 <button type="submit"
                     class="px-8 py-3 border border-primary bg-primary/10 text-primary font-bold uppercase tracking-[0.3em] text-sm hover:bg-primary hover:text-black transition-all duration-300 glow-text flex items-center gap-3 group">
                     <span class="material-symbols-outlined text-sm group-hover:text-black transition-colors">save</span>
-                    Save SOUL.md <span class="blinking">_</span>
+                    Save SOUL.md <span class="blinking ui-cursor">_</span>
                 </button>
                 <span class="text-[10px] text-primary/30 uppercase tracking-wider">Takes effect on next agent
                     message</span>
@@ -159,7 +159,7 @@
                             <input type="checkbox" id="multi_message_toggle"
                                 class="sr-only peer" />
                             <div class="w-10 h-5 bg-black/60 border border-primary/30 peer-checked:bg-primary/30 peer-checked:border-primary transition-all duration-300"></div>
-                            <div class="absolute top-[2px] left-[2px] w-4 h-4 bg-primary/30 peer-checked:bg-primary peer-checked:shadow-[0_0_8px_#00FF41] peer-checked:translate-x-5 transition-all duration-300"></div>
+                            <div class="absolute top-[2px] left-[2px] w-4 h-4 bg-primary/30 peer-checked:bg-primary peer-checked:shadow-glow-8 peer-checked:translate-x-5 transition-all duration-300"></div>
                         </div>
                         <span class="text-[10px] font-bold uppercase tracking-widest text-primary/60 group-hover:text-primary transition-colors select-none">Multi-Message Split</span>
                     </label>
@@ -191,16 +191,16 @@
             <input type="hidden" name="file_key" value="user">
             <div class="flex gap-4 flex-1 items-stretch">
                 <div class="flex-1 min-w-0 flex flex-col">
-                    <div class="matrix-card p-4 flex-1 flex flex-col">
+                    <div class="ui-card p-4 flex-1 flex flex-col">
                         <textarea name="content" id="user-editor"
-                            class="flex-1 w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.15)] outline-none p-4 text-primary/90 font-mono text-xs leading-relaxed resize-none min-h-[380px] transition-all duration-300"
-                            style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;"
+                            class="flex-1 w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-glow-15-15 outline-none p-4 text-primary/90 font-mono text-xs leading-relaxed resize-none min-h-[380px] transition-all duration-300"
+                            style="scrollbar-width: thin; scrollbar-color: rgb(var(--c-primary)) transparent;"
                             spellcheck="false">{{ user.content }}</textarea>
                     </div>
                 </div>
                 {% if default_user %}
                 <div id="tplPanel-user" class="flex-col min-w-0" style="flex: 0 0 45%; display: none;">
-                    <div class="matrix-card p-4 border-white/20 flex-1 flex flex-col h-full">
+                    <div class="ui-card p-4 border-white/20 flex-1 flex flex-col h-full">
                         <div class="flex items-center justify-between mb-3 flex-shrink-0">
                             <div class="flex items-center gap-2">
                                 <span class="material-symbols-outlined text-white/60 text-sm">description</span>
@@ -233,7 +233,7 @@
                 <button type="submit"
                     class="px-8 py-3 border border-primary bg-primary/10 text-primary font-bold uppercase tracking-[0.3em] text-sm hover:bg-primary hover:text-black transition-all duration-300 glow-text flex items-center gap-3 group">
                     <span class="material-symbols-outlined text-sm group-hover:text-black transition-colors">save</span>
-                    Save USER.md <span class="blinking">_</span>
+                    Save USER.md <span class="blinking ui-cursor">_</span>
                 </button>
                 <span class="text-[10px] text-primary/30 uppercase tracking-wider">Takes effect on next agent
                     message</span>
@@ -260,10 +260,10 @@
             {% endif %}
         </div>
         <div class="flex gap-4 flex-1 items-stretch">
-            <div class="matrix-card p-4 flex-1 min-w-0">
+            <div class="ui-card p-4 flex-1 min-w-0">
                 {% if memory.exists %}
                 <pre class="text-xs text-primary/80 font-mono leading-relaxed whitespace-pre-wrap break-words max-h-[calc(100vh-300px)] overflow-y-auto"
-                    style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;">{{ memory.content }}</pre>
+                    style="scrollbar-width: thin; scrollbar-color: rgb(var(--c-primary)) transparent;">{{ memory.content }}</pre>
                 {% else %}
                 <div class="flex flex-col items-center justify-center py-16 text-center gap-4">
                     <span class="material-symbols-outlined text-5xl text-primary/20">psychology_alt</span>
@@ -275,7 +275,7 @@
             </div>
             {% if default_memory %}
             <div id="tplPanel-memory" class="flex-col min-w-0" style="flex: 0 0 45%; display: none;">
-                <div class="matrix-card p-4 border-white/20 flex-1 flex flex-col h-full">
+                <div class="ui-card p-4 border-white/20 flex-1 flex flex-col h-full">
                     <div class="flex items-center justify-between mb-3 flex-shrink-0">
                         <div class="flex items-center gap-2">
                             <span class="material-symbols-outlined text-white/60 text-sm">description</span>
@@ -316,10 +316,10 @@
                 Reset Memory
             </button>
         </div>
-        <div class="matrix-card p-4 flex-1">
+        <div class="ui-card p-4 flex-1">
             {% if history.exists %}
             <pre class="text-xs text-primary/80 font-mono leading-relaxed whitespace-pre-wrap break-words max-h-[calc(100vh-300px)] overflow-y-auto"
-                style="scrollbar-width: thin; scrollbar-color: #00FF41 transparent;">{{ history.content }}</pre>
+                style="scrollbar-width: thin; scrollbar-color: rgb(var(--c-primary)) transparent;">{{ history.content }}</pre>
             {% else %}
             <div class="flex flex-col items-center justify-center py-16 text-center gap-4">
                 <span class="material-symbols-outlined text-5xl text-primary/20">history</span>
@@ -334,7 +334,7 @@
     <div id="resetMemoryModal" class="fixed inset-0 z-50 bg-black/80 items-center justify-center"
         style="display: none;">
         <div
-            class="matrix-card p-6 w-full max-w-md flex flex-col gap-5 border-red-500/40 shadow-[0_0_30px_rgba(255,0,0,0.15)]">
+            class="ui-card p-6 w-full max-w-md flex flex-col gap-5 border-red-500/40 shadow-[0_0_30px_rgba(255,0,0,0.15)]">
             <div class="flex items-center gap-3">
                 <span class="material-symbols-outlined text-red-500">warning</span>
                 <h3 class="text-sm font-bold uppercase tracking-widest text-red-400">Reset Memory</h3>
@@ -362,7 +362,7 @@
     </div>
 
     <!-- Terminal Footer -->
-    <div class="matrix-card p-4 font-mono text-[11px] leading-tight space-y-1">
+    <div class="ui-card p-4 font-mono text-[11px] leading-tight space-y-1">
         <div class="flex gap-2">
             <span class="text-primary/40">[PSY]</span>
             <span class="text-primary">Workspace: {{ workspace }}</span>
@@ -408,19 +408,19 @@
     }
 
     .tab-active {
-        border-color: #00FF41;
-        color: #00FF41;
-        text-shadow: 0 0 8px #00FF41;
-        background: rgba(0, 255, 65, 0.05);
+        border-color: rgb(var(--c-primary));
+        color: rgb(var(--c-primary));
+        text-shadow: 0 0 8px rgb(var(--c-accent) / var(--glow));
+        background: rgb(var(--c-primary) / 0.05);
     }
 
     .tab-inactive {
         border-color: transparent;
-        color: rgba(0, 255, 65, 0.4);
+        color: rgb(var(--c-primary) / var(--text-alpha-40));
     }
 
     .tab-inactive:hover {
-        color: rgba(0, 255, 65, 0.7);
+        color: rgb(var(--c-primary) / 0.7);
     }
 </style>
 <script>

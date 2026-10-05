@@ -1,0 +1,37 @@
+{#- Light theme: flat UI on a light background, same token contract as themes/matrix/head.html.
+    The Tailwind "black"/"white" roles are swapped: "black" is the recessive shade (inputs, panels,
+    text on primary buttons) and "white" the high-contrast ink. Palette shades the templates use
+    (red/yellow/orange/green/blue) are darkened for contrast on white. #}
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+    :root {
+        --c-canvas: 244 245 247;    /* page background */
+        --c-primary: 17 24 39;      /* main ink: text, borders, fills */
+        --c-accent: 37 99 235;      /* highlights: active nav, focus, checked controls */
+        --c-surface: 255 255 255;   /* cards, dropdown options */
+        --c-black: 255 255 255;     /* Tailwind "black" (swapped): inset inputs, panels, text on primary */
+        --c-white: 17 24 39;        /* Tailwind "white" (swapped): strong text */
+        --c-success: 22 163 74;
+        --c-warning: 161 98 7;
+        --c-danger: 220 38 38;
+        --c-danger-soft: 220 38 38;
+        --c-red-300: 185 28 28;
+        --c-red-400: 182 29 29;
+        --c-red-500: 182 29 29;
+        --c-red-950: 254 226 226;
+        --c-yellow-200: 113 63 18;
+        --c-yellow-300: 133 77 14;
+        --c-yellow-400: 129 79 5;
+        --c-yellow-500: 129 79 5;
+        --c-orange-400: 159 60 8;
+        --c-orange-500: 194 65 12;
+        --c-green-400: 14 105 48;
+        --c-blue-400: 20 79 212;
+        --glow: 0;                  /* no glows */
+        --text-floor: 0.55;         /* faint text never goes below this (base.html): subtext stays readable */
+        --font-ui: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+        --logo-filter: grayscale(1);
+        --card-shadow: 0 1px 2px rgb(16 24 40 / 0.05), 0 1px 3px rgb(16 24 40 / 0.08);
+        color-scheme: light;
+    }
+</style>

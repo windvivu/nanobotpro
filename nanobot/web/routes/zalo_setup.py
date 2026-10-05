@@ -48,6 +48,7 @@ async def zalo_setup_page(request: Request):
             "allow_from": " ".join(_zget(zalo_raw, "allow_from", ["*"])) or "*",
             "node_path": _zget(zalo_raw, "node_path", "node"),
             "group_reply_mode": _zget(zalo_raw, "group_reply_mode", "ambient"),
+            "group_filter": _zget(zalo_raw, "group_filter", "log"),
         }
     except Exception:
         zalo_config = {
@@ -55,6 +56,7 @@ async def zalo_setup_page(request: Request):
             "allow_from": "*",
             "node_path": "node",
             "group_reply_mode": "ambient",
+            "group_filter": "log",
         }
 
     # Check bridge installation status (persists across page refreshes)
@@ -72,7 +74,12 @@ async def zalo_setup_page(request: Request):
     except Exception:
         bridge_status = {"installed": None, "version": None}  # unknown
 
+    from nanobot.web.routes.dashboard import active_profile
+
+    profile_id, profile_name = active_profile(request.app.state.config.workspace_path)
     return request.app.state.templates.TemplateResponse(request, "zalo_setup.html", {
+        "profile_id": profile_id,
+        "profile_name": profile_name,
         "zalo_status": status_data,
         "zalo_config": zalo_config,
         "bridge_status": bridge_status,
@@ -110,7 +117,8 @@ async def zalo_clear_session(request: Request):
     if not zalo_channel:
         return JSONResponse({"status": "error", "message": "Zalo channel not enabled"}, status_code=400)
 
-    if zalo_channel._status != zalo_channel.STATUS_DISCONNECTED:
+    # AUTH_REQUIRED counts as disconnected: the bridge exited after the session expired.
+    if zalo_channel._status not in (zalo_channel.STATUS_DISCONNECTED, zalo_channel.STATUS_AUTH_REQUIRED):
         return JSONResponse({"status": "error", "message": "Disconnect first before clearing session"}, status_code=400)
 
     cleared = False
@@ -197,6 +205,9 @@ async def zalo_save_config(request: Request):
                 {"success": False, "error": "Invalid groupReplyMode"},
                 status_code=400,
             )
+        group_filter = body.get("group_filter") or body.get("groupFilter") or "log"
+        if group_filter not in {"off", "log", "on"}:
+            return JSONResponse({"success": False, "error": "Invalid groupFilter"}, status_code=400)
 
         # Support both dict (extra field) and typed object for channel config
         zalo_raw = getattr(cfg.channels, "zalo", None)
@@ -208,10 +219,12 @@ async def zalo_save_config(request: Request):
             zalo_raw["allow_from"] = allow_from_list
             zalo_raw["node_path"] = node_path
             zalo_raw["groupReplyMode"] = group_reply_mode
+            zalo_raw["groupFilter"] = group_filter
         elif zalo_raw is not None:
             zalo_raw.allow_from = allow_from_list
             zalo_raw.node_path = node_path
             zalo_raw.group_reply_mode = group_reply_mode
+            zalo_raw.group_filter = group_filter
 
         save_config(cfg)
 
@@ -223,6 +236,7 @@ async def zalo_save_config(request: Request):
                 "allowFrom": allow_from_list,
                 "nodePath": node_path,
                 "groupReplyMode": group_reply_mode,
+                "groupFilter": group_filter,
             }
             current_enabled = getattr(zalo_channel.config, "enabled", True)
             live_data["enabled"] = current_enabled
@@ -230,10 +244,11 @@ async def zalo_save_config(request: Request):
             zalo_channel._node_path = node_path
 
         logger.info(
-            "Zalo config saved: allow_from={}, node_path={}, group_reply_mode={}",
+            "Zalo config saved: allow_from={}, node_path={}, group_reply_mode={}, group_filter={}",
             allow_from_list,
             node_path,
             group_reply_mode,
+            group_filter,
         )
         return JSONResponse({"success": True, "message": "Saved. Applies to the next Zalo message."})
     except Exception as e:
@@ -251,8 +266,10 @@ async def zalo_reinstall_bridge(request: Request):
 
     zalo_channel = _get_zalo_channel(request)
 
-    # Must be disconnected first
-    if zalo_channel and zalo_channel._status != zalo_channel.STATUS_DISCONNECTED:
+    # Must be disconnected first (AUTH_REQUIRED too: its bridge already exited)
+    if zalo_channel and zalo_channel._status not in (
+        zalo_channel.STATUS_DISCONNECTED, zalo_channel.STATUS_AUTH_REQUIRED
+    ):
         return JSONResponse(
             {"success": False, "error": "Disconnect from Zalo before reinstalling."},
             status_code=400,

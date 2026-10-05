@@ -1,0 +1,56 @@
+{#- Windows XP theme (Luna Blue): the dashboard is an XP window on a Bliss-like desktop. Luna title
+    bar, beige window body, Explorer task pane sidebar, XP push buttons, Tahoma. Same token contract
+    as themes/matrix/head.html; like the light theme, the Tailwind "black"/"white" roles are swapped. #}
+<style>
+    :root {
+        --c-canvas: 58 110 165;     /* classic desktop blue (behind the Bliss gradient) */
+        --c-primary: 0 0 0;         /* black text, greys through opacity */
+        --c-accent: 49 106 197;     /* XP selection blue: focus, links, checked controls */
+        --c-surface: 252 252 254;   /* dialog tab sheets, dropdown options */
+        --c-black: 255 255 255;     /* Tailwind "black" (swapped): text boxes, panels, text on primary */
+        --c-white: 0 0 0;           /* Tailwind "white" (swapped): strong text */
+        --c-success: 0 128 0;
+        --c-warning: 153 102 0;
+        --c-danger: 204 0 0;
+        --c-danger-soft: 204 0 0;
+        --c-red-300: 153 0 0;
+        --c-red-400: 171 0 0;
+        --c-red-500: 171 0 0;
+        --c-red-950: 255 230 230;
+        --c-yellow-200: 113 63 18;
+        --c-yellow-300: 115 66 12;
+        --c-yellow-400: 107 71 0;
+        --c-yellow-500: 107 71 0;
+        --c-orange-400: 127 58 0;
+        --c-orange-500: 192 80 0;
+        --c-green-400: 0 92 0;
+        --c-blue-400: 26 75 159;
+        --glow: 0;                  /* no glows */
+        --text-floor: 0.47;         /* faint text never goes below this (base.html): subtext stays readable */
+        --font-ui: Tahoma, Verdana, 'Segoe UI', sans-serif;
+        --logo-filter: none;
+        --card-shadow: none;
+        color-scheme: light;
+
+        /* Luna surfaces, used by theme.css */
+        --xp-bliss:
+            radial-gradient(ellipse 75% 45% at 25% 108%, #78bd45 0%, #4f9c2d 60%, transparent 61%),
+            radial-gradient(ellipse 80% 40% at 85% 112%, #69b03b 0%, #3f8a25 62%, transparent 63%),
+            linear-gradient(180deg, #2f6fd8 0%, #5b97e8 40%, #a9cdf5 72%, #dcebfa 100%);
+        --xp-titlebar: linear-gradient(180deg, #0997ff 0%, #0053ee 8%, #0050ee 40%, #0066ff 88%, #0066ff 93%, #005bff 95%, #003dd7 96%, #003dd7 100%);
+        --xp-frame: 0 84 227;
+        --xp-window: 236 233 216;   /* beige window body */
+        --xp-sheet: linear-gradient(180deg, #fcfcfe 0%, #f4f3ee 100%);
+        --xp-sheet-border: 145 155 156;
+        --xp-taskpane: linear-gradient(180deg, #7ba2e7 0%, #6375d6 100%);
+        --xp-task: linear-gradient(90deg, #ffffff 0%, #c6d3f7 100%);
+        --xp-link: 33 93 198;
+        --xp-link-hover: 66 142 255;
+        --xp-button: linear-gradient(180deg, #ffffff 0%, #ecebe6 86%, #d6d0c5 100%);
+        --xp-button-border: 0 60 116;
+        --xp-button-hover: inset -1px 1px #fff0cf, inset 1px 2px #fdd889, inset -2px 2px #fbc761, inset 2px -2px #e5a01a;
+        --xp-button-pressed: linear-gradient(180deg, #cdcac3 0%, #e3e3db 8%, #e5e5de 94%, #f2f2f1 100%);
+        --xp-start: linear-gradient(180deg, #5eac56 0%, #3c9c3c 45%, #2f8a2f 100%);
+        --xp-textbox-border: 127 157 185;
+    }
+</style>

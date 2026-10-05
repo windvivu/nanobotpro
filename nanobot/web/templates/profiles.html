@@ -1,16 +1,16 @@
 {% extends "base.html" %}
-{% block title %}Profiles — Nanobot OS{% endblock %}
+{% block title %}{{ tr('nav.profiles') }} — Nanobot OS{% endblock %}
 {% block content %}
 <!-- Sidebar -->
 <aside class="w-full lg:w-72 flex flex-col gap-6">
-    <div class="matrix-card p-6 flex flex-col items-center text-center gap-4">
+    <div class="ui-card p-6 flex flex-col items-center text-center gap-4">
         <div
             class="w-20 h-20 flex items-center justify-center text-primary glow-text border-2 border-primary/30 rounded-full relative">
             <div class="absolute inset-0 border border-primary animate-pulse rounded-full opacity-20"></div>
             <span class="material-symbols-outlined text-4xl">swap_horiz</span>
         </div>
         <div>
-            <h2 class="text-lg font-bold glow-text tracking-widest uppercase">Profiles</h2>
+            <h2 class="text-lg font-bold glow-text tracking-widest uppercase">{{ tr('nav.profiles') }}</h2>
             <p class="text-[10px] text-primary/50 font-mono truncate max-w-[200px]">{{ active_id or 'No Profile' }}</p>
         </div>
     </div>
@@ -26,7 +26,7 @@
     <!-- Toast notification -->
     {% if saved %}
     <div id="flashMsg"
-        class="fixed top-6 right-6 z-50 matrix-card border-primary bg-black/95 px-6 py-4 flex items-center gap-4 shadow-[0_0_20px_rgba(0,255,65,0.3)]"
+        class="fixed top-6 right-6 z-50 ui-card border-primary bg-black/95 px-6 py-4 flex items-center gap-4 shadow-glow-20-30"
         style="animation: toastIn 0.3s ease-out;">
         <span class="material-symbols-outlined text-primary glow-text">check_circle</span>
         <div>
@@ -46,7 +46,7 @@
     {% endif %}
 
     <!-- Header -->
-    <div class="matrix-card p-6 flex items-center justify-between">
+    <div class="ui-card p-6 flex items-center justify-between">
         <div class="flex items-center gap-4">
             <span class="material-symbols-outlined text-2xl glow-text">swap_horiz</span>
             <div>
@@ -59,13 +59,13 @@
         <button onclick="document.getElementById('createModal').style.display='flex'"
             class="px-6 py-3 border border-primary bg-primary/10 text-primary font-bold uppercase tracking-[0.3em] text-sm hover:bg-primary hover:text-black transition-all duration-300 glow-text flex items-center gap-3 group">
             <span class="material-symbols-outlined text-sm group-hover:text-black transition-colors">add</span>
-            New Profile <span class="blinking">_</span>
+            New Profile <span class="blinking ui-cursor">_</span>
         </button>
     </div>
 
     <!-- Active Profile Indicator -->
     {% if active_id %}
-    <div class="matrix-card p-4 border-primary/40 bg-primary/5 flex items-center gap-4">
+    <div class="ui-card p-4 border-primary/40 bg-primary/5 flex items-center gap-4">
         <span class="material-symbols-outlined text-primary glow-text">play_circle</span>
         <span class="text-[10px] text-primary/60 uppercase tracking-widest font-bold">Active:</span>
         {% for p in profiles %}
@@ -82,7 +82,7 @@
     <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {% for p in profiles %}
         <div
-            class="matrix-card p-0 flex flex-col {{ 'profile-active-card border-primary/60' if p.id == active_id else 'border-primary/15' }}">
+            class="ui-card p-0 flex flex-col {{ 'profile-active-card border-primary/60' if p.id == active_id else 'border-primary/15' }}">
             <!-- Profile Header -->
             <div class="p-4 border-b border-primary/10 flex items-center gap-3">
                 <span
@@ -154,7 +154,7 @@
     </div>
     {% else %}
     <!-- Empty State -->
-    <div class="matrix-card p-16 flex flex-col items-center justify-center gap-6 text-center">
+    <div class="ui-card p-16 flex flex-col items-center justify-center gap-6 text-center">
         <span class="material-symbols-outlined text-6xl text-primary/15">swap_horiz</span>
         <div>
             <h3 class="text-sm font-bold uppercase tracking-widest text-primary/40">No Profiles Yet</h3>
@@ -169,7 +169,7 @@
     {% endif %}
 
     <!-- Terminal Footer -->
-    <div class="matrix-card p-4 font-mono text-[10px] space-y-1 mt-auto">
+    <div class="ui-card p-4 font-mono text-[10px] space-y-1 mt-auto">
         <div class="flex gap-2">
             <span class="text-primary/40">[PRF]</span>
             <span class="text-primary">Total profiles: {{ profiles|length }}</span>
@@ -185,7 +185,7 @@
 <!-- Create Profile Modal -->
 <div id="createModal" class="fixed inset-0 z-50 bg-black/80 items-center justify-center" style="display: none;">
     <div
-        class="matrix-card p-6 w-full max-w-md flex flex-col gap-6 border-primary/40 shadow-[0_0_30px_rgba(0,255,65,0.2)]">
+        class="ui-card p-6 w-full max-w-md flex flex-col gap-6 border-primary/40 shadow-glow-30-20">
         <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
                 <span class="material-symbols-outlined text-primary glow-text">add_circle</span>
@@ -201,22 +201,22 @@
             <div class="flex flex-col gap-2">
                 <label class="text-[10px] text-primary/60 uppercase tracking-widest font-bold">Profile Name *</label>
                 <input type="text" name="name" required placeholder="e.g. Friendly Cat 🐈"
-                    class="w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.15)] outline-none px-4 py-3 text-primary/90 font-mono text-xs transition-all duration-300">
+                    class="w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-glow-15-15 outline-none px-4 py-3 text-primary/90 font-mono text-xs transition-all duration-300">
             </div>
             <div class="flex flex-col gap-2">
                 <label class="text-[10px] text-primary/60 uppercase tracking-widest font-bold">Description</label>
                 <input type="text" name="description" placeholder="Short description..."
-                    class="w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-[0_0_15px_rgba(0,255,65,0.15)] outline-none px-4 py-3 text-primary/90 font-mono text-xs transition-all duration-300">
+                    class="w-full bg-black/60 border border-primary/30 focus:border-primary focus:shadow-glow-15-15 outline-none px-4 py-3 text-primary/90 font-mono text-xs transition-all duration-300">
             </div>
             <div class="flex flex-col gap-2">
                 <label class="text-[10px] text-primary/60 uppercase tracking-widest font-bold">Initialize From</label>
                 <div class="flex gap-3">
                     <label class="flex items-center gap-2 cursor-pointer">
-                        <input type="radio" name="source" value="current" checked class="accent-[#00FF41]">
+                        <input type="radio" name="source" value="current" checked class="accent-accent">
                         <span class="text-xs text-primary/80">Current workspace</span>
                     </label>
                     <label class="flex items-center gap-2 cursor-pointer">
-                        <input type="radio" name="source" value="template" class="accent-[#00FF41]">
+                        <input type="radio" name="source" value="template" class="accent-accent">
                         <span class="text-xs text-primary/80">Default template</span>
                     </label>
                 </div>
@@ -239,7 +239,7 @@
 <!-- Switch Confirm Modal -->
 <div id="switchModal" class="fixed inset-0 z-50 bg-black/80 items-center justify-center" style="display: none;">
     <div
-        class="matrix-card p-6 w-full max-w-md flex flex-col gap-5 border-yellow-500/40 shadow-[0_0_30px_rgba(255,200,0,0.15)]">
+        class="ui-card p-6 w-full max-w-md flex flex-col gap-5 border-yellow-500/40 shadow-[0_0_30px_rgba(255,200,0,0.15)]">
         <div class="flex items-center gap-3">
             <span class="material-symbols-outlined text-yellow-500">warning</span>
             <h3 class="text-sm font-bold uppercase tracking-widest text-yellow-400">Confirm Switch</h3>
@@ -270,7 +270,7 @@
 <!-- Delete Confirm Modal -->
 <div id="deleteModal" class="fixed inset-0 z-50 bg-black/80 items-center justify-center" style="display: none;">
     <div
-        class="matrix-card p-6 w-full max-w-md flex flex-col gap-5 border-red-500/40 shadow-[0_0_30px_rgba(255,0,0,0.15)]">
+        class="ui-card p-6 w-full max-w-md flex flex-col gap-5 border-red-500/40 shadow-[0_0_30px_rgba(255,0,0,0.15)]">
         <div class="flex items-center gap-3">
             <span class="material-symbols-outlined text-red-500">delete_forever</span>
             <h3 class="text-sm font-bold uppercase tracking-widest text-red-400">Confirm Delete</h3>
@@ -339,11 +339,11 @@
 
         0%,
         100% {
-            box-shadow: 0 0 12px rgba(0, 255, 65, 0.5), 0 0 30px rgba(0, 255, 65, 0.15), inset 0 0 12px rgba(0, 255, 65, 0.08);
+            box-shadow: 0 0 12px rgb(var(--c-accent) / calc(0.5 * var(--glow))), 0 0 30px rgb(var(--c-accent) / calc(0.15 * var(--glow))), inset 0 0 12px rgb(var(--c-accent) / calc(0.08 * var(--glow)));
         }
 
         50% {
-            box-shadow: 0 0 25px rgba(0, 255, 65, 0.8), 0 0 60px rgba(0, 255, 65, 0.25), inset 0 0 20px rgba(0, 255, 65, 0.15);
+            box-shadow: 0 0 25px rgb(var(--c-accent) / calc(0.8 * var(--glow))), 0 0 60px rgb(var(--c-accent) / calc(0.25 * var(--glow))), inset 0 0 20px rgb(var(--c-accent) / calc(0.15 * var(--glow)));
         }
     }
 
@@ -390,7 +390,7 @@
     .profile-active-card {
         position: relative;
         animation: active-card-glow 2s ease-in-out infinite;
-        border-color: #00FF41 !important;
+        border-color: rgb(var(--c-primary)) !important;
     }
 
     /* Top border scan (left→right) */
@@ -401,7 +401,7 @@
         left: 0;
         width: 40%;
         height: 2px;
-        background: linear-gradient(90deg, transparent, #00FF41, transparent);
+        background: linear-gradient(90deg, transparent, rgb(var(--c-primary)), transparent);
         animation: matrix-border-scan-h 2.5s ease-in-out infinite;
         pointer-events: none;
         z-index: 10;
@@ -415,7 +415,7 @@
         right: -1px;
         width: 2px;
         height: 40%;
-        background: linear-gradient(180deg, transparent, #00FF41, transparent);
+        background: linear-gradient(180deg, transparent, rgb(var(--c-primary)), transparent);
         animation: matrix-border-scan 2.5s ease-in-out infinite 0.6s;
         pointer-events: none;
         z-index: 10;
@@ -428,7 +428,7 @@
         right: 0;
         width: 40%;
         height: 2px;
-        background: linear-gradient(270deg, transparent, #00FF41, transparent);
+        background: linear-gradient(270deg, transparent, rgb(var(--c-primary)), transparent);
         animation: matrix-border-scan-h 2.5s ease-in-out infinite 1.2s;
         pointer-events: none;
         z-index: 10;
@@ -440,7 +440,7 @@
         left: -1px;
         width: 2px;
         height: 40%;
-        background: linear-gradient(0deg, transparent, #00FF41, transparent);
+        background: linear-gradient(0deg, transparent, rgb(var(--c-primary)), transparent);
         animation: matrix-border-scan 2.5s ease-in-out infinite 1.8s;
         pointer-events: none;
         z-index: 10;
@@ -460,7 +460,7 @@
         position: absolute;
         width: 8px;
         height: 8px;
-        border-color: #00FF41;
+        border-color: rgb(var(--c-primary));
         border-style: solid;
     }
 
@@ -468,14 +468,14 @@
         top: 0;
         left: 0;
         border-width: 2px 0 0 2px;
-        box-shadow: -2px -2px 6px rgba(0, 255, 65, 0.6);
+        box-shadow: -2px -2px 6px rgb(var(--c-accent) / calc(0.6 * var(--glow)));
     }
 
     .profile-active-card .active-corners::after {
         bottom: 0;
         right: 0;
         border-width: 0 2px 2px 0;
-        box-shadow: 2px 2px 6px rgba(0, 255, 65, 0.6);
+        box-shadow: 2px 2px 6px rgb(var(--c-accent) / calc(0.6 * var(--glow)));
     }
 </style>
 <script>

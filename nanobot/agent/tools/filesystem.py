@@ -58,6 +58,21 @@ class _FsTool(Tool):
     def _resolve(self, path: str) -> Path:
         return _resolve_path(path, self._workspace, self._allowed_dir, self._extra_allowed_dirs)
 
+    # Custom: moved up from EditFileTool so read_file suggests close names too, as Claude Code does.
+    # fp has passed _resolve(), so the siblings listed are in a directory the tool may already read.
+    def _file_not_found_msg(self, path: str, fp: Path) -> str:
+        """Build an error message with 'Did you mean ...?' suggestions."""
+        parent = fp.parent
+        suggestions: list[str] = []
+        if parent.is_dir():
+            siblings = [f.name for f in parent.iterdir() if f.is_file()]
+            close = difflib.get_close_matches(fp.name, siblings, n=3, cutoff=0.6)
+            suggestions = [str(parent / c) for c in close]
+        parts = [f"Error: File not found: {path}"]
+        if suggestions:
+            parts.append("Did you mean: " + ", ".join(suggestions) + "?")
+        return "\n".join(parts)
+
 
 # ---------------------------------------------------------------------------
 # read_file
@@ -173,7 +188,7 @@ class ReadFileTool(_FsTool):
             if _is_blocked_device(fp):
                 return f"Error: Reading {fp} is blocked (device path that could hang or produce infinite output)."
             if not fp.exists():
-                return f"Error: File not found: {path}"
+                return self._file_not_found_msg(path, fp)
             if not fp.is_file():
                 return f"Error: Not a file: {path}"
 
@@ -747,19 +762,6 @@ class EditFileTool(_FsTool):
             return f"Error: {e}"
         except Exception as e:
             return f"Error editing file: {e}"
-
-    def _file_not_found_msg(self, path: str, fp: Path) -> str:
-        """Build an error message with 'Did you mean ...?' suggestions."""
-        parent = fp.parent
-        suggestions: list[str] = []
-        if parent.is_dir():
-            siblings = [f.name for f in parent.iterdir() if f.is_file()]
-            close = difflib.get_close_matches(fp.name, siblings, n=3, cutoff=0.6)
-            suggestions = [str(parent / c) for c in close]
-        parts = [f"Error: File not found: {path}"]
-        if suggestions:
-            parts.append("Did you mean: " + ", ".join(suggestions) + "?")
-        return "\n".join(parts)
 
     @staticmethod
     def _not_found_msg(old_text: str, content: str, path: str) -> str:

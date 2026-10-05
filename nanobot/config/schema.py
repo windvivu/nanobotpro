@@ -8,6 +8,7 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
 from pydantic_settings import BaseSettings
 
+from nanobot.brain_memory.config import BrainMemoryConfig
 from nanobot.cron.types import CronSchedule
 
 
@@ -32,6 +33,9 @@ class ChannelsConfig(Base):
     debounce_seconds: float = 2.0  # Custom: batch rapid messages within this window (0 = off)
     send_max_retries: int = Field(default=3, ge=0, le=10)  # Max delivery attempts (initial send included)
     transcription_provider: str = "groq"  # Voice transcription backend: "groq" or "openai"
+    # Custom: chat senders who may run admin commands (/restart, /status, /dream...), as "channel:sender_id",
+    # e.g. "telegram:123456789". allow_from only lets people send messages (command/builtin.py)
+    admin_from: list[str] = Field(default_factory=list)
     msteams: Any = Field(default_factory=dict)  # MS Teams channel config (parsed by channel itself)
 
 
@@ -40,6 +44,7 @@ class DreamConfig(Base):
 
     _HOUR_MS = 3_600_000
 
+    enabled: bool = True  # Scheduled Dream runs; /dream still runs it by hand (same field as upstream)
     interval_h: int = Field(default=2, ge=1)  # Every 2 hours by default
     cron: str | None = Field(default=None, exclude=True)  # Legacy compatibility override
     model_override: str | None = Field(
@@ -277,6 +282,19 @@ class HeartbeatConfig(Base):
     enabled: bool = True
     interval_s: int = 30 * 60  # 30 minutes
     keep_recent_messages: int = 8  # Number of recent messages to retain between heartbeat runs
+    # Custom: the chat heartbeat tasks run for and report to, as "channel:chat_id" on an enabled channel,
+    # e.g. "telegram:123456789". Empty = results are not sent. It used to be the latest chat, which on a
+    # bot several people use could be anyone's (cli/commands.py, _heartbeat_target)
+    target: str = ""
+
+
+class WebVoiceConfig(Base):
+    """Voice in Web Chat (custom): how speech is recognised, and in which language."""
+
+    # "browser" (the browser's own speech recognition) or "groq" (Whisper, with the key in
+    # providers.groq). Any other value is read as "browser" (web/routes/chat.py, _voice_settings)
+    recognition: str = "browser"
+    language: str = "vi-VN"  # For recognition (Groq gets "vi") and for picking the read-aloud voice
 
 
 class WebConfig(Base):
@@ -286,6 +304,8 @@ class WebConfig(Base):
     port: int = 8899
     host: str = "127.0.0.1"  # Bind address; use 0.0.0.0 for fleet/remote access
     password: str = ""  # Dashboard login password (empty = no auth)
+    theme: str = "matrix"  # Dashboard theme: templates/themes/<name> ("matrix", "clean", "light", "office2003", "office2010", "winxp", "aurora", "sakura", "latte"); --theme overrides
+    voice: WebVoiceConfig = Field(default_factory=WebVoiceConfig)  # Custom: voice in Web Chat
 
 
 class ChatbotConfig(Base):
@@ -354,6 +374,7 @@ class MCPServerConfig(Base):
     headers: dict[str, str] = Field(default_factory=dict)  # HTTP/SSE: custom headers
     tool_timeout: int = 30  # seconds before a tool call is cancelled
     enabled_tools: list[str] = Field(default_factory=lambda: ["*"])  # Only register these tools; accepts raw MCP names or wrapped mcp_<server>_<tool> names; ["*"] = all tools; [] = no tools
+    roles: list[str] = Field(default_factory=list)  # Tool roles whose bot sees this server's tools; [] = every role with MCP (custom, agent/tool_roles.py)
 
 
 class MCPPresetBundleConfig(Base):
@@ -391,6 +412,30 @@ class ImageGenerationToolConfig(Base):
     save_dir: str = "generated"
 
 
+class MarketScannerConfig(Base):
+    """Configuration for the trader-mode market scanner."""
+
+    enabled: bool = True
+    exchange: str = "binance"
+    market: Literal["futures"] = "futures"
+    quote_asset: str = "USDT"
+    timeframes: list[str] = Field(default_factory=lambda: ["1h", "4h"])
+    max_symbols: int = Field(default=50, ge=1, le=300)
+    candle_limit: int = Field(default=240, ge=80, le=1000)
+    min_quote_volume: float = Field(default=10_000_000.0, ge=0)
+    request_timeout: int = Field(default=15, ge=1, le=60)
+    cache_ttl_seconds: int = Field(default=60, ge=0, le=3600)
+    concurrency: int = Field(default=8, ge=1, le=32)
+
+    @field_validator("timeframes")
+    @classmethod
+    def _validate_timeframes(cls, value: list[str]) -> list[str]:
+        allowed = {"1h", "4h"}
+        if not value or any(item not in allowed for item in value):
+            raise ValueError("market scanner timeframes must contain only 1h and 4h")
+        return list(dict.fromkeys(value))
+
+
 class ToolsConfig(Base):
     """Tools configuration."""
 
@@ -401,13 +446,15 @@ class ToolsConfig(Base):
     mcp_custom_presets: dict[str, MCPPresetBundleConfig] = Field(default_factory=dict)
     mcp_preset_installations: dict[str, MCPBundleInstallationConfig] = Field(default_factory=dict)
     ssrf_whitelist: list[str] = Field(default_factory=list)  # CIDR ranges to exempt from SSRF blocking
-    # Tool preset: "developer" (all on) | "chatbot" (safe only) | "custom" (per-group) (custom)
+    # Tool role (custom, agent/tool_roles.py): "chatbot" | "assistant" | "office_secretary" | "coder" | "super_coder" | "trader" |
+    # "full" | "custom". "developer", the all-on preset from before roles, reads as "full".
     tool_preset: str = "developer"
     enable_file_tools: bool = True   # ReadFile, WriteFile, EditFile, ListDir
     enable_web_tools: bool = True    # WebSearch, WebFetch
     enable_spawn: bool = True        # SpawnTool (subagent)
     enable_cron: bool = True         # CronTool
     enable_mcp: bool = True          # MCP servers
+    custom_tools: list[str] = Field(default_factory=list)  # Custom role: tools chosen one by one; [] = the enable_* switches above (custom)
     disabled_skills: list[str] = Field(default_factory=list)  # Manually disabled skill names
     my: MyToolConfig = Field(default_factory=MyToolConfig)
     image_generation: ImageGenerationToolConfig = Field(default_factory=ImageGenerationToolConfig)
@@ -442,7 +489,22 @@ class Config(BaseSettings):
     api: ApiConfig = Field(default_factory=ApiConfig)
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
+    trader_mode: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("traderMode", "trader_mode"),
+        serialization_alias="traderMode",
+    )
+    market_scanner: MarketScannerConfig = Field(
+        default_factory=MarketScannerConfig,
+        validation_alias=AliasChoices("marketScanner", "market_scanner"),
+        serialization_alias="marketScanner",
+    )
     chatbot: ChatbotConfig = Field(default_factory=ChatbotConfig)
+    brain_memory: BrainMemoryConfig = Field(
+        default_factory=BrainMemoryConfig,
+        validation_alias=AliasChoices("brainMemory", "brain_memory"),
+        serialization_alias="brainMemory",
+    )
     transcription: TranscriptionConfig = Field(default_factory=TranscriptionConfig)
     model_presets: dict[str, ModelPresetConfig] = Field(default_factory=dict)
     provider_profiles: dict[str, ProviderProfileConfig] = Field(

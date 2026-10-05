@@ -638,8 +638,8 @@
                 option.value = presetName;
                 option.textContent = presetName;
                 option.disabled = presetName !== name && items.includes(presetName);
-                option.style.background = '#0a0a0a';
-                option.style.color = '#00FF41';
+                option.style.background = 'rgb(var(--c-surface))';
+                option.style.color = 'rgb(var(--c-primary))';
                 select.appendChild(option);
             });
             select.value = name;
