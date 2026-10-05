@@ -1,5 +1,6 @@
 param(
     [int]$Port = 8900,
+    [Alias("host")]
     [string]$HostName = "127.0.0.1"
 )
 

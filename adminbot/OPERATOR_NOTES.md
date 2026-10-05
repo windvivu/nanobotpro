@@ -34,13 +34,13 @@ chmod +x ./nanobot-launcher.sh
 Bind to all interfaces only when another machine must connect:
 
 ```powershell
-.\nanobot-launcher.ps1 -Port 8900 -HostName 0.0.0.0
+.\nanobot-launcher.ps1 --host 0.0.0.0
 ```
 
 Linux shell equivalent:
 
 ```bash
-./nanobot-launcher.sh 8900 0.0.0.0
+./nanobot-launcher.sh --host 0.0.0.0
 ```
 
 First login uses `abc123`. Adminbot requires changing that password before bot operations are enabled.

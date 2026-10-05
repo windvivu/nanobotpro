@@ -12,6 +12,7 @@ from adminbot.app.paths import RuntimePaths, ensure_runtime_dirs
 from adminbot.app.process_manager import BotProcessManager
 from adminbot.app.registry import BotProcessState, BotRecord, BotRegistry, utc_now_iso
 from adminbot.app.runtime_config import (
+    get_initial_web_password,
     get_web_bind_host,
     initialize_bot_config,
     resolve_workspace_path,
@@ -135,6 +136,10 @@ class AdminbotManager:
     def get_bot_web_bind_host(self, bot_id_or_name: str) -> str:
         bot = self.get_bot(bot_id_or_name)
         return get_web_bind_host(Path(bot.config_path))
+
+    def get_bot_initial_web_password(self, bot_id_or_name: str) -> str:
+        bot = self.get_bot(bot_id_or_name)
+        return get_initial_web_password(Path(bot.config_path))
 
     def update_bot_web_bind_host(self, bot_id_or_name: str, host: str) -> BotRecord:
         bot = self.get_bot(bot_id_or_name)

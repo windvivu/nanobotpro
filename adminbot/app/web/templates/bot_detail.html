@@ -110,6 +110,16 @@
                 </div>
             </summary>
             <div class="collapsible-body">
+                {% if initial_web_password %}
+                <!-- The password nanobot generated on the bot's first start; gone once it is changed -->
+                <div class="stack-form">
+                    <label>
+                        <span>Initial Dashboard Password</span>
+                        <input class="mono" type="text" value="{{ initial_web_password }}" readonly onfocus="this.select()" />
+                    </label>
+                    <p class="field-help">Generated on the bot's first start. Log in to the bot's dashboard with it, then change it in Settings; it is no longer shown here after that.</p>
+                </div>
+                {% endif %}
                 <form class="stack-form" method="post" action="/bots/{{ bot.id }}/web-host">
                     <label>
                         <span>Dashboard Bind Host</span>

@@ -102,6 +102,23 @@ def get_web_bind_host(config_path: Path) -> str:
     return config.get("gateway", {}).get("web", {}).get("host") or WEB_BIND_HOST_CHOICES[0]
 
 
+def get_initial_web_password(config_path: Path) -> str:
+    """The dashboard password nanobot generated on the bot's first start, while it is still in use.
+
+    nanobot writes it to gateway.web.password with the "nanobot@" prefix and prints it once in the bot's
+    console, which nobody sees for a bot adminbot starts. "" once the password was changed, or before
+    the first start."""
+    if not config_path.exists():
+        return ""
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    web = (config.get("gateway") or {}).get("web") or {}
+    password = web.get("password") if isinstance(web, dict) else ""
+    return password if isinstance(password, str) and password.startswith("nanobot@") else ""
+
+
 def update_web_bind_host(config_path: Path, host: str) -> None:
     if host not in WEB_BIND_HOST_CHOICES:
         raise ValueError(

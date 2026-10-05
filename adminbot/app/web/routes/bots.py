@@ -94,6 +94,8 @@ def bot_detail(request: Request, bot_id: str):
         "error": request.query_params.get("error", ""),
         "supports_shell": os.name == "nt",
         "web_host": manager.get_bot_web_bind_host(bot_id),
+        # Shown in the Config panel until the bot's dashboard password is changed
+        "initial_web_password": manager.get_bot_initial_web_password(bot_id),
     }
     return templates.TemplateResponse(request, "bot_detail.html", context)
 

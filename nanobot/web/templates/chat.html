@@ -211,6 +211,14 @@
                         <span class="material-symbols-outlined">volume_off</span><span>Đọc to câu trả lời</span>
                         <span class="material-symbols-outlined chat-more-check" aria-hidden="true">check</span>
                     </button>
+                    <!-- The dashboard's console (base.html), which Chat focus hides with the header: here it
+                         opens as a box in the left margin, from the top. Wide screens only, as the cat. -->
+                    <button type="button" id="chat-console-toggle" class="chat-more-item"
+                        onclick="toggleConsoleViewer(); syncConsoleToggle()"
+                        title="Log hệ thống và kết quả lệnh, ở lề trái" aria-pressed="false">
+                        <span class="material-symbols-outlined">terminal</span><span>Console</span>
+                        <span class="material-symbols-outlined chat-more-check" aria-hidden="true">check</span>
+                    </button>
                 </div>
             </div>
             <div class="flex-1 relative">
@@ -599,6 +607,33 @@
     .chat-more-check { margin-left: auto; visibility: hidden; }
     .chat-more-item[aria-pressed="true"] .chat-more-check { visibility: visible; }
 
+    /* Chat focus console: the dashboard's console panel (base.html) as a box in the left margin, from the
+       top down to above the cat, instead of a sheet across the bottom. Its switch is in the ⋯ menu and
+       shows only where the margin has room (from 1440px: about 250px beside the 860px conversation). */
+    #chat-console-toggle { display: none; }
+    @media (min-width: 1440px) {
+        html.chat-focus #chat-console-toggle { display: flex; }
+        html.chat-focus #console-viewer-panel {
+            top: 0.75rem;
+            bottom: auto;
+            left: 12px;
+            right: auto;
+            width: calc((100vw - 860px) / 2 - 36px);
+            height: calc(100vh - 1.5rem - 200px);  /* the cat's box sits below */
+            transform: none;
+            border: 1px solid rgb(var(--c-primary) / 0.3);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        html.chat-focus #console-viewer-panel.translate-y-full { visibility: hidden !important; }
+        /* The narrow box: the header wraps, its buttons keep only their icons, lines wrap */
+        html.chat-focus #console-viewer-panel > div:first-child { flex-wrap: wrap; row-gap: 0.25rem; padding-inline: 0.5rem; }
+        html.chat-focus #console-viewer-panel button > span:not(.material-symbols-outlined) { display: none; }
+        html.chat-focus #console-viewer-content,
+        html.chat-focus #exec-viewer-content { padding: 0.5rem; font-size: 10px; overflow-wrap: anywhere; }
+        html.chat-focus body { padding-bottom: 0 !important; }  /* the bottom sheet's room is not needed */
+    }
+
     /* Voice (static/chat-voice.js), in both layouts: the mic button, and reading aloud in the ⋯ menu, in
        the theme's tokens only. Listening: lit and blinking. Busy: Groq is turning the recording into text.
        On: reading aloud, ticked. Off: cannot be used here, the title says why. */
@@ -781,6 +816,12 @@
     function setMoreMenu(open) {
         moreMenu.hidden = !open;
         moreBtn.setAttribute('aria-expanded', String(open));
+        if (open) syncConsoleToggle();
+    }
+    // The console's ✓ follows base.html's own state: its panel can also be closed with its × button
+    function syncConsoleToggle() {
+        const open = typeof _consoleOpen !== 'undefined' && _consoleOpen;
+        document.getElementById('chat-console-toggle').setAttribute('aria-pressed', String(open));
     }
     moreBtn.addEventListener('click', () => setMoreMenu(moreMenu.hidden));
     document.addEventListener('click', (e) => {
