@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from dataclasses import dataclass
 from threading import RLock
 from typing import Iterable
@@ -121,6 +121,30 @@ class BrainGraph:
             for fact in facts if fact.status == "active"
             for old_id in fact.supersedes
         }
+
+    def names_in_use(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """Topics and entities of the facts in use, most used first.
+
+        The learner offers them to the model, so that a new fact joins a topic or an entity that is
+        already there instead of naming its own.
+        """
+
+        def by_use(names: Iterable[str]) -> tuple[str, ...]:
+            # Spellings that differ only in case are one name, as they are one node: the commonest
+            # spelling stands for it
+            spellings: dict[str, Counter[str]] = {}
+            for name in names:
+                spellings.setdefault(name.casefold().strip(), Counter())[name] += 1
+            ranked = sorted(spellings.values(), key=lambda spelling: -sum(spelling.values()))
+            return tuple(spelling.most_common(1)[0][0] for spelling in ranked)
+
+        facts = [fact for _, _, fact in self._facts()]
+        superseded = self._superseded_ids(facts)
+        in_use = [fact for fact in facts if fact.status == "active" and fact.id not in superseded]
+        return (
+            by_use(fact.topic for fact in in_use),
+            by_use(entity for fact in in_use for entity in fact.entities),
+        )
 
     def build(self, filters: GraphFilters | None = None, *, refresh: bool = False) -> GraphSnapshot:
         if not self.config.enabled or not self.config.graph_enabled:
