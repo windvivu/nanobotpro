@@ -34,12 +34,23 @@ def build_escalation_notice(workspace, sender_id, sender_name, reason, summary, 
 
 class EscalateTool(Tool):
     name = "escalate"
-    description = "Ask a human to follow up with the current Zalo customer. The destination is fixed."
+    description = (
+        "Hand the current Zalo customer over to a human staff member. This is the ONLY way to reach "
+        "staff: it alerts them and sends the customer the handoff message itself. Call it when the "
+        "customer asks about prices, plans or packages, renewal, payment or refunds (reason payment); "
+        "complains (complaint); asks for a person (human_requested); asks again about something the "
+        "provided knowledge does not cover (out_of_scope); or needs someone with authority (other). "
+        "Never tell the customer that their request was forwarded or that staff will contact them "
+        "unless this tool has run and said the customer was told. After calling it, end your turn "
+        "without writing anything else. The destination is fixed."
+    )
     parameters = {
         "type": "object",
         "properties": {
-            "reason": {"type": "string", "enum": list(REASONS)},
-            "summary": {"type": "string", "maxLength": 500},
+            "reason": {"type": "string", "enum": list(REASONS),
+                       "description": "Why a person is needed; see the tool description."},
+            "summary": {"type": "string", "maxLength": 500,
+                        "description": "One or two sentences for the staff member: what the customer wants."},
         },
         "required": ["reason", "summary"],
     }

@@ -822,6 +822,34 @@ class AgentLoop:
                     else:
                         tool.set_context(channel, chat_id)
 
+    async def _back_claimed_handoff(self, msg: InboundMessage, final_content: str | None,
+                                    tools_used: list[str] | None) -> None:
+        """Escalate for real when a customer reply claims a handoff the model never made.
+
+        Public Zalo customer service only. The escalate tool alerts the admin and sends the
+        customer the configured handoff message, and the claimed text is then not sent.
+        """
+        if not getattr(self, "public_customer_mode", False) or msg.channel != "zalo":
+            return
+        tool = self.tools.get("escalate")
+        message_tool = self.tools.get("message")
+        if tool is None or "escalate" in (tools_used or []) or getattr(message_tool, "_sent_in_turn", False):
+            return
+        from nanobot.agent.handoff_claims import claims_handoff
+        if not claims_handoff(final_content):
+            return
+        logger.warning("Public Customer Mode: reply claimed a handoff without escalate; escalating {}",
+                       msg.chat_id)
+        asked = " ".join(str(msg.content or "").split())[:300]
+        summary = ("Bot nói đã chuyển nhân viên nhưng không gọi công cụ chuyển tiếp; hệ thống tự chuyển. "
+                   "Khách hỏi: " + asked)[:500]
+        try:
+            result = await tool.execute(reason="other", summary=summary)
+        except Exception as exc:
+            logger.warning("Claimed-handoff escalation failed: {}", type(exc).__name__)
+            return
+        logger.info("Claimed-handoff escalation for {}: {}", msg.chat_id, result)
+
     @staticmethod
     def _strip_think(text: str | None) -> str | None:
         """Remove <think>...</think> blocks that some models embed in content."""
@@ -1754,6 +1782,10 @@ class AgentLoop:
                 final_content = f"*[Executed tools: {tools_str}]*"
             else:
                 final_content = EMPTY_FINAL_RESPONSE_MESSAGE
+
+        # Custom (customer service): a reply that tells the customer a person will take over must
+        # be backed by a real handoff, or nobody is ever alerted.
+        await self._back_claimed_handoff(msg, final_content, tools_used)
 
         self._save_turn(session, all_msgs, 1 + len(history))
         self._clear_runtime_checkpoint(session)
