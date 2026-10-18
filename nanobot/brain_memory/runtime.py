@@ -11,7 +11,7 @@ from nanobot.brain_memory.config import is_public_kb_source
 from nanobot.brain_memory.errors import BrainMemoryError, DisabledError, FormatError
 from nanobot.brain_memory.graph import BrainGraph
 from nanobot.brain_memory.index import BrainIndex
-from nanobot.brain_memory.learner import LearningWorker
+from nanobot.brain_memory.learner import LearningWorker, learning_timeout
 from nanobot.brain_memory.migration import migrate_source
 from nanobot.brain_memory.paths import resolve_ref
 from nanobot.brain_memory.promoter import FactPromoter, scan_text
@@ -106,6 +106,7 @@ class BrainRuntime:
         self.worker = None
         self._lock = asyncio.Lock()
         self._migration_sync_lock = asyncio.Lock()
+        self._resume_tasks: set[asyncio.Task] = set()
 
     @staticmethod
     def _auto_sync_sources(config) -> tuple[str, ...]:
@@ -156,7 +157,9 @@ class BrainRuntime:
                 )},
                 {"role": "user", "content": text},
             ], model=self.agent.model, max_tokens=4096, temperature=0,
-        ), timeout=config.learning_timeout_seconds)
+        ), timeout=learning_timeout(config, published_kb=bool(
+            getattr(self.agent, "public_customer_mode", False)
+            and event.migration_batch_id and is_public_kb_source(event.source.source_ref))))
         if not self._allowed(event):
             raise DisabledError("Session learning disabled during generation")
         content = response.content or ""
@@ -215,9 +218,33 @@ class BrainRuntime:
         return self.worker
 
     def config_changed(self) -> None:
-        """Called synchronously when config is reloaded, before another job runs."""
+        """Called synchronously when config is reloaded, before another job runs.
+
+        The cancelled worker is replaced right away (with the new config) instead
+        of waiting for the next enqueue: queued jobs, published knowledge
+        included, would otherwise sit unprocessed and block revoking.
+        """
         if self.worker:
             self.worker.cancel()
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                return
+            task = loop.create_task(self.resume())
+            self._resume_tasks.add(task)
+            task.add_done_callback(self._resume_tasks.discard)
+
+    async def resume(self) -> None:
+        """Run the learning worker whenever learning is on, so jobs queued before a
+        restart or a config change continue without waiting for a new one."""
+        config = self.agent.brain_memory_config
+        if not config or not config.enabled or not config.learning_enabled:
+            return
+        async with self._lock:
+            try:
+                await self._ensure_worker()
+            except Exception as exc:
+                logger.warning("Brain learning worker unavailable: {}", type(exc).__name__)
 
     @staticmethod
     def _split_content(raw: bytes, limit: int) -> list[bytes]:

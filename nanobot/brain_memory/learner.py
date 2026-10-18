@@ -31,6 +31,17 @@ class LearningResult:
     duration_ms: int = 0
 
 
+# Knowledge the admin publishes for customer service is a deliberate action: a slow
+# model gets the longest wait the config allows, not the background default.
+KB_LEARNING_TIMEOUT_S = 300
+
+
+def learning_timeout(config, *, published_kb: bool) -> int:
+    if published_kb:
+        return max(config.learning_timeout_seconds, KB_LEARNING_TIMEOUT_S)
+    return config.learning_timeout_seconds
+
+
 class LearningWorker:
     """A caller-owned worker for selected events.
 
@@ -440,7 +451,8 @@ class LearningWorker:
                 raise DisabledError("Learning stopped")
             checkpoint("ai")
             generated = self.factory(event)
-            manifest = await asyncio.wait_for(generated, self.config.learning_timeout_seconds) if inspect.isawaitable(generated) else generated
+            timeout = learning_timeout(self.config, published_kb=self._priority_kb(record))
+            manifest = await asyncio.wait_for(generated, timeout) if inspect.isawaitable(generated) else generated
             if self._stopping or not self.config.enabled or not self.config.learning_enabled:
                 raise DisabledError("Learning stopped")
             if not isinstance(manifest, Manifest):

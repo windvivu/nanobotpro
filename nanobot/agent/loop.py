@@ -1225,6 +1225,9 @@ class AgentLoop:
         if self._dream_enabled:  # Dream turned off: no scheduled runs from this loop either (custom)
             self._dream_task = asyncio.create_task(self._run_dream_loop())
         if runtime := getattr(self, "brain_runtime", None):
+            # Custom: start the learning worker now, so jobs queued before a restart
+            # (published customer knowledge included) continue on their own.
+            self._schedule_background(runtime.resume())
             self._schedule_background(runtime.sync_migration_sources())
         logger.info("Agent loop started (nanobot v{}, model={})", __version__, self.model)
 

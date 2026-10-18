@@ -1,5 +1,6 @@
 """Zalo Setup — Web routes for managing Zalo connection."""
 
+import asyncio
 import time
 from pathlib import Path
 
@@ -10,6 +11,8 @@ from loguru import logger
 from nanobot.config.loader import ConfigSaveError
 
 router = APIRouter()
+# Connects started in the background while the bridge installs (kept referenced).
+_connect_tasks: set[asyncio.Task] = set()
 
 
 def _get_zalo_channel(request: Request):
@@ -96,6 +99,16 @@ async def zalo_connect(request: Request):
     zalo_channel = _get_zalo_channel(request)
     if not zalo_channel:
         return JSONResponse({"status": "error", "message": "Zalo channel not enabled"}, status_code=400)
+
+    if not zalo_channel._bridge_installed():
+        # The first Connect installs the bridge (npm install, can take minutes).
+        # Answer at once and let the page follow it through /zalo/status, instead
+        # of holding the request open with nothing to show.
+        task = asyncio.create_task(zalo_channel.connect())
+        _connect_tasks.add(task)
+        task.add_done_callback(_connect_tasks.discard)
+        await asyncio.sleep(0)  # let connect() mark itself as connecting
+        return JSONResponse({**zalo_channel.get_status(), "status": "installing"})
 
     result = await zalo_channel.connect()
     return JSONResponse(result)

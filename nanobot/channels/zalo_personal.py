@@ -244,6 +244,11 @@ class ZaloPersonalChannel(BaseChannel):
         self._stderr_task: asyncio.Task | None = None
         self._connect_watchdog_task: asyncio.Task | None = None
         self._bridge_dir: Path | None = None
+        # One npm install at a time: start() and Connect used to run two side by side
+        # into the same folder. "installing" / "failed" are shown on the setup page.
+        self._setup_lock = asyncio.Lock()
+        self._setup_state = ""
+        self._setup_error = ""
         self._node_path: str = getattr(config, "node_path", "node")
         self._ready_event = asyncio.Event()
         self._status: str = self.STATUS_DISCONNECTED
@@ -876,6 +881,9 @@ class ZaloPersonalChannel(BaseChannel):
             # reads "disconnected"); the dashboard shows it as RECONNECTING.
             "reconnecting": self._reconnect_is_waiting(),
             "disconnectReason": self._last_disconnect_reason,
+            "bridgeSetup": self._setup_state,
+            "bridgeSetupError": self._setup_error,
+            "bridgeInstalled": self._bridge_installed(),
         }
 
         # Check if QR image exists
@@ -992,7 +1000,15 @@ class ZaloPersonalChannel(BaseChannel):
                            expired, int(self.OUTBOUND_QUEUE_TTL_S))
 
     async def _setup_bridge(self) -> None:
-        """Setup the bridge directory with Node.js files and install dependencies."""
+        """Setup the bridge directory with Node.js files and install dependencies.
+
+        Serialised: a second caller waits for the install already running and
+        then finds zca-js installed, instead of starting another npm install.
+        """
+        async with self._setup_lock:
+            await self._setup_bridge_locked()
+
+    async def _setup_bridge_locked(self) -> None:
         from nanobot.config.paths import get_data_dir
 
         data_dir = get_data_dir()
@@ -1010,17 +1026,28 @@ class ZaloPersonalChannel(BaseChannel):
         # Install npm dependencies if needed (zca-js missing = never or partly installed)
         if not self._bridge_installed():
             logger.info("Installing Zalo bridge dependencies (first time)...")
-            npm_cmd = "npm.cmd" if sys.platform == "win32" else "npm"
-            proc = await asyncio.create_subprocess_exec(
-                npm_cmd, "install", "--production",
-                cwd=str(self._bridge_dir),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await proc.communicate()
-            if proc.returncode != 0:
-                err_msg = stderr.decode(errors="replace")
-                raise RuntimeError(f"npm install failed: {err_msg}")
+            self._setup_state, self._setup_error = "installing", ""
+            try:
+                npm_cmd = "npm.cmd" if sys.platform == "win32" else "npm"
+                proc = await asyncio.create_subprocess_exec(
+                    npm_cmd, "install", "--production",
+                    cwd=str(self._bridge_dir),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, stderr = await proc.communicate()
+                if proc.returncode != 0:
+                    err_msg = stderr.decode(errors="replace")
+                    raise RuntimeError(f"npm install failed: {err_msg}")
+            except FileNotFoundError:
+                self._setup_state = "failed"
+                self._setup_error = "npm not found: install Node.js (it includes npm) on this machine"
+                raise RuntimeError(self._setup_error) from None
+            except BaseException as e:
+                self._setup_state = "failed" if isinstance(e, Exception) else ""
+                self._setup_error = str(e)[-600:] if isinstance(e, Exception) else ""
+                raise
+            self._setup_state, self._setup_error = "", ""
             logger.info("Zalo bridge dependencies installed successfully")
 
     async def _send_command(self, cmd: dict, *, wait_for_ack: bool = False, timeout_s: float = 20.0) -> dict[str, Any] | None:

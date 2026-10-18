@@ -353,6 +353,12 @@
   "cskh.learning_done": "Đã học · {n} ý",
   "cskh.learning_unreadable": "Không đọc được tiến độ",
   "cskh.learning_failed": "Lỗi {k}/{n} lượt",
+  "cskh.phase_queued": "đang chờ lượt",
+  "cskh.phase_ai": "model đang đọc",
+  "cskh.phase_validate": "đang kiểm ý",
+  "cskh.phase_promote": "đang lưu ý",
+  "cskh.phase_retry": "chờ thử lại",
+  "cskh.attempts_done": "đã thử {k}/{n}",
   "cskh.relearn": "Học lại",
   "graph.kb_quota_exempt": "Hạn mức ngày này không áp dụng cho kiến thức xuất bản từ trang CSKH trong Public Customer Mode."
 }

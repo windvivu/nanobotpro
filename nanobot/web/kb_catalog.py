@@ -351,6 +351,22 @@ def _learning(jobs):
             "in_progress": len(jobs) - done - failed}
 
 
+def _learning_detail(jobs, max_attempts):
+    """Where the unfinished or failed part of a document stands, for the admin."""
+    focus = [job for job in jobs if job.get("status") in {"pending", "retry"}]
+    focus = focus or [job for job in jobs if job.get("status") == "failed"]
+    if not focus:
+        return None
+    job = max(focus, key=lambda item: str(item.get("updated_at", "")))
+    attempts = job.get("attempts", 0)
+    return {
+        "phase": str(job.get("phase", ""))[:40],
+        "attempts": attempts if type(attempts) is int else 0,
+        "max_attempts": max_attempts,
+        "last_error": str(job.get("error_type", ""))[:80],
+    }
+
+
 def refresh_fact_counts(workspace, config, worker=None, *, tolerate_errors=False):
     """Read each document's batch, including partial completion and failure.
 
@@ -363,7 +379,7 @@ def refresh_fact_counts(workspace, config, worker=None, *, tolerate_errors=False
     with _catalog(workspace) as (root, catalog):
         changed = False
         for key, doc in catalog["documents"].items():
-            progress, count = _learning([]), doc["fact_count"]
+            progress, count, detail = _learning([]), doc["fact_count"], None
             if doc["status"] == "published":
                 cache_key = _progress_key(workspace, config, doc)
                 with _progress_cache_lock:
@@ -372,6 +388,7 @@ def refresh_fact_counts(workspace, config, worker=None, *, tolerate_errors=False
                     if cached is None:
                         jobs = _batch_jobs(store, doc)
                         progress = _learning(jobs)
+                        detail = _learning_detail(jobs, config.learning_max_attempts)
                         if jobs:
                             count = len({fact_id for job in jobs for fact_id in job.get("created_fact_ids", [])})
                         if jobs and not progress["in_progress"] and not progress["failed"]:
@@ -386,7 +403,7 @@ def refresh_fact_counts(workspace, config, worker=None, *, tolerate_errors=False
             if count != doc["fact_count"]:
                 doc["fact_count"] = count
                 changed = True
-            documents.append(dict(doc, document_id=key, learning=progress))
+            documents.append(dict(doc, document_id=key, learning=progress, learning_detail=detail))
         if changed:
             _save(root, catalog)
     return documents

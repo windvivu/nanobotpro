@@ -438,6 +438,7 @@
     let pollInterval = null;
     let currentStatus = '{{ zalo_status.status }}';
     let currentReconnecting = false;
+    let currentSetup = '';
     let isDisconnecting = false;
 
     function updateUI(data) {
@@ -559,9 +560,14 @@
                 img.src = '/zalo/qr?t=' + Date.now();
             } else {
                 // Generating QR code, keep connect button visible but disabled and spinning
+                const installing = data.bridgeSetup === 'installing';
+                if (installing) {
+                    loadingText.textContent = 'Installing Zalo bridge (first time)...';
+                    loadingHint.textContent = 'npm install zca-js, this can take a few minutes';
+                }
                 btnConnect.style.display = 'flex';
                 btnConnect.disabled = true;
-                btnConnect.innerHTML = '<div class="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin"></div><span>Generating...</span>';
+                btnConnect.innerHTML = '<div class="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin"></div><span>' + (installing ? 'Installing...' : 'Generating...') + '</span>';
                 btnConnect.style.opacity = '0.6';
                 btnConnect.style.cursor = 'not-allowed';
 
@@ -638,7 +644,12 @@
             const res = await fetch('/zalo/connect', { method: 'POST' });
             const data = await res.json();
 
-            if (data.status === 'connecting') {
+            if (data.status === 'installing') {
+                addLog('Installing Zalo bridge (npm install, first time only). The QR code appears when it is done...');
+                showBridgeSetup(data);
+                data = {...data, status: 'connecting'};
+                startPolling();
+            } else if (data.status === 'connecting') {
                 addLog('Bridge spawned. Generating QR code...');
                 startPolling();
             } else if (data.status === 'already_connected') {
@@ -664,6 +675,24 @@
             btnConnect.style.opacity = '1';
             btnConnect.style.cursor = 'pointer';
         }
+    }
+
+    // Follow a bridge install started by Connect or by the bot's own start-up.
+    function showBridgeSetup(data) {
+        const setup = data.bridgeSetup || '';
+        if (setup === currentSetup) return;
+        const spans = document.querySelectorAll('.bridge-status-span');
+        if (setup === 'installing') {
+            spans.forEach(el => { el.textContent = 'Installing...'; });
+        } else if (setup === 'failed') {
+            addLog('<span class="text-red-400">Bridge install failed: '
+                + String(data.bridgeSetupError || 'unknown error').replace(/[<>&]/g, '') + '</span>');
+            refreshBridgeStatus();
+        } else if (currentSetup === 'installing') {
+            addLog('Zalo bridge installed.');
+            refreshBridgeStatus();
+        }
+        currentSetup = setup;
     }
 
     async function refreshBridgeStatus() {
@@ -731,6 +760,9 @@
             try {
                 const res = await fetch('/zalo/status');
                 const data = await res.json();
+                const setupChanged = (data.bridgeSetup || '') !== currentSetup;
+                showBridgeSetup(data);
+                if (setupChanged && data.status === currentStatus) updateUI(data);
 
                 if (data.status !== currentStatus || !!data.reconnecting !== currentReconnecting
                         || (data.status === 'connecting' && data.hasQr)) {
@@ -857,8 +889,9 @@
     // Initialize UI on load
     updateUI({{ zalo_status | tojson }});
 
-    // If connecting, start polling
-    if (currentStatus === 'connecting') {
+    // If connecting, or the bot is still installing the bridge on its own, start polling
+    showBridgeSetup({{ zalo_status | tojson }});
+    if (currentStatus === 'connecting' || currentSetup === 'installing') {
         startPolling();
     }
 </script>

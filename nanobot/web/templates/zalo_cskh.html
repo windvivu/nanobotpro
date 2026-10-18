@@ -12,13 +12,15 @@ window.nanobotI18n = {{ ui_translations() | tojson }};
 window.nanobotTr = key => window.nanobotI18n[key] || key;
 </script>
 <style>
+/* The dashboard theme (backdrop, cards, fonts); the page rules below still lay out the page. */
+{% include "themes/" ~ cskh_theme ~ "/theme.css" ignore missing %}
 * {box-sizing:border-box}
-body {margin:0;background:rgb(var(--c-surface));color:rgb(var(--c-primary));font:15px/1.55 "Segoe UI",Arial,sans-serif}
+body {margin:0;background:rgb(var(--c-canvas));color:rgb(var(--c-primary));font:15px/1.55 var(--font-ui, "Segoe UI", Arial, sans-serif)}
 button,input,textarea,select {font:inherit} button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible {outline:2px solid rgb(var(--c-accent));outline-offset:3px}
 a {color:rgb(var(--c-accent));text-underline-offset:3px}
 h1,h2,p {margin-top:0} input[type=checkbox] {accent-color:rgb(var(--c-accent))}
-.cskh {width:100%;margin:0;padding:16px 12px;min-width:0;flex:1;display:flex;flex-direction:column;gap:20px}
-.cskh .ui-card {padding:20px;min-width:0;border:1px solid rgb(var(--c-primary) / .2);border-radius:12px;background:rgb(var(--c-surface))}
+.cskh {position:relative;z-index:1;width:100%;margin:0;padding:16px 12px;min-width:0;flex:1;display:flex;flex-direction:column;gap:20px}
+.cskh .ui-card {padding:20px;min-width:0;border:1px solid rgb(var(--c-primary) / .2);border-radius:12px;background:rgb(var(--c-surface));box-shadow:var(--card-shadow, none)}
 .cskh h1 {font-size:1.5rem;font-weight:700} .cskh h2 {font-size:1.15rem;font-weight:700;margin-bottom:12px}
 .cskh p {margin:8px 0} .cskh .muted {opacity:.75;font-size:.9rem}
 .cskh button,.cskh input,.cskh select,.cskh textarea,.cskh-dialog button,.cskh-dialog textarea {border:1px solid rgb(var(--c-primary) / .4);border-radius:8px;padding:8px 12px;color:inherit;background:rgb(var(--c-surface));font:inherit;max-width:100%}
@@ -41,6 +43,7 @@ h1,h2,p {margin-top:0} input[type=checkbox] {accent-color:rgb(var(--c-accent))}
 </style>
 </head>
 <body>
+{% include "themes/" ~ cskh_theme ~ "/effects.html" ignore missing %}
 <main class="cskh">
 <header><h1>{{ tr('nav.zalo_cskh') }}</h1><p class="muted">{{ tr('cskh.subtitle') }}</p><p id="cskh-note" role="status" aria-live="polite"></p></header>
 <section id="cskh-status" class="ui-card"><h2>{{ tr('cskh.status') }}</h2><p id="bridge-status"></p><p id="telegram-target"></p><p id="paused-count"></p><p id="learning-pending" hidden></p>
@@ -136,7 +139,14 @@ h1,h2,p {margin-top:0} input[type=checkbox] {accent-color:rgb(var(--c-accent))}
                     : learning.failed ? t('learning_failed').replace('{k}',learning.failed).replace('{n}',learning.total)
                     : learning.in_progress ? t('learning_progress').replace('{k}',learning.done).replace('{n}',learning.total)
                     : t('learning_done').replace('{n}',d.fact_count);
-                row(docs,[d.name+' · '+d.original_name,d.status==='published'?progress:t(d.status),d.fact_count,controls]);});empty(docs,4);
+                // Step, attempts and last error of the part still learning (or failed)
+                const detail=d.learning_detail; let step='';
+                if(d.status==='published' && detail && !learning.error){
+                    const phase=window.nanobotI18n['cskh.phase_'+detail.phase] ? t('phase_'+detail.phase) : detail.phase;
+                    step=(learning.failed ? '' : ' · '+phase)+' · '+t('attempts_done').replace('{k}',detail.attempts).replace('{n}',detail.max_attempts)
+                        +(detail.last_error ? ' · '+detail.last_error : '');
+                }
+                row(docs,[d.name+' · '+d.original_name,d.status==='published'?progress+step:t(d.status),d.fact_count,controls]);});empty(docs,4);
         } finally { polling=false; }
     }
     $('pause-all').onclick=()=>act($('pause-all'),async()=>{if(paused||await hubModal(t('pause_all'),t('confirm_pause'))){await api('/pause-all',{paused:!paused});note(t('saved'));}});

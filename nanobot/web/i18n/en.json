@@ -353,6 +353,12 @@
   "cskh.learning_done": "Learned · {n} facts",
   "cskh.learning_unreadable": "Unable to read learning progress",
   "cskh.learning_failed": "Failed {k}/{n} jobs",
+  "cskh.phase_queued": "waiting in queue",
+  "cskh.phase_ai": "model is reading",
+  "cskh.phase_validate": "checking facts",
+  "cskh.phase_promote": "saving facts",
+  "cskh.phase_retry": "waiting to retry",
+  "cskh.attempts_done": "tried {k}/{n}",
   "cskh.relearn": "Retry failed learning",
   "graph.kb_quota_exempt": "This daily limit does not apply to knowledge published from the customer service page in Public Customer Mode."
 }
