@@ -107,7 +107,8 @@ class SessionManager:
     Sessions are stored as JSONL files in the sessions directory.
     """
 
-    def __init__(self, workspace: Path):
+    def __init__(self, workspace: Path, public_customer_mode: bool = False):
+        self.public_customer_mode = public_customer_mode
         self.workspace = workspace
         self.sessions_dir = ensure_dir(self.workspace / "sessions")
         self.legacy_sessions_dir = get_legacy_sessions_dir()
@@ -149,7 +150,7 @@ class SessionManager:
     def _load(self, key: str) -> Session | None:
         """Load a session from disk."""
         path = self._get_session_path(key)
-        if not path.exists():
+        if not path.exists() and not self.public_customer_mode:
             legacy_path = self._get_legacy_session_path(key)
             if legacy_path.exists():
                 try:

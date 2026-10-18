@@ -408,6 +408,7 @@ def build_status_content(
     context_tokens_estimate: int,
     active_task_count: int = 0,
     search_usage_text: str | None = None,
+    public_customer_mode: bool = False,
 ) -> str:
     """Build a human-readable runtime status snapshot.
 
@@ -435,6 +436,7 @@ def build_status_content(
     lines = [
         f"\U0001f408 nanobot v{version}",
         f"\U0001f9e0 Model: {model}",
+        f"Public Customer Mode: {'on' if public_customer_mode else 'off'}",
         token_line,
         f"\U0001f4da Context: {ctx_used_str}/{ctx_total_str} ({ctx_pct}%)",
         f"\U0001f4ac Session: {session_msg_count} messages",
@@ -445,6 +447,22 @@ def build_status_content(
     if search_usage_text:
         lines.append(search_usage_text)
     return "\n".join(lines)
+
+
+def install_customer_service_soul(workspace: Path, force: bool = False) -> bool:
+    """Install the opt-in CSKH persona; preserve an existing SOUL unless forced."""
+    from importlib.resources import files as pkg_files
+    target = workspace / "SOUL.md"
+    if target.is_symlink():
+        raise ValueError("SOUL.md must not be a symbolic link")
+    text = (pkg_files("nanobot") / "templates" / "SOUL_customer_service.md").read_text(encoding="utf-8")
+    workspace.mkdir(parents=True, exist_ok=True)
+    try:
+        with target.open("w" if force else "x", encoding="utf-8") as stream:
+            stream.write(text)
+    except FileExistsError:
+        return False
+    return True
 
 
 def sync_workspace_templates(workspace: Path, silent: bool = False) -> list[str]:
@@ -467,7 +485,7 @@ def sync_workspace_templates(workspace: Path, silent: bool = False) -> list[str]
         added.append(str(dest.relative_to(workspace)))
 
     for item in tpl.iterdir():
-        if item.name.endswith(".md") and not item.name.startswith("."):
+        if item.name.endswith(".md") and not item.name.startswith(".") and item.name != "SOUL_customer_service.md":
             _write(item, workspace / item.name)
     _write(tpl / "memory" / "MEMORY.md", workspace / "memory" / "MEMORY.md")
     _write(None, workspace / "memory" / "history.jsonl")

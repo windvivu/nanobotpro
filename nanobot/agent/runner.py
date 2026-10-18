@@ -77,6 +77,8 @@ class AgentRunSpec:
     checkpoint_callback: Any | None = None
     fallback_factory: FallbackFactory | None = None
     timing_id: str | None = None  # Internal Web Chat latency correlation only
+    public_customer_mode: bool = False
+    public_mcp_servers: frozenset[str] = frozenset()
 
 
 @dataclass(slots=True)
@@ -207,7 +209,11 @@ class AgentRunner:
                 context.tool_events = list(new_events)
                 if fatal_error is not None:
                     error = f"Error: {type(fatal_error).__name__}: {fatal_error}"
-                    final_content = error
+                    if spec.public_customer_mode:
+                        from nanobot.security.public_output import public_error
+                        final_content = public_error(fatal_error)
+                    else:
+                        final_content = error
                     stop_reason = "tool_error"
                     self._append_final_message(messages, final_content)
                     context.final_content = final_content
@@ -318,7 +324,11 @@ class AgentRunner:
                     continue
 
             if response.finish_reason == "error":
-                final_content = clean or spec.error_message or _DEFAULT_ERROR_MESSAGE
+                if spec.public_customer_mode:
+                    from nanobot.security.public_output import public_error
+                    final_content = public_error(RuntimeError(clean or "Model request failed"))
+                else:
+                    final_content = clean or spec.error_message or _DEFAULT_ERROR_MESSAGE
                 stop_reason = "error"
                 error = final_content
                 self._append_model_error_placeholder(messages)
@@ -424,7 +434,7 @@ class AgentRunner:
             tools=spec.tools.get_definitions(),
             retry_mode="single_attempt" if spec.fallback_factory is not None else None,
         )
-        if hook.wants_streaming():
+        if hook.wants_streaming() and not spec.public_customer_mode:
             request_started_at = time.perf_counter()
             if spec.channel == "webchat":
                 logger.info(
@@ -475,7 +485,7 @@ class AgentRunner:
             kwargs.pop("reasoning_effort", None)
         else:
             kwargs["reasoning_effort"] = runtime.reasoning_effort
-        if hook.wants_streaming():
+        if hook.wants_streaming() and not spec.public_customer_mode:
             async def _stream(delta: str) -> None:
                 if delta:
                     context.streaming_started = True
@@ -629,6 +639,35 @@ class AgentRunner:
         return results, events, fatal_error
 
     async def _run_tool(
+        self,
+        spec: AgentRunSpec,
+        tool_call: ToolCallRequest,
+        external_lookup_counts: dict[str, int],
+    ) -> tuple[Any, dict[str, str], BaseException | None]:
+        if spec.public_customer_mode:
+            from nanobot.agent.tool_roles import PUBLIC_CUSTOMER_TOOLS
+            from nanobot.agent.tools.mcp import MCPToolWrapper
+
+            tool = spec.tools.get(tool_call.name)
+            # Check the wrapper's owner too: prefix matching alone confuses servers
+            # named e.g. "sales" and "sales_private", and accepts forged tool names.
+            allowed_mcp = (
+                isinstance(tool, MCPToolWrapper)
+                and tool._server_name in spec.public_mcp_servers
+                and tool_call.name == tool.name
+            )
+            if tool_call.name not in PUBLIC_CUSTOMER_TOOLS and not allowed_mcp:
+                logger.warning("Public tool denied: {}", tool_call.name)
+                return "tool not available", {"name": tool_call.name, "status": "error", "detail": "tool not available"}, None
+        result, event, error = await self._run_tool_unchecked(spec, tool_call, external_lookup_counts)
+        if spec.public_customer_mode and spec.workspace:
+            from nanobot.security.public_output import redact_workspace
+
+            result = redact_workspace(result, spec.workspace)
+            event = redact_workspace(event, spec.workspace)
+        return result, event, error
+
+    async def _run_tool_unchecked(
         self,
         spec: AgentRunSpec,
         tool_call: ToolCallRequest,
@@ -791,6 +830,11 @@ class AgentRunner:
                 exc,
             )
             content = result
+        if spec.public_customer_mode and spec.workspace:
+            from nanobot.security.public_output import redact_workspace
+            # Persistence can introduce a new absolute path after _run_tool filtered
+            # the result. Apply the same boundary to history and generated references.
+            content = redact_workspace(content, spec.workspace)
         if isinstance(content, str) and len(content) > spec.max_tool_result_chars:
             return truncate_text(content, spec.max_tool_result_chars)
         return content

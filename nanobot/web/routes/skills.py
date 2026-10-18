@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from loguru import logger
 
 from nanobot.agent.skills import SkillsLoader
+from nanobot.config.loader import ConfigSaveError
 
 router = APIRouter()
 
@@ -638,6 +639,8 @@ async def tradingview_mcp_install(request: Request):
         config = load_config()
         config.tools.mcp_servers[TRADINGVIEW_MCP_SERVER_NAME] = build_tradingview_mcp_config()
         _save_mcp_config(request, config)
+    except ConfigSaveError:
+        raise
     except Exception as exc:
         logger.exception("[TradingView MCP] Install succeeded but config save failed")
         return JSONResponse(
@@ -680,6 +683,8 @@ async def tradingview_mcp_reinstall(request: Request):
         config = load_config()
         config.tools.mcp_servers[TRADINGVIEW_MCP_SERVER_NAME] = build_tradingview_mcp_config()
         _save_mcp_config(request, config)
+    except ConfigSaveError:
+        raise
     except Exception as exc:
         logger.exception("[TradingView MCP] Reinstall succeeded but config save failed")
         return JSONResponse(

@@ -86,9 +86,10 @@ def _claim_key(draft: FactDraft) -> str:
 class FactPromoter:
     """Promote only validated, source-bound manifests into append-only facts."""
 
-    def __init__(self, store: BrainStore, config: BrainMemoryConfig | None = None):
+    def __init__(self, store: BrainStore, config: BrainMemoryConfig | None = None, *, public_customer_mode: bool = False):
         self.store = store
         self.config = config or store.config
+        self.public_customer_mode = public_customer_mode
 
     def _manifest_record(self, manifest: Manifest, result: PromotionResult) -> bytes:
         record = {
@@ -143,6 +144,13 @@ class FactPromoter:
         values = [draft.title, draft.body, draft.topic, *draft.entities, *draft.tags]
         return scan_text(*values)
 
+    def _scoped_claim_key(self, draft: FactDraft) -> str:
+        claim = _claim_key(draft)
+        if self.public_customer_mode:
+            # Each published document must remain independently revocable.
+            return canonical_hash({"claim": claim, "source_ref": draft.source.source_ref})
+        return claim
+
     def _active_claims(self) -> dict[str, str]:
         """Return active claim keys to fact IDs for cross-source deduplication."""
         facts_dir = self.store.root / "facts"
@@ -154,7 +162,7 @@ class FactPromoter:
                 continue
             fact = self.store.read_fact(path.stem)
             if fact.status == "active":
-                claims[_claim_key(fact)] = fact.id
+                claims[self._scoped_claim_key(fact)] = fact.id
         return claims
 
     def promote(self, manifest: Manifest) -> PromotionResult:
@@ -219,7 +227,7 @@ class FactPromoter:
             facts: list[Fact] = []
             fact_ids: list[str] = []
             for draft in drafts:
-                existing_id = existing_claims.get(_claim_key(draft))
+                existing_id = existing_claims.get(self._scoped_claim_key(draft))
                 if existing_id:
                     fact_ids.append(existing_id)
                     continue
@@ -231,7 +239,7 @@ class FactPromoter:
                 )
                 facts.append(fact)
                 fact_ids.append(fact.id)
-                existing_claims[_claim_key(draft)] = fact.id
+                existing_claims[self._scoped_claim_key(draft)] = fact.id
             sequence_path = ".migration/promotion-sequence.json"
             sequence = 0
             if self.store.path(sequence_path).exists():

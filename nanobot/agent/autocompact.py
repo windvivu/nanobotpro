@@ -17,11 +17,13 @@ class AutoCompact:
     _RECENT_SUFFIX_MESSAGES = 8
 
     def __init__(self, sessions: SessionManager, consolidator: Consolidator,
-                 session_ttl_minutes: int = 0):
+                 session_ttl_minutes: int = 0, public_customer_mode: bool = False):
+        self.public_customer_mode = public_customer_mode
         self.sessions = sessions
         self.consolidator = consolidator
         self._ttl = session_ttl_minutes
         self._archiving: set[str] = set()
+        self._public_compacted_at: dict[str, str] = {}
         self._summaries: dict[str, tuple[str, datetime]] = {}
 
     def _is_expired(self, ts: datetime | str | None,
@@ -62,11 +64,17 @@ class AutoCompact:
                       active_session_keys: Collection[str] = ()) -> None:
         """Schedule archival for idle sessions, skipping those with in-flight agent tasks."""
         now = datetime.now()
-        for info in self.sessions.list_sessions():
+        infos = self.sessions.list_sessions()
+        if self.public_customer_mode:
+            existing = {info["key"] for info in infos}
+            self._public_compacted_at = {k: v for k, v in self._public_compacted_at.items() if k in existing}
+        for info in infos:
             key = info.get("key", "")
             if not key or key in self._archiving:
                 continue
             if key in active_session_keys:
+                continue
+            if self.public_customer_mode and self._public_compacted_at.get(key) == info.get("updated_at"):
                 continue
             if self._is_expired(info.get("updated_at"), now):
                 self._archiving.add(key)
@@ -78,21 +86,29 @@ class AutoCompact:
             session = self.sessions.get_or_create(key)
             archive_msgs, kept_msgs = self._split_unconsolidated(session)
             if not archive_msgs and not kept_msgs:
+                if self.public_customer_mode:
+                    self._public_compacted_at[key] = session.updated_at.isoformat()
+                    return
                 session.updated_at = datetime.now()
                 self.sessions.save(session)
                 return
 
             last_active = session.updated_at
             summary = ""
-            if archive_msgs:
+            if self.public_customer_mode:
+                self._summaries.pop(key, None)
+                session.metadata.pop("_last_summary", None)
+            elif archive_msgs:
                 summary = await self.consolidator.archive(archive_msgs) or ""
             if summary and summary != "(nothing)":
                 self._summaries[key] = (summary, last_active)
                 session.metadata["_last_summary"] = {"text": summary, "last_active": last_active.isoformat()}
             session.messages = kept_msgs
             session.last_consolidated = 0
-            session.updated_at = datetime.now()
+            session.updated_at = last_active if self.public_customer_mode else datetime.now()
             self.sessions.save(session)
+            if self.public_customer_mode:
+                self._public_compacted_at[key] = session.updated_at.isoformat()
             if archive_msgs:
                 logger.info(
                     "Auto-compact: archived {} (archived={}, kept={}, summary={})",
@@ -110,6 +126,10 @@ class AutoCompact:
         if key in self._archiving or self._is_expired(session.updated_at):
             logger.info("Auto-compact: reloading session {} (archiving={})", key, key in self._archiving)
             session = self.sessions.get_or_create(key)
+        if self.public_customer_mode:
+            self._summaries.pop(key, None)
+            session.metadata.pop("_last_summary", None)
+            return session, None
         # Hot path: summary from in-memory dict (process hasn't restarted).
         # Also clean metadata copy so stale _last_summary never leaks to disk.
         entry = self._summaries.pop(key, None)

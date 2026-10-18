@@ -46,14 +46,14 @@ def _normalize_addr(
     return addr
 
 
-def _is_private(addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+def _is_private(addr: ipaddress.IPv4Address | ipaddress.IPv6Address, *, allow_whitelist: bool = True) -> bool:
     addr = _normalize_addr(addr)
-    if _allowed_networks and any(addr in net for net in _allowed_networks):
+    if allow_whitelist and _allowed_networks and any(addr in net for net in _allowed_networks):
         return False
     return any(addr in net for net in _BLOCKED_NETWORKS)
 
 
-def validate_url_target(url: str) -> tuple[bool, str]:
+def validate_url_target(url: str, *, allow_whitelist: bool = True) -> tuple[bool, str]:
     """Validate a URL is safe to fetch: scheme, hostname, and resolved IPs.
 
     Returns (ok, error_message).  When ok is True, error_message is empty.
@@ -82,7 +82,7 @@ def validate_url_target(url: str) -> tuple[bool, str]:
             addr = ipaddress.ip_address(info[4][0])
         except ValueError:
             continue
-        if _is_private(addr):
+        if _is_private(addr, allow_whitelist=allow_whitelist):
             return False, f"Blocked: {hostname} resolves to private/internal address {addr}"
 
     return True, ""

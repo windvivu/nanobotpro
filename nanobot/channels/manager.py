@@ -50,6 +50,26 @@ class ChannelManager:
     def __init__(self, config: Config, bus: MessageBus):
         self.config = config
         self.bus = bus
+        self._public_customer_mode = bool(getattr(config, "public_customer_mode", False))
+        if self._public_customer_mode:
+            previous_filter = bus.inbound_filter
+
+            def public_inbound(msg):
+                meta = msg.metadata or {}
+                if (str(meta.get("thread_type", "")).lower() == "group"
+                        or str(meta.get("chat_type", "")).lower() in {"group", "supergroup", "channel"}
+                        or meta.get("is_group") is True):
+                    logger.debug("Public mode: group inbound ignored on {}", msg.channel)
+                    return False
+                return previous_filter(msg) if previous_filter else True
+
+            bus.inbound_filter = public_inbound
+            telegram = getattr(config.channels, "telegram", None)
+            if isinstance(telegram, dict):
+                telegram.pop("group_policy", None)
+                telegram["groupPolicy"] = "deny"
+            elif telegram is not None:
+                telegram.group_policy = "deny"
         self.channels: dict[str, BaseChannel] = {}
         # Destinations that take outbound messages for a name but are not channels, e.g. Web Chat
         # (web/cli.py registers it): name -> async callable(OutboundMessage) (custom)
@@ -57,6 +77,9 @@ class ChannelManager:
         self._dispatch_task: asyncio.Task | None = None
 
         self._init_channels()
+        if self._public_customer_mode:
+            for channel in self.channels.values():
+                channel._public_customer_mode = True
 
     def _init_channels(self) -> None:
         """Initialize channels discovered via pkgutil scan + entry_points plugins."""
@@ -252,6 +275,8 @@ class ChannelManager:
                         timeout=1.0
                     )
 
+                if self._public_customer_mode and (msg.metadata.get("_tool_hint") or msg.metadata.get("_progress")):
+                    continue
                 if msg.metadata.get("_retry_wait"):
                     continue
 

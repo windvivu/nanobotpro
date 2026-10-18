@@ -101,7 +101,7 @@ class _LoopHook(AgentHook):
         self._stream_buf = ""
 
     def wants_streaming(self) -> bool:
-        return self._on_stream is not None
+        return self._on_stream is not None and not getattr(self._loop, "public_customer_mode", False)
 
     async def before_iteration(self, context: AgentHookContext) -> None:
         self._loop._current_iteration = context.iteration
@@ -250,6 +250,9 @@ class AgentLoop:
         trader_mode: bool = False,
         market_scanner_config: Any | None = None,
         brain_memory_config: Any | None = None,
+        public_customer_mode: bool = False,
+        customer_session_retention_days: int = 180,
+        customer_session_max: int = 5000,
     ):
         from nanobot.config.schema import (
             AgentDefaults,
@@ -260,6 +263,8 @@ class AgentLoop:
         defaults = AgentDefaults()
         self.bus = bus
         self.channels_config = channels_config
+        self._public_customer_mode = bool(public_customer_mode)
+        self._enforce_public_channel_settings()
         self.provider = provider
         self.workspace = workspace
         self.model = model or provider.get_default_model()
@@ -304,14 +309,27 @@ class AgentLoop:
         self._image_generation_provider_configs = dict(image_generation_provider_configs or {})
         self.trader_mode = bool(trader_mode)
         self.market_scanner_config = market_scanner_config
+        if self.public_customer_mode:
+            from nanobot.brain_memory.config import BrainMemoryConfig, public_brain_config
+            brain_memory_config = public_brain_config(brain_memory_config or BrainMemoryConfig())
+            logger.info("Brain: public KB mode")
         self.brain_memory_config = brain_memory_config
         from nanobot.brain_memory.runtime import BrainRuntime
         self.brain_runtime = BrainRuntime(self)
 
         self.context = ContextBuilder(workspace, disabled_skills=disabled_skills, timezone=timezone,
                                       chatbot_config=chatbot_config,
-                                      brain_memory_config=brain_memory_config)
+                                      brain_memory_config=brain_memory_config,
+                                      public_customer_mode=self.public_customer_mode)
         self.sessions = session_manager or SessionManager(workspace)
+        if self.public_customer_mode:
+            self.sessions.public_customer_mode = True
+        from nanobot.session.customer_retention import CustomerSessionRetention
+        self.customer_retention = CustomerSessionRetention(
+            self.sessions, enabled=self.public_customer_mode,
+            retention_days=customer_session_retention_days, max_sessions=customer_session_max,
+        )
+        self._customer_retention_task: asyncio.Task | None = None
         self.tools = ToolRegistry()
         self._runtime_vars: dict[str, Any] = {}
         self._inject_default_hooks()
@@ -350,7 +368,7 @@ class AgentLoop:
         self._last_usage: dict[str, int] = {}
         self.token_usage = TokenUsageTracker()
         self._status_response: str | None = None
-        self._memory_store = MemoryStore(workspace)
+        self._memory_store = MemoryStore(workspace, public_customer_mode=self.public_customer_mode)
         self.memory_consolidator = Consolidator(
             store=self._memory_store,
             provider=provider,
@@ -381,6 +399,7 @@ class AgentLoop:
             sessions=self.sessions,
             consolidator=self.memory_consolidator,
             session_ttl_minutes=session_ttl_minutes,
+            public_customer_mode=self.public_customer_mode,
         )
         self._register_default_tools()
         self.commands = CommandRouter()
@@ -551,8 +570,12 @@ class AgentLoop:
         if eff_web:
             if wanted("web_search"):
                 self.tools.register(WebSearchTool(config=self.web_search_config, proxy=self.web_proxy))
-            if wanted("web_fetch"):
-                self.tools.register(WebFetchTool(proxy=self.web_proxy))
+            fetch_allowlist = getattr(getattr(self, "web_config", None), "fetch_allowlist", [])
+            if wanted("web_fetch") and (not getattr(self, "public_customer_mode", False) or fetch_allowlist):
+                self.tools.register(WebFetchTool(
+                    proxy=self.web_proxy,
+                    fetch_allowlist=fetch_allowlist if getattr(self, "public_customer_mode", False) else None,
+                ))
 
         # Message tool (always enabled)
         # Attachments stay within what the bot may read (sandbox, allowedDirs, media folder) whatever the
@@ -568,11 +591,32 @@ class AgentLoop:
         self.tools.register(MessageTool(
             send_callback=self.bus.publish_outbound, working_dir=str(self.workspace),
             allowed_dir=attach.allowed_dir, extra_allowed_dirs=attach.extra_read_dirs,
+            public_customer_mode=getattr(self, "public_customer_mode", False),
         ))
+
+        if getattr(self, "public_customer_mode", False):
+            from nanobot.agent.tools.escalate import EscalateTool
+            from nanobot.channels.zalo_personal import ZaloCustomerServiceConfig
+            from nanobot.config.public_mode import _field
+            zalo = getattr(getattr(self, "channels_config", None), "zalo", None)
+            service = _field(zalo, "customer_service", "customerService", {})
+            service = ZaloCustomerServiceConfig.model_validate(
+                service.model_dump() if hasattr(service, "model_dump") else service or {},
+            )
+            if service.enabled:
+                self.tools.register(EscalateTool(
+                    public_customer_mode=True, customer_service=service,
+                    send_callback=self.bus.publish_outbound, sessions=self.sessions, workspace=self.workspace,
+                    get_customer_state=lambda: (
+                        self.customer_retention.get_customer_state()
+                        if self.customer_retention.get_customer_state else None
+                    ),
+                    on_handoff=lambda: setattr(self.tools.get("message"), "_sent_in_turn", True),
+                ))
 
         image_generation_config = getattr(self, "_image_generation_config", None)
         image_generation_provider_configs = getattr(self, "_image_generation_provider_configs", {})
-        if image_generation_config is not None and image_generation_config.enabled:
+        if not getattr(self, "public_customer_mode", False) and image_generation_config is not None and image_generation_config.enabled:
             self.tools.register(
                 ImageGenerationTool(
                     workspace=self.workspace,
@@ -725,6 +769,9 @@ class AgentLoop:
 
     async def load_mcp_server(self, name: str, cfg: Any) -> bool:
         """Load or replace one named MCP runtime without restarting the gateway."""
+        if self.public_customer_mode:
+            logger.warning("Public customer MCP policy cannot change at runtime; restart")
+            return False
         self._mcp_servers[name] = cfg
         _, _, _, _, _, eff_mcp = self._resolve_tool_flags()
         if not eff_mcp or not cfg.enabled:
@@ -758,13 +805,18 @@ class AgentLoop:
         metadata: dict | None = None,
         *,
         session_key: str | None = None,
+        sender_id: str | None = None,
+        sender_name: str | None = None,
     ) -> None:
         """Update context for all tools that need routing info."""
-        for name in ("message", "spawn", "cron", "long_task", "complete_goal", "my"):
+        for name in ("message", "escalate", "spawn", "cron", "long_task", "complete_goal", "my"):
             if tool := self.tools.get(name):
                 if hasattr(tool, "set_context"):
                     if name == "message":
                         tool.set_context(channel, chat_id, message_id, metadata)
+                    elif name == "escalate":
+                        tool.set_context(channel, chat_id, session_key=session_key,
+                                         sender_id=sender_id, sender_name=sender_name)
                     elif name in ("spawn", "long_task", "complete_goal", "my"):  # spawn, my: custom
                         tool.set_context(channel, chat_id, session_key=session_key)
                     else:
@@ -794,6 +846,21 @@ class AgentLoop:
         )
 
     # ── Custom: dynamic config reload (web dashboard support) ──
+    @property
+    def public_customer_mode(self) -> bool:
+        """Instance policy captured at startup; changing it requires a restart."""
+        return getattr(self, "_public_customer_mode", False)
+
+    def _enforce_public_channel_settings(self) -> None:
+        channels = getattr(self, "channels_config", None)
+        if getattr(self, "public_customer_mode", False) and channels is not None:
+            if channels.send_progress or channels.send_tool_hints:
+                logger.warning(
+                    "Public Customer Mode: forcing channels.sendProgress and channels.sendToolHints off"
+                )
+            channels.send_progress = False
+            channels.send_tool_hints = False
+
     def _reload_config(self) -> None:
         """Reload model/provider/credentials from config file.
 
@@ -804,6 +871,15 @@ class AgentLoop:
             from nanobot.config.loader import load_config
             from nanobot.providers.image_generation import image_gen_provider_configs
             config = load_config()
+            public_mode = getattr(self, "public_customer_mode", False)
+            if config.public_customer_mode != public_mode:
+                logger.warning("publicCustomerMode cannot change at runtime; restart")
+                # Keep the startup policy for consumers of this reload snapshot.
+                config.public_customer_mode = public_mode
+                # The enable/undo proposal is one policy transition. Do not
+                # partially apply its tool/Brain/provider settings before restart.
+                return
+            AgentLoop._enforce_public_channel_settings(self)
 
             from nanobot.providers.factory import make_provider
             from nanobot.providers.snapshot import provider_snapshot_from_config
@@ -855,6 +931,9 @@ class AgentLoop:
             # Brain Memory retrieval is optional and lazy. Drop the adapter so
             # a changed root/flag is picked up on the next user query.
             latest_brain_config = getattr(config, "brain_memory", None)
+            if public_mode:
+                from nanobot.brain_memory.config import BrainMemoryConfig, public_brain_config
+                latest_brain_config = public_brain_config(latest_brain_config or BrainMemoryConfig())
             current_brain_config = getattr(self, "brain_memory_config", None)
             if (
                 current_brain_config is None
@@ -906,6 +985,10 @@ class AgentLoop:
                 or list(tc.custom_tools) != list(getattr(self, "custom_tools", []))
                 or tc.sandbox_mode != self.sandbox_mode
             )
+            if public_mode:
+                if preset_changed or trader_mode_changed or market_scanner_changed:
+                    logger.warning("Public customer tool policy cannot change at runtime; restart")
+                return
             if preset_changed:
                 old_preset = self.tool_preset
                 self.tool_preset = tc.tool_preset
@@ -1080,6 +1163,11 @@ class AgentLoop:
 
         result = await self.runner.run(AgentRunSpec(
             initial_messages=initial_messages,
+            public_customer_mode=self.public_customer_mode,
+            public_mcp_servers=frozenset(
+                name for name, cfg in getattr(self, "_mcp_servers", {}).items()
+                if "chatbot" in (cfg.get("roles", []) if isinstance(cfg, dict) else cfg.roles)
+            ),
             tools=self.tools,
             model=self.model,
             max_iterations=self.max_iterations,
@@ -1129,6 +1217,10 @@ class AgentLoop:
     async def run(self) -> None:
         """Run the agent loop, dispatching messages as tasks to stay responsive to /stop."""
         self._running = True
+        if self.public_customer_mode:
+            self._customer_retention_task = asyncio.create_task(self.customer_retention.run(
+                lambda: self._get_active_session_keys() | self.auto_compact._archiving,
+            ))
         await self._connect_mcp()
         if self._dream_enabled:  # Dream turned off: no scheduled runs from this loop either (custom)
             self._dream_task = asyncio.create_task(self._run_dream_loop())
@@ -1170,8 +1262,14 @@ class AgentLoop:
                 continue
 
             # Debounce: wait briefly to batch rapid messages from same session
-            from nanobot.config.loader import load_config
-            debounce_s = load_config().channels.debounce_seconds
+            from nanobot.config.loader import ConfigLoadError, load_config
+            try:
+                debounce_s = load_config().channels.debounce_seconds
+                self._last_debounce_seconds = debounce_s
+            except ConfigLoadError as exc:
+                logger.error("Debounce config reload skipped: {}", exc)
+                debounce_s = getattr(self, "_last_debounce_seconds",
+                                     getattr(self.channels_config, "debounce_seconds", 2.0))
             if debounce_s <= 0:
                 self._dispatch_task(msg)
                 continue
@@ -1382,15 +1480,21 @@ class AgentLoop:
             except asyncio.CancelledError:
                 logger.info("Task cancelled for session {}", msg.session_key)
                 raise
-            except Exception:
+            except Exception as exc:
+                from nanobot.security.public_output import public_error
+                error_text = public_error(exc) if self.public_customer_mode else "Sorry, I encountered an error."
                 logger.exception("Error processing message for session {}", msg.session_key)
                 await self.bus.publish_outbound(OutboundMessage(
                     channel=msg.channel, chat_id=msg.chat_id,
-                    content="Sorry, I encountered an error.",
+                    content=error_text,
                 ))
 
     async def close_mcp(self) -> None:
         """Drain pending background archives, then close MCP connections."""
+        if task := getattr(self, "_customer_retention_task", None):
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            self._customer_retention_task = None
         if self._background_tasks:
             try:
                 await asyncio.wait_for(
@@ -1448,6 +1552,7 @@ class AgentLoop:
             context_window_tokens=self.context_window_tokens,
             session_msg_count=session_msg_count,
             context_tokens_estimate=estimate_prompt_tokens([], None),
+            public_customer_mode=self.public_customer_mode,
         )
 
     @staticmethod
@@ -1501,6 +1606,8 @@ class AgentLoop:
     def stop(self) -> None:
         """Stop the agent loop."""
         self._running = False
+        if task := getattr(self, "_customer_retention_task", None):
+            task.cancel()
         if self._dream_task and not self._dream_task.done():
             self._dream_task.cancel()
         logger.info("Agent loop stopping")
@@ -1516,6 +1623,10 @@ class AgentLoop:
         on_multi_send: Callable[[str], Awaitable[None]] | None = None,  # Custom: send intermediate multi-message parts
     ) -> OutboundMessage | None:
         """Process a single inbound message and return the response."""
+        if self.public_customer_mode:
+            # Buffer the response until the provider's success/error status is known.
+            # Delivery must not label this final response as already streamed.
+            on_progress = on_stream = on_stream_end = None
         begin_turn()  # tool routing for this turn only, apart from other sessions' turns (custom)
         # System messages: parse origin from chat_id ("channel:chat_id")
         if msg.channel == "system":
@@ -1590,7 +1701,9 @@ class AgentLoop:
 
         await self.memory_consolidator.maybe_consolidate_by_tokens(session)
 
-        self._set_tool_context(msg.channel, msg.chat_id, msg.metadata.get("message_id"), msg.metadata, session_key=session.key)
+        self._set_tool_context(msg.channel, msg.chat_id, msg.metadata.get("message_id"), msg.metadata,
+                               session_key=session.key, sender_id=msg.sender_id,
+                               sender_name=msg.metadata.get("sender_name"))
         if message_tool := self.tools.get("message"):
             if isinstance(message_tool, MessageTool):
                 message_tool.start_turn()

@@ -6,6 +6,17 @@ from pydantic.alias_generators import to_camel
 from nanobot.brain_memory.paths import validate_ref
 
 
+def is_public_kb_source(source_ref: str) -> bool:
+    """Only canonical references below the admin KB can enter public learning."""
+    if not isinstance(source_ref, str) or not source_ref.startswith("kb/"):
+        return False
+    try:
+        validate_ref(source_ref)
+    except ValueError:
+        return False
+    return True
+
+
 class BrainMemoryConfig(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
 
@@ -76,3 +87,12 @@ class BrainMemoryConfig(BaseModel):
     @classmethod
     def relative_root(cls, value: str) -> str:
         return validate_ref(value)
+
+
+def public_brain_config(config: BrainMemoryConfig) -> BrainMemoryConfig:
+    """Derive public policy without changing the persisted or caller-owned config."""
+    return config.model_copy(deep=True, update={
+        "enabled": True, "retrieval_enabled": True, "retrieval_sessions": None,
+        "learning_sessions": [],
+        "migration_sources": [ref for ref in config.migration_sources if is_public_kb_source(ref)],
+    })

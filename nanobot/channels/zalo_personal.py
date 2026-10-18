@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import random
 import re
 import shutil
 import sys
@@ -28,6 +29,8 @@ _BRIDGE_JS = _BRIDGE_DIR / "zalo_bridge.js"
 _BRIDGE_PKG = _BRIDGE_DIR / "zalo_bridge_package.json"
 # Marker in the bridge dir: user pressed Disconnect → no auto-connect on start
 _MANUAL_DISCONNECT_FLAG = "manual_disconnect.flag"
+CSKH_MINUTE_NOTICE = "Anh/chị nhắn chậm lại giúp em nhé"
+CSKH_DAY_NOTICE = "Hôm nay em đã nhận đủ tin, mai anh/chị nhắn lại giúp em"
 
 
 def _is_mentioned(content: str, bot_user_id: str, bot_name: str,
@@ -156,6 +159,19 @@ def _group_chatter_reason(content: str, has_media: bool) -> str | None:
     return None
 
 
+class ZaloCustomerServiceConfig(Base):
+    """Opt-in Zalo customer service policy; enabled changes require restart."""
+
+    enabled: bool = False
+    welcome_message: str = "Chào anh/chị, em là trợ lý chăm sóc khách hàng. Anh/chị cần hỗ trợ gì ạ?"
+    handoff_message: str = "Em đã chuyển cho nhân viên hỗ trợ, anh/chị chờ chút ạ."
+    auto_accept_friend: bool = True
+    escalation_target: str = ""
+    inbound_per_minute: int = Field(default=6, ge=1)
+    inbound_per_day: int = Field(default=200, ge=1)
+    pause_after_escalation_minutes: int = Field(default=30, ge=1)
+
+
 class ZaloPersonalConfig(Base):
     """Zalo personal channel configuration (unofficial, uses zca-js Node.js bridge)."""
 
@@ -166,6 +182,21 @@ class ZaloPersonalConfig(Base):
     # Group filter (custom): "on" keeps small talk, gibberish, repeats and floods away from the LLM;
     # "log" only logs what it would skip, and flags a would-be skip the bot answered; "off" does nothing
     group_filter: Literal["off", "log", "on"] = "log"
+    customer_service: ZaloCustomerServiceConfig = Field(default_factory=ZaloCustomerServiceConfig)
+
+
+def customer_service_target_error(service: ZaloCustomerServiceConfig, root_config: Any) -> str | None:
+    """Validate the fixed escalation destination, without starting a bridge."""
+    if not service.enabled:
+        return None
+    channel, sep, target = service.escalation_target.strip().partition(":")
+    if channel != "telegram" or not sep or not target.strip():
+        return "channels.zalo.customerService.escalationTarget must be telegram:<id>"
+    telegram = getattr(root_config.channels, "telegram", None)
+    enabled = telegram.get("enabled", False) if isinstance(telegram, dict) else getattr(telegram, "enabled", False)
+    if not enabled:
+        return "channels.telegram.enabled must be true for Zalo customerService"
+    return None
 
 
 class ZaloPersonalChannel(BaseChannel):
@@ -259,6 +290,74 @@ class ZaloPersonalChannel(BaseChannel):
         # after the next "ready" (bounded, and dropped once too old).
         self._pending_outbound: list[tuple[float, OutboundMessage]] = []
         self._flush_task: asyncio.Task | None = None
+        self._customer_state = None
+        self._customer_tasks: set[asyncio.Task] = set()
+        self._friend_tasks: dict[str, asyncio.Task] = {}
+        self._customer_service_enabled = getattr(
+            getattr(config, "customer_service", None), "enabled", False
+        )
+
+    @property
+    def customer_service(self) -> ZaloCustomerServiceConfig:
+        return getattr(self.config, "customer_service", ZaloCustomerServiceConfig())
+
+    def apply_config(self, config: ZaloPersonalConfig) -> None:
+        """Apply dashboard settings; the CSKH enable switch is fixed until restart."""
+        config = config.model_copy(deep=True)
+        if config.customer_service.enabled != self._customer_service_enabled:
+            logger.warning("channels.zalo.customerService.enabled cannot change at runtime; restart (cần restart)")
+            config.customer_service.enabled = self._customer_service_enabled
+        self.config = config
+        self._node_path = config.node_path
+
+    def _get_customer_state(self):
+        if self._customer_state is None:
+            from nanobot.channels.zalo_cskh_state import CustomerServiceState
+            from nanobot.config.loader import load_config
+            cfg = load_config()
+            self._customer_state = CustomerServiceState(cfg.workspace_path)
+        return self._customer_state
+
+    def _schedule_customer_task(self, factory) -> asyncio.Task:
+        # The reader resolves command acks, so it must never await send()/accept itself.
+        async def run():
+            try:
+                await factory()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning("Zalo customerService action failed: {}", exc)
+        task = asyncio.create_task(run())
+        self._customer_tasks.add(task)
+        task.add_done_callback(self._customer_tasks.discard)
+        return task
+
+    async def _cancel_customer_tasks(self) -> None:
+        tasks = list(self._customer_tasks)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self._customer_tasks.clear()
+        self._friend_tasks.clear()
+
+    async def _accept_customer_friend(self, user_id: str, name: str) -> None:
+        await asyncio.sleep(random.uniform(2, 5))
+        if not self.customer_service.auto_accept_friend or self._intentional_disconnect:
+            return
+        ack = await self._send_command({"action": "accept_friend", "userId": user_id}, wait_for_ack=True)
+        if not ack or ack.get("event") != "sent":
+            return
+        self._get_customer_state().record_friend(user_id, "ACCEPTED", name)
+        if self.customer_service.welcome_message:
+            await self.send(OutboundMessage(channel="zalo", chat_id=user_id,
+                content=self.customer_service.welcome_message, metadata={"thread_type": "User"}))
+
+    def _customer_service_start_error(self) -> str | None:
+        if not self._customer_service_enabled:
+            return None
+        from nanobot.config.loader import load_config
+        return customer_service_target_error(self.customer_service, load_config())
 
     # ── BaseChannel interface ─────────────────────────────
 
@@ -269,6 +368,12 @@ class ZaloPersonalChannel(BaseChannel):
         Dashboard /zalo/setup page. A user who pressed Disconnect stays
         disconnected across restarts until they press Connect again.
         """
+        error = self._customer_service_start_error()
+        if error:
+            logger.error("Zalo customerService not started: {}", error)
+            return
+        if self._customer_service_enabled:
+            self._get_customer_state()
         self._running = True
 
         # Setup bridge (copy files, npm install) so it's ready when user clicks Connect
@@ -361,6 +466,7 @@ class ZaloPersonalChannel(BaseChannel):
                 logger.warning("[Zalo] Group filter would have skipped a message the bot answered ({}): {}",
                                msg.metadata["group_filter"], msg.metadata.get("group_filter_preview", ""))
 
+        delivered = False
         # Send text message (if any)
         if msg.content and msg.content not in ("", "[empty message]"):
             try:
@@ -370,6 +476,7 @@ class ZaloPersonalChannel(BaseChannel):
                     "threadType": thread_type,
                     "content": msg.content,
                 }, wait_for_ack=True, timeout_s=self.TEXT_ACK_TIMEOUT_S)
+                delivered = True
             except TimeoutError:
                 logger.error("[Zalo] No delivery ack within {}s for {} — not retrying",
                              self.TEXT_ACK_TIMEOUT_S, chat_id)
@@ -387,6 +494,7 @@ class ZaloPersonalChannel(BaseChannel):
                         "filePath":   str(Path(media_path).resolve()),
                         "mediaType":  media_type,
                     }, wait_for_ack=True, timeout_s=self.MEDIA_ACK_TIMEOUT_S)
+                    delivered = True
                     logger.info("[Zalo] Queued media send: {} ({})", Path(media_path).name, media_type)
                 except TimeoutError:
                     logger.error("[Zalo] No delivery ack within {}s for {} — not retrying (upload may still finish)",
@@ -395,6 +503,12 @@ class ZaloPersonalChannel(BaseChannel):
                     logger.warning("[Zalo] Failed to queue media {}: {}", media_path, e)
                     raise
 
+        if delivered and self._customer_service_enabled and thread_type == "User":
+            try:
+                self._get_customer_state().record_outbound(chat_id)
+            except Exception as exc:
+                # Delivery already happened: retrying the send would duplicate it.
+                logger.error("Zalo customerService could not record outbound count: {}", exc)
         # Real message sent — reset hint tracker so next turn can send a new hint
         self._hint_sent.discard(chat_id)
 
@@ -469,6 +583,10 @@ class ZaloPersonalChannel(BaseChannel):
             dict with {"status": "connecting"}, {"status": "error", "message": "..."},
             or {"status": "disconnected"} when a Disconnect/stop arrived meanwhile.
         """
+        error = self._customer_service_start_error()
+        if error:
+            logger.error("Zalo customerService not connected: {}", error)
+            return {"status": "error", "message": error}
         if self._status == self.STATUS_CONNECTED:
             return {"status": "already_connected", "userId": self._user_id}
 
@@ -598,6 +716,7 @@ class ZaloPersonalChannel(BaseChannel):
                 bridge to exit before killing. If False (e.g. the process is
                 already dead during auto-reconnect), kill immediately.
         """
+        await self._cancel_customer_tasks()
         # Cancel reader tasks and the connect watchdog FIRST, so they never react
         # to an exit we cause ourselves (e.g. take connect() replacing the bridge
         # for a crash). Skip the watchdog if it is the task currently running this
@@ -660,6 +779,7 @@ class ZaloPersonalChannel(BaseChannel):
         """
         # Disconnect also means "stop the pending auto-reconnect", even though the
         # status already reads DISCONNECTED while it waits out its backoff.
+        await self._cancel_customer_tasks()
         reconnect_pending = self._cancel_reconnect()
         if self._status == self.STATUS_DISCONNECTED and not reconnect_pending:
             return {"status": "already_disconnected"}
@@ -1032,6 +1152,28 @@ class ZaloPersonalChannel(BaseChannel):
         elif event_type == "qr":
             logger.info("Zalo QR code received — scan with Zalo app")
 
+        elif event_type == "friend_request":
+            if not self._customer_service_enabled:
+                return
+            user_id = str(event.get("userId") or "")
+            if not user_id or user_id == self._user_id:
+                return
+            state = self._get_customer_state()
+            state.record_friend(user_id, "REQUEST", str(event.get("displayName") or ""))
+            if not self.customer_service.auto_accept_friend or state.customer_status(user_id) == "blocked":
+                return
+            pending = self._friend_tasks.get(user_id)
+            if pending is not None and not pending.done():
+                return
+            task = self._schedule_customer_task(lambda: self._accept_customer_friend(user_id, str(event.get("displayName") or "")))
+            self._friend_tasks[user_id] = task
+            task.add_done_callback(lambda done: self._friend_tasks.pop(user_id, None)
+                                   if self._friend_tasks.get(user_id) is done else None)
+
+        elif event_type == "friend_change":
+            if self._customer_service_enabled and event.get("userId"):
+                self._get_customer_state().record_friend(str(event["userId"]), str(event.get("change", "")))
+
         elif event_type == "message":
             thread_id = event.get("threadId", "")
             sender_id = event.get("senderId", thread_id)
@@ -1048,6 +1190,28 @@ class ZaloPersonalChannel(BaseChannel):
 
             if not content and not media_url:
                 return
+
+            if self._customer_service_enabled:
+                if thread_type == "Group":
+                    logger.debug("Zalo customerService: group message ignored")
+                    return
+                if not self.is_allowed(sender_id):
+                    return
+                state = self._get_customer_state()
+                allowed, notice = state.admit_inbound(
+                    sender_id, sender_name,
+                    per_minute=self.customer_service.inbound_per_minute,
+                    per_day=self.customer_service.inbound_per_day,
+                )
+                if not allowed:
+                    if notice:
+                        reminder = OutboundMessage(
+                            channel="zalo", chat_id=thread_id,
+                            content=CSKH_MINUTE_NOTICE if notice == "minute" else CSKH_DAY_NOTICE,
+                            metadata={"thread_type": "User"},
+                        )
+                        self._schedule_customer_task(lambda: self.send(reminder))
+                    return
 
             # ── Group chat filter (Option C) ───────────────────────────
             group_ambient = False
@@ -1172,6 +1336,7 @@ class ZaloPersonalChannel(BaseChannel):
             )
 
         elif event_type == "disconnected":
+            await self._cancel_customer_tasks()
             reason = event.get("reason", "unknown")
             logger.warning("Zalo disconnected: {}", reason)
             self._last_disconnect_reason = reason

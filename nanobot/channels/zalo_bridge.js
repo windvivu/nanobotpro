@@ -20,7 +20,7 @@
  *     {"action":"stop"}
  */
 
-const { Zalo, ThreadType } = require("zca-js");
+const { Zalo, ThreadType, FriendEventType } = require("zca-js");
 const readline = require("readline");
 const fs = require("fs");
 const path = require("path");
@@ -331,6 +331,15 @@ async function main() {
     const selfId = api.getOwnId ? String(api.getOwnId()) : "unknown";
     emit({ event: "ready", userId: selfId });
 
+    // zca-js REQUEST.threadId is toUid (our own ID for an incoming request).
+    api.listener.on("friend_event", (event) => {
+        const normalized = normalizeFriendEvent(event, selfId);
+        if (normalized) {
+            markActivity();
+            emit(normalized);
+        }
+    });
+
     // ── Listen for incoming messages ──
     api.listener.on("message", (message) => {
         lastActivityAt = Date.now(); // reset idle timer on any incoming message
@@ -511,6 +520,23 @@ async function main() {
     credsRefreshTimer = setInterval(() => saveCredentials(api), CREDS_REFRESH_INTERVAL_MS);
 }
 
+/** Normalize the zca-js 2.2.0 tagged union; never accept our own outgoing request. */
+function normalizeFriendEvent(event, selfId) {
+    if (event.type === FriendEventType.REQUEST) {
+        const userId = String(event.data?.fromUid || "");
+        if (event.isSelf || !userId || userId === selfId) return null;
+        return { event: "friend_request", userId, displayName: event.data?.displayName || "" };
+    }
+    const names = ["ADD", "REMOVE", "BLOCK", "UNBLOCK", "REJECT_REQUEST", "UNDO_REQUEST"];
+    const change = names.find(name => event.type === FriendEventType[name]);
+    if (!change) return null;
+    const data = event.data;
+    const userId = typeof data === "string" ? data
+        : String(event.isSelf ? data?.toUid || "" : data?.fromUid || "");
+    if (!userId || userId === selfId) return null;
+    return { event: "friend_change", change, userId };
+}
+
 /** Tell Python how a send command ended (only commands that asked for an ack). */
 function ack(cmd, errorMessage) {
     if (!cmd || !cmd.cmdId) return; // fire-and-forget command, e.g. the progress hint
@@ -531,7 +557,19 @@ function startCommandReader() {
         try {
             cmd = JSON.parse(line);
 
-            if (cmd.action === "send") {
+            if (cmd.action === "accept_friend") {
+                if (!api) {
+                    ack(cmd, "API not ready");
+                    return;
+                }
+                if (typeof cmd.userId !== "string" || !cmd.userId) {
+                    ack(cmd, "Missing userId");
+                    return;
+                }
+                await api.acceptFriendRequest(cmd.userId);
+                markActivity();
+                ack(cmd);
+            } else if (cmd.action === "send") {
                 if (!api) {
                     logErr("Cannot send: API not ready");
                     ack(cmd, "API not ready");

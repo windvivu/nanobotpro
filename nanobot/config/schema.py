@@ -148,6 +148,8 @@ class AgentDefaults(Base):
     reasoning_effort: str | None = None  # low / medium / high / adaptive — enables LLM thinking mode
     fallback_models: list[FallbackCandidate] = Field(default_factory=list)
     timezone: str = "UTC"  # IANA timezone, e.g. "Asia/Ho_Chi_Minh", "America/New_York"
+    customer_session_retention_days: int = Field(default=180, ge=1)
+    customer_session_max: int = Field(default=5000, ge=1)
     unified_session: bool = False  # Share one session across all channels — KEEP FALSE for multi-customer use
     disabled_skills: list[str] = Field(default_factory=list)  # Skill names to exclude from loading
     # Per-line git-blame age annotation in Phase 1 prompt (e.g. `← 3d` suffix).
@@ -343,6 +345,8 @@ class WebSearchConfig(Base):
 class WebToolsConfig(Base):
     """Web tools configuration."""
 
+    fetch_allowlist: list[str] = Field(default_factory=list)
+
     enable: bool = True
     proxy: str | None = (
         None  # HTTP/SOCKS5 proxy URL, e.g. "http://127.0.0.1:7890" or "socks5://127.0.0.1:1080"
@@ -489,6 +493,11 @@ class Config(BaseSettings):
     api: ApiConfig = Field(default_factory=ApiConfig)
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
+    public_customer_mode: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("publicCustomerMode", "public_customer_mode"),
+        serialization_alias="publicCustomerMode",
+    )
     trader_mode: bool = Field(
         default=False,
         validation_alias=AliasChoices("traderMode", "trader_mode"),

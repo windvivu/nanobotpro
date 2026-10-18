@@ -7,6 +7,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from loguru import logger
 
+from nanobot.config.loader import ConfigSaveError
+
 router = APIRouter()
 
 _SEARCH_PROVIDERS = {"duckduckgo", "brave", "tavily", "searxng", "jina", "kagi"}
@@ -1441,6 +1443,8 @@ async def config_save(request: Request):
             return JSONResponse({"success": True, "message": "Configuration saved successfully"})
         return RedirectResponse(url="/config?saved=1", status_code=302)
 
+    except ConfigSaveError:
+        raise
     except Exception as e:
         logger.error("[Web Config] Failed to save: {}", e)
         if _wants_json_response(request):

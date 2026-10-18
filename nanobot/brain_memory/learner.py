@@ -46,17 +46,27 @@ class LearningWorker:
         manifest_factory: ManifestFactory,
         config: BrainMemoryConfig | None = None,
         on_result: Callable[[LearningResult], None] | None = None,
+        public_customer_mode: bool = False,
     ):
         self.store = store
         self.promoter = promoter
         self.factory = manifest_factory
         self.config = config or store.config
         self.on_result = on_result
-        self._queue: asyncio.Queue[str] = asyncio.Queue(maxsize=self.config.queue_capacity)
+        self.public_customer_mode = public_customer_mode
+        self._queue: asyncio.PriorityQueue[tuple[int, int, str]] = asyncio.PriorityQueue(maxsize=self.config.queue_capacity)
+        self._queue_sequence = 0
         self._queued_ids: set[str] = set()
         self._processing_ids: set[str] = set()
         self._task: asyncio.Task[None] | None = None
         self._stopping = False
+        # Compact metadata only: never cache paths or job payloads. All actual
+        # reads/writes still go through BrainStore's path security checks.
+        self._job_index: dict[str, tuple[str, str, bool]] = {}
+        self._index_ready = False
+        self._quota_day = ""
+        self._quota_count = 0
+        self._scan_lock = asyncio.Lock()
 
     @staticmethod
     def job_id(event: ConversationEvent) -> str:
@@ -110,6 +120,65 @@ class LearningWorker:
         raw = (json.dumps(record, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
         with self.store.locked():
             self.store._write_locked(self._job_ref(record["job_id"]), raw, replace=replace)
+        self._remember_job(record)
+
+    def _remember_job(self, record: dict) -> None:
+        job_id = record["job_id"]
+        previous = self._job_index.get(job_id)
+        current = (record["status"], record.get("quota_date", ""), self._priority_kb(record))
+        if self._quota_day:
+            self._quota_count += int(current[1] == self._quota_day and not current[2])
+            if previous:
+                self._quota_count -= int(previous[1] == self._quota_day and not previous[2])
+        self._job_index[job_id] = current
+
+    def _forget_job(self, job_id: str) -> None:
+        previous = self._job_index.pop(job_id, None)
+        if previous and self._quota_day:
+            self._quota_count -= int(previous[1] == self._quota_day and not previous[2])
+
+    def _job_names(self) -> list[str]:
+        return sorted(path.stem for path in
+                      (self.store.root / "manifests/pending/jobs").glob("learn-*.json"))
+
+    async def _scan_jobs(self) -> list[dict]:
+        """Discover new files and refresh unfinished records, yielding in batches.
+
+        Index updates run on the event loop, like enqueue/checkpoints, so a
+        background snapshot cannot overwrite a newer checkpoint.
+        """
+        records = []
+        names = self._job_names()
+        for job_id in self._job_index.keys() - set(names):
+            self._forget_job(job_id)
+        reads = 0
+        today = self._today()
+        # Asked only once the index is complete; before that the count would build it synchronously.
+        exhausted = (self._index_ready
+                     and self._daily_reserved_jobs() >= self.config.learning_daily_job_limit)
+        for job_id in names:
+            previous = self._job_index.get(job_id)
+            if previous:
+                if previous[0] not in {"pending", "retry"}:
+                    continue
+                # An unfinished job needs no read while it is already on its way, or while
+                # it is an ordinary job that cannot get a slot today (it may wait for hours).
+                if job_id in self._queued_ids or job_id in self._processing_ids:
+                    continue
+                if exhausted and not previous[2] and previous[1] != today:
+                    continue
+            try:
+                record = self._read_job(job_id)
+                self._remember_job(record)
+                if record["status"] in {"pending", "retry"}:
+                    records.append(record)
+            except FormatError:
+                self._quarantine_job(job_id)
+            reads += 1
+            if reads % 8 == 0:
+                await asyncio.sleep(0)
+        self._index_ready = True
+        return records
 
     def _read_job(self, job_id: str) -> dict:
         try:
@@ -135,27 +204,44 @@ class LearningWorker:
                     raw = self.store.read_bytes(self._job_ref(job_id))
                     self.store._write_locked(f"manifests/corrupt/{job_id}-{content_hash(raw)[7:]}.json", raw)
                     path.unlink()
+                self._forget_job(job_id)
         except (OSError, ValueError):
             logger.warning("Brain job quarantine unavailable: {}", job_id)
 
+    def _priority_kb(self, record: dict) -> bool:
+        """Derive priority from persisted provenance, never from a caller flag."""
+        from nanobot.brain_memory.config import is_public_kb_source
+
+        if not self.public_customer_mode:
+            return False
+        try:
+            event = ConversationEvent.model_validate(record["event"])
+        except (KeyError, TypeError, ValueError):
+            return False
+        return bool(event.migration_batch_id and is_public_kb_source(event.source.source_ref))
+
     def _daily_reserved_jobs(self) -> int:
-        """Count logical jobs that have consumed today's learning quota."""
-        jobs_dir = self.store.root / "manifests" / "pending" / "jobs"
-        if not jobs_dir.is_dir():
-            return 0
+        """Count once per day from metadata; checkpoints maintain the total."""
+        if not self._index_ready:
+            # Synchronous callers (diagnostics/tests). Async entry points build
+            # the index cooperatively before requesting a reservation.
+            for job_id in self._job_names():
+                try:
+                    self._remember_job(self._read_job(job_id))
+                except FormatError:
+                    self._quarantine_job(job_id)
+            self._index_ready = True
         today = self._today()
-        count = 0
-        for path in jobs_dir.glob("learn-*.json"):
-            try:
-                record = json.loads(path.read_text(encoding="utf-8"))
-                if record.get("quota_date") == today:
-                    count += 1
-            except (OSError, UnicodeError, json.JSONDecodeError, AttributeError):
-                continue
-        return count
+        if self._quota_day != today:
+            self._quota_count = sum(day == today and not priority
+                                    for _, day, priority in self._job_index.values())
+            self._quota_day = today
+        return self._quota_count
 
     def _reserve_daily_quota(self, record: dict) -> bool:
         """Reserve one logical job for today, once, before queueing it."""
+        if self._priority_kb(record):
+            return True
         today = self._today()
         if record.get("quota_date") == today:
             return True
@@ -168,7 +254,9 @@ class LearningWorker:
         if job_id in self._queued_ids:
             return True
         try:
-            self._queue.put_nowait(job_id)
+            priority = 0 if self._priority_kb(self._read_job(job_id)) else 1
+            self._queue.put_nowait((priority, self._queue_sequence, job_id))
+            self._queue_sequence += 1
         except asyncio.QueueFull:
             return False
         self._queued_ids.add(job_id)
@@ -179,6 +267,11 @@ class LearningWorker:
             raise DisabledError("Brain Memory learning is disabled")
         if not event.selected:
             raise ValueError("Only explicitly selected conversation events may be queued")
+        if not self._index_ready:
+            async with self._scan_lock:
+                await self._scan_jobs()
+            if self._stopping or not self.config.enabled or not self.config.learning_enabled:
+                raise DisabledError("Brain Memory learning is disabled")
         job_id = self.job_id(event)
         ref = self._job_ref(job_id)
         exists = (self.store.root / ref).is_file()
@@ -211,23 +304,37 @@ class LearningWorker:
         return job_id
 
     async def resume_pending(self) -> int:
+        async with self._scan_lock:
+            return await self._resume_pending()
+
+    async def _resume_pending(self) -> int:
         if self._stopping or not self.config.enabled or not self.config.learning_enabled:
             return 0
-        jobs_dir = self.store.root / "manifests" / "pending" / "jobs"
-        if not jobs_dir.is_dir():
-            return 0
         resumed = 0
-        for path in sorted(jobs_dir.glob("learn-*.json")):
-            job_id = path.stem
+        records = await self._scan_jobs()
+        if self._stopping or not self.config.enabled or not self.config.learning_enabled:
+            return 0
+        records.sort(key=lambda record: not self._priority_kb(record))
+        quota_exhausted = False
+        for record in records:
+            job_id = record["job_id"]
             try:
-                record = self._read_job(job_id)
+                # A checkpoint/enqueue may run at a cooperative scan yield.
+                if self._job_index.get(job_id, (None,))[0] not in {"pending", "retry"}:
+                    continue
                 if record.get("status") not in {"pending", "retry"}:
                     continue
                 if job_id in self._queued_ids or job_id in self._processing_ids:
                     continue
                 if record.get("quota_date") != self._today():
+                    # One failed reservation settles the day for every other ordinary
+                    # job in this pass: asking again would recount the whole job
+                    # directory once per waiting job.
+                    if quota_exhausted and not self._priority_kb(record):
+                        continue
                     if not self._reserve_daily_quota(record):
-                        break
+                        quota_exhausted = True
+                        continue
                     self._write_job(record)
                 if not self._queue_job(job_id):
                     break
@@ -244,6 +351,8 @@ class LearningWorker:
             raise DisabledError("Brain Memory learning is disabled")
         self._stopping = False
         await self.resume_pending()
+        if self._stopping or (self._task is not None and not self._task.done()):
+            return
         self._task = asyncio.create_task(self._run(), name="nanobot-brain-learning")
 
     async def stop(self) -> None:
@@ -286,7 +395,7 @@ class LearningWorker:
     async def _run(self) -> None:
         while not self._stopping or not self._queue.empty():
             try:
-                job_id = await asyncio.wait_for(self._queue.get(), timeout=0.2)
+                _, _, job_id = await asyncio.wait_for(self._queue.get(), timeout=0.2)
             except asyncio.TimeoutError:
                 await self.resume_pending()
                 continue

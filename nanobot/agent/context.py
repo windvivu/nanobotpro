@@ -16,6 +16,8 @@ from nanobot.session.goal_state import goal_state_runtime_lines
 from nanobot.utils.helpers import build_assistant_message, current_time_str, detect_image_mime
 from nanobot.utils.prompt_templates import render_template
 
+PUBLIC_CUSTOMER_SKILLS = frozenset()
+
 
 class ContextBuilder:
     """Builds the context (system prompt + messages) for the agent."""
@@ -26,10 +28,12 @@ class ContextBuilder:
     _MAX_RECENT_HISTORY = 50
 
     def __init__(self, workspace: Path, disabled_skills: list[str] | None = None, timezone: str = "UTC",
-                 chatbot_config: Any | None = None, brain_memory_config: Any | None = None):
+                 chatbot_config: Any | None = None, brain_memory_config: Any | None = None,
+                 public_customer_mode: bool = False):
+        self.public_customer_mode = public_customer_mode
         self.workspace = workspace
         self.timezone = timezone
-        self.memory = MemoryStore(workspace)
+        self.memory = MemoryStore(workspace, public_customer_mode=public_customer_mode)
         self.skills = SkillsLoader(workspace, disabled_skills=set(disabled_skills) if disabled_skills else None)
         self._chatbot_config = chatbot_config
         self._brain_memory_config = brain_memory_config
@@ -58,11 +62,16 @@ class ContextBuilder:
                 try:
                     if self._brain_context is None:
                         store = BrainStore(self.workspace, config)
-                        self._brain_context = BrainContextAdapter(BrainIndex(store), config)
+                        self._brain_context = BrainContextAdapter(
+                            BrainIndex(store), config, public_customer_mode=self.public_customer_mode,
+                        )
                     # A long message (a pasted text, a sub-agent's report) is searched by its start: the
                     # index refuses queries over maxQueryChars and only uses their first 32 terms (custom)
                     brain_context = self._brain_context.render(memory_query[:config.max_query_chars])
-                except Exception:
+                except Exception as exc:
+                    if self.public_customer_mode:
+                        from nanobot.security.public_output import public_error
+                        public_error(exc)  # Log reference locally; never add errors to the prompt.
                     # Brain Memory is an optional cache; legacy context must
                     # continue when its index is absent, corrupt or unavailable.
                     brain_context = ""
@@ -73,23 +82,25 @@ class ContextBuilder:
         # as a safe fallback.
         if brain_context:
             parts.append("# Brain Memory Reference\n\n" + brain_context)
-        else:
+        elif not self.public_customer_mode:
             memory = self.memory.get_memory_context()
             if memory:
                 parts.append(f"# Memory\n\n{memory}")
 
         always_skills = self.skills.get_always_skills()
+        if self.public_customer_mode:
+            always_skills = [name for name in always_skills if name in PUBLIC_CUSTOMER_SKILLS]
         if always_skills:
             always_content = self.skills.load_skills_for_context(always_skills)
             if always_content:
                 parts.append(f"# Active Skills\n\n{always_content}")
 
-        skills_summary = self.skills.build_skills_summary()
+        skills_summary = "" if self.public_customer_mode else self.skills.build_skills_summary()
         if skills_summary:
             parts.append(render_template("agent/skills_section.md", skills_summary=skills_summary))
 
         # Recent history from Dream — show unconsolidated entries as context
-        entries = self.memory.read_unprocessed_history(since_cursor=self.memory.get_last_dream_cursor())
+        entries = [] if self.public_customer_mode else self.memory.read_unprocessed_history(since_cursor=self.memory.get_last_dream_cursor())
         if entries:
             capped = entries[-self._MAX_RECENT_HISTORY:]
             parts.append("# Recent History\n\n" + "\n".join(
@@ -100,6 +111,8 @@ class ContextBuilder:
 
     def _get_identity(self, channel: str | None = None) -> str:
         """Get the core identity section — uses identity.md template."""
+        if self.public_customer_mode:
+            return render_template("agent/identity_public.md", channel=channel or "")
         workspace_path = str(self.workspace.expanduser().resolve())
         system = platform.system()
         runtime = f"{'macOS' if system == 'Darwin' else system} {platform.machine()}, Python {platform.python_version()}"
@@ -122,11 +135,14 @@ class ContextBuilder:
         session_summary: str | None = None,
         extra_runtime_lines: Sequence[str] | None = None,
         senders: Sequence[str] | None = None,
+        public_customer_mode: bool = False,
     ) -> str:
         """Build untrusted runtime metadata block for injection before the user message."""
         lines = [f"Current Time: {current_time_str(timezone)}"]
         if channel and chat_id:
-            lines += [f"Channel: {channel}", f"Chat ID: {chat_id}"]
+            lines.append(f"Channel: {channel}")
+            if not public_customer_mode:
+                lines.append(f"Chat ID: {chat_id}")
         if thread_type:
             lines.append(f"Thread Type: {thread_type}")
         if senders:
@@ -137,9 +153,9 @@ class ContextBuilder:
                 lines.append(f"Sender ID: {sender_id}")
             if sender_name:
                 lines.append(f"Sender Name: {sender_name}")
-        if session_summary:
+        if session_summary and not public_customer_mode:
             lines += ["", "[Resumed Session]", session_summary]
-        if extra_runtime_lines:
+        if extra_runtime_lines and not public_customer_mode:
             lines.extend(extra_runtime_lines)
         return (
             ContextBuilder._RUNTIME_CONTEXT_TAG
@@ -169,6 +185,8 @@ class ContextBuilder:
         parts = []
 
         for filename in self.BOOTSTRAP_FILES:
+            if self.public_customer_mode and filename != "SOUL.md":
+                continue
             if filename in skip:
                 continue
             file_path = self.workspace / filename
@@ -205,6 +223,7 @@ class ContextBuilder:
             session_summary=session_summary,
             extra_runtime_lines=extra_runtime_lines,
             senders=senders,
+            public_customer_mode=self.public_customer_mode,
         )
         user_content = self._build_user_content(current_message, media)
 

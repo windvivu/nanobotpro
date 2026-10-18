@@ -59,6 +59,9 @@ class CommandRouter:
 
     async def dispatch_priority(self, ctx: CommandContext) -> OutboundMessage | None:
         """Dispatch a priority command. Called from run() without the lock."""
+        from nanobot.command.builtin import public_command_denial
+        if denied := public_command_denial(ctx):
+            return denied
         handler = self._priority.get(ctx.raw.lower())
         if handler:
             return await handler(ctx)
@@ -66,6 +69,9 @@ class CommandRouter:
 
     async def dispatch(self, ctx: CommandContext) -> OutboundMessage | None:
         """Try exact, prefix, then interceptors. Returns None if unhandled."""
+        from nanobot.command.builtin import public_command_denial
+        if denied := public_command_denial(ctx):
+            return denied
         cmd = ctx.raw.lower()
 
         if handler := self._exact.get(cmd):

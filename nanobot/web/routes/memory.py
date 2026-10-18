@@ -10,6 +10,8 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from loguru import logger
 
+from nanobot.config.loader import ConfigSaveError
+
 router = APIRouter()
 
 # Default templates shipped with nanobot (for reference panel)
@@ -168,6 +170,8 @@ async def personality_save(
                 if hasattr(request.app.state, "config"):
                     request.app.state.config.chatbot.multi_message_enabled = cfg.chatbot.multi_message_enabled
                 logger.info("[Web] Synced multi_message_enabled={} to config", cfg.chatbot.multi_message_enabled)
+            except ConfigSaveError:
+                raise
             except Exception as cfg_err:
                 logger.warning("[Web] Failed to sync multi_message_enabled to config: {}", cfg_err)
 
@@ -189,6 +193,8 @@ async def personality_save(
         tpl = request.query_params.get("tpl", "")
         tpl_param = "&tpl=1" if tpl == "1" else ""
         return RedirectResponse(url=f"/personality?saved=1&tab={file_key}{tpl_param}", status_code=302)
+    except ConfigSaveError:
+        raise
     except Exception as e:
         logger.error("[Web] Failed to save {}: {}", filename, e)
         workspace_path = workspace

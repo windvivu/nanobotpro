@@ -187,7 +187,7 @@ class TelegramConfig(Base):
     proxy: str | None = None
     reply_to_message: bool = False
     react_emoji: str = "👀"
-    group_policy: Literal["mention", "ambient", "open"] = "mention"
+    group_policy: Literal["mention", "ambient", "open", "deny"] = "mention"
     connection_pool_size: int = 32
     pool_timeout: float = 5.0
     streaming: bool = True
@@ -647,6 +647,9 @@ class TelegramChannel(BaseChannel):
         if not update.message or not update.effective_user:
             return
 
+        if getattr(self, "_public_customer_mode", False):
+            await self._forward_command(update, context)
+            return
         user = update.effective_user
         await update.message.reply_text(
             f"👋 Hi {user.first_name}! I'm nanobot.\n\n"
@@ -657,6 +660,11 @@ class TelegramChannel(BaseChannel):
     async def _on_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /help command, bypassing ACL so all users can access it."""
         if not update.message:
+            return
+        if getattr(self, "_public_customer_mode", False):
+            await self._forward_command(update, context)
+            return
+        if update.message.chat.type != "private" and self.config.group_policy == "deny":
             return
         await update.message.reply_text(build_help_text())
 
@@ -839,6 +847,10 @@ class TelegramChannel(BaseChannel):
 
     async def _group_message_route(self, message) -> Literal["process", "ambient", "ignore"]:
         """Route Telegram group messages according to group_policy."""
+        if message.chat.type != "private" and (
+            self.config.group_policy == "deny" or getattr(self, "_public_customer_mode", False)
+        ):
+            return "ignore"
         if message.chat.type == "private" or self.config.group_policy == "open":
             return "process"
         if await self._is_group_message_addressed_to_bot(message):
@@ -867,6 +879,10 @@ class TelegramChannel(BaseChannel):
             return
         message = update.message
         user = update.effective_user
+        if message.chat.type != "private" and (
+            self.config.group_policy == "deny" or getattr(self, "_public_customer_mode", False)
+        ):
+            return
         self._remember_thread_context(message)
         
         # Strip @bot_username suffix if present

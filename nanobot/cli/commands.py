@@ -329,6 +329,8 @@ def onboard(
     workspace: str | None = typer.Option(None, "--workspace", "-w", help="Workspace directory"),
     config: str | None = typer.Option(None, "--config", "-c", help="Path to config file"),
     wizard: bool = typer.Option(False, "--wizard", help="Use interactive wizard"),
+    customer_service: bool = typer.Option(False, "--customer-service", help="Install Vietnamese customer service SOUL"),
+    force: bool = typer.Option(False, "--force", help="Replace an existing SOUL with --customer-service"),
 ):
     """Initialize nanobot configuration and workspace."""
     from nanobot.config.loader import get_config_path, load_config, save_config, set_config_path
@@ -395,6 +397,11 @@ def onboard(
         workspace_path.mkdir(parents=True, exist_ok=True)
         console.print(f"[green]✓[/green] Created workspace at {workspace_path}")
 
+    if customer_service:
+        from nanobot.utils.helpers import install_customer_service_soul
+        installed = install_customer_service_soul(workspace_path, force=force)
+        console.print("[green]Customer service SOUL installed.[/green]" if installed
+                      else "[yellow]Existing SOUL preserved; use --customer-service --force to replace it.[/yellow]")
     sync_workspace_templates(workspace_path)
 
     agent_cmd = 'nanobot agent -m "Hello!"'
@@ -498,7 +505,7 @@ def _make_provider(config: Config, *, allow_no_key: bool = False):
 
 def _load_runtime_config(config: str | None = None, workspace: str | None = None) -> Config:
     """Load config and optionally override the active workspace."""
-    from nanobot.config.loader import load_config, set_config_path
+    from nanobot.config.loader import ConfigLoadError, load_config, set_config_path
 
     config_path = None
     if config:
@@ -509,7 +516,11 @@ def _load_runtime_config(config: str | None = None, workspace: str | None = None
         set_config_path(config_path)
         console.print(f"[dim]Using config: {config_path}[/dim]")
 
-    loaded = load_config(config_path)
+    try:
+        loaded = load_config(config_path)
+    except ConfigLoadError as exc:
+        console.print(str(exc), style="red", markup=False)
+        raise typer.Exit(1) from exc
     if workspace:
         loaded.agents.defaults.workspace = workspace
     return loaded
@@ -598,6 +609,15 @@ def gateway(
         logging.basicConfig(level=logging.DEBUG)
 
     config = _load_runtime_config(config, workspace)
+    from nanobot.config.public_mode import public_mode_violations
+
+    violations = public_mode_violations(config)
+    if violations:
+        for violation in violations:
+            console.print(f"Public Customer Mode: {violation}", style="red", markup=False)
+        raise typer.Exit(1)
+    if config.public_customer_mode:
+        logger.info("Public Customer Mode: on")
     _warn_deprecated_config_keys()
     port = port if port is not None else config.gateway.port
 
@@ -665,6 +685,9 @@ def gateway(
         trader_mode=config.trader_mode,
         market_scanner_config=config.market_scanner,
         brain_memory_config=config.brain_memory,
+        public_customer_mode=config.public_customer_mode,
+        customer_session_retention_days=config.agents.defaults.customer_session_retention_days,
+        customer_session_max=config.agents.defaults.customer_session_max,
     )
     agent._active_preset = effective_model.preset_name
     agent._provider_snapshot = provider_snapshot_from_config(config)
@@ -751,6 +774,12 @@ def gateway(
     # Create channel manager
     from nanobot.channels.safe_manager import SafeChannelManager
     channels = SafeChannelManager(config, bus)
+
+    def _customer_state_for_retention():
+        channel = channels.channels.get("zalo")
+        return channel._get_customer_state() if channel is not None else None
+
+    agent.customer_retention.get_customer_state = _customer_state_for_retention
 
     def _pick_heartbeat_target() -> tuple[str, str]:
         """Where heartbeat tasks run and report: gateway.heartbeat.target only, never a guess from the latest
@@ -965,6 +994,9 @@ def agent(
         trader_mode=config.trader_mode,
         market_scanner_config=config.market_scanner,
         brain_memory_config=config.brain_memory,
+        public_customer_mode=config.public_customer_mode,
+        customer_session_retention_days=config.agents.defaults.customer_session_retention_days,
+        customer_session_max=config.agents.defaults.customer_session_max,
     )
     agent_loop._active_preset = effective_model.preset_name
     agent_loop._provider_snapshot = provider_snapshot_from_config(config)

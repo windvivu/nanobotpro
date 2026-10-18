@@ -11,6 +11,18 @@ from loguru import logger
 from nanobot.config.schema import Config
 
 
+class ConfigLoadError(ValueError):
+    """An existing config could not be read; never substitute permissive defaults."""
+
+
+class ConfigSaveError(ValueError):
+    """A proposed public config would prevent the next gateway startup."""
+
+    def __init__(self, violations):
+        self.violations = list(violations)
+        super().__init__("; ".join(self.violations))
+
+
 # Global variable to store current config path (for multi-instance support)
 _current_config_path: Path | None = None
 
@@ -45,11 +57,13 @@ def load_config(config_path: Path | None = None) -> Config:
         try:
             with open(path, encoding="utf-8") as f:
                 data = json.load(f)
+            if not isinstance(data, dict):
+                raise ValueError("Config must be a JSON object")
             data = _migrate_config(data)
             config = Config.model_validate(data)
-        except (json.JSONDecodeError, ValueError, pydantic.ValidationError) as e:
-            logger.warning(f"Failed to load config from {path}: {e}")
-            logger.warning("Using default configuration.")
+        except (ValueError, OSError, TypeError, AttributeError, pydantic.ValidationError) as e:
+            logger.error("Failed to load config from {}: {}", path, type(e).__name__)
+            raise ConfigLoadError(f"Cannot load config file {path}: {type(e).__name__}") from e
 
     _apply_ssrf_whitelist(config)
     return config
@@ -70,6 +84,12 @@ def save_config(config: Config, config_path: Path | None = None) -> None:
         config: Configuration to save.
         config_path: Optional path to save to. Uses default if not provided.
     """
+    from nanobot.config.public_mode import public_mode_violations
+
+    if config.public_customer_mode:
+        violations = public_mode_violations(config)
+        if violations:
+            raise ConfigSaveError(violations)
     path = config_path or get_config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
 

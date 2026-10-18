@@ -1,6 +1,7 @@
 """Async message queue for decoupled channel-agent communication."""
 
 import asyncio
+from collections.abc import Callable
 
 from nanobot.bus.events import InboundMessage, OutboundMessage
 
@@ -14,11 +15,14 @@ class MessageBus:
     """
 
     def __init__(self):
+        self.inbound_filter: Callable[[InboundMessage], bool] | None = None
         self.inbound: asyncio.Queue[InboundMessage] = asyncio.Queue()
         self.outbound: asyncio.Queue[OutboundMessage] = asyncio.Queue()
 
     async def publish_inbound(self, msg: InboundMessage) -> None:
         """Publish a message from a channel to the agent."""
+        if self.inbound_filter is not None and not self.inbound_filter(msg):
+            return
         await self.inbound.put(msg)
 
     async def consume_inbound(self) -> InboundMessage:

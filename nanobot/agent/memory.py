@@ -49,7 +49,9 @@ class MemoryStore:
         r"^\[\d{4}-\d{2}-\d{2}[^\]]*\]\s+[A-Z][A-Z0-9_]*(?:\s+\[tools:\s*[^\]]+\])?:"
     )
 
-    def __init__(self, workspace: Path, max_history_entries: int = _DEFAULT_MAX_HISTORY):
+    def __init__(self, workspace: Path, max_history_entries: int = _DEFAULT_MAX_HISTORY,
+                 public_customer_mode: bool = False):
+        self.public_customer_mode = public_customer_mode
         self.workspace = workspace
         self.max_history_entries = max_history_entries
         self.memory_dir = ensure_dir(workspace / "memory")
@@ -64,7 +66,8 @@ class MemoryStore:
         self._git = GitStore(workspace, tracked_files=[
             "SOUL.md", "USER.md", "memory/MEMORY.md",
         ])
-        self._maybe_migrate_legacy_history()
+        if not self.public_customer_mode:
+            self._maybe_migrate_legacy_history()
 
     @property
     def git(self) -> GitStore:
@@ -247,6 +250,8 @@ class MemoryStore:
 
     def append_history(self, entry: str, *, max_chars: int | None = None) -> int:
         """Append *entry* to history.jsonl and return its auto-incrementing cursor."""
+        if self.public_customer_mode:
+            return 0
         cursor = self._next_cursor()
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         raw = entry.rstrip()
@@ -356,6 +361,8 @@ class MemoryStore:
 
     def raw_archive(self, messages: list[dict], *, max_chars: int | None = None) -> None:
         """Fallback: dump raw messages to history.jsonl without LLM summarization."""
+        if self.public_customer_mode:
+            return
         self.append_history(
             f"[RAW] {len(messages)} messages\n"
             f"{self._format_messages(messages)}",
@@ -486,7 +493,7 @@ class Consolidator:
 
         Returns the summary text on success, None if nothing to archive.
         """
-        if not messages:
+        if getattr(self.store, "public_customer_mode", False) or not messages:
             return None
         try:
             formatted = MemoryStore._format_messages(messages)
@@ -584,6 +591,17 @@ class Consolidator:
                     source,
                     len(chunk),
                 )
+                if getattr(self.store, "public_customer_mode", False):
+                    # Discard only a complete old prefix; no model call or shared archive.
+                    session.messages = session.messages[end_idx:]
+                    session.last_consolidated = 0
+                    self.sessions.save(session)
+                    try:
+                        estimated, source = self.estimate_session_prompt_tokens(session)
+                    except Exception:
+                        logger.exception("Token estimation failed for {}", session.key)
+                        return
+                    continue
                 summary = await self.archive(chunk)
                 session.last_consolidated = end_idx
                 self.sessions.save(session)

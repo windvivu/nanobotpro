@@ -7,6 +7,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from loguru import logger
 
+from nanobot.config.loader import ConfigSaveError
+
 router = APIRouter()
 
 
@@ -74,6 +76,7 @@ async def zalo_setup_page(request: Request):
     except Exception:
         bridge_status = {"installed": None, "version": None}  # unknown
 
+    from nanobot.web.auth import get_csrf_cookie_name
     from nanobot.web.routes.dashboard import active_profile
 
     profile_id, profile_name = active_profile(request.app.state.config.workspace_path)
@@ -83,6 +86,7 @@ async def zalo_setup_page(request: Request):
         "zalo_status": status_data,
         "zalo_config": zalo_config,
         "bridge_status": bridge_status,
+        "csrf_cookie": get_csrf_cookie_name(),
     })
 
 
@@ -181,43 +185,80 @@ async def zalo_qr_image(request: Request):
 @router.post("/zalo/config")
 async def zalo_save_config(request: Request):
     """Save Zalo channel configuration."""
-    from nanobot.config.loader import load_config, save_config
-    from nanobot.channels.zalo_personal import ZaloPersonalConfig
     try:
         body = await request.json()
     except Exception:
         return JSONResponse({"success": False, "error": "Invalid JSON"}, status_code=400)
+    return await save_zalo_config(request, body)
 
+
+async def save_zalo_config(request: Request, body: dict):
+    """Shared validated save path for setup and the CSKH settings panel."""
+    from nanobot.config.loader import load_config, save_config
+    from nanobot.channels.zalo_personal import (
+        ZaloPersonalConfig, ZaloCustomerServiceConfig, customer_service_target_error,
+    )
+    from pydantic import ValidationError
+    if not isinstance(body, dict):
+        return JSONResponse({"success": False, "error": "Expected JSON object"}, status_code=400)
     try:
         cfg = load_config()
 
-        # allow_from: space/comma-separated string → list
-        allow_from_raw = body.get("allow_from", "*").strip()
-        if not allow_from_raw:
-            allow_from_raw = "*"
-        allow_from_list = [x.strip() for x in allow_from_raw.replace(",", " ").split() if x.strip()]
-
-        # node_path: simple string
-        node_path = body.get("node_path", "node").strip() or "node"
-        group_reply_mode = body.get("group_reply_mode") or body.get("groupReplyMode") or "ambient"
-        if group_reply_mode not in {"mention", "ambient", "open"}:
-            return JSONResponse(
-                {"success": False, "error": "Invalid groupReplyMode"},
-                status_code=400,
-            )
-        group_filter = body.get("group_filter") or body.get("groupFilter") or "log"
-        if group_filter not in {"off", "log", "on"}:
-            return JSONResponse({"success": False, "error": "Invalid groupFilter"}, status_code=400)
-
-        # Support both dict (extra field) and typed object for channel config
+        # A nested CSKH patch must preserve the existing channel settings.
         zalo_raw = getattr(cfg.channels, "zalo", None)
         if zalo_raw is None:
             zalo_raw = {}
             setattr(cfg.channels, "zalo", zalo_raw)
+        current = ZaloPersonalConfig.model_validate(
+            zalo_raw if isinstance(zalo_raw, dict) else zalo_raw.model_dump()
+        )
+        allow_from_raw = _zget(body, "allow_from", current.allow_from)
+        if isinstance(allow_from_raw, str):
+            allow_from_raw = allow_from_raw.strip() or "*"
+            allow_from_list = allow_from_raw.replace(",", " ").split()
+        elif isinstance(allow_from_raw, list) and all(isinstance(item, str) for item in allow_from_raw):
+            allow_from_list = allow_from_raw
+        else:
+            return JSONResponse({"success": False, "error": "Invalid allowFrom"}, status_code=400)
+        node_path = _zget(body, "node_path", current.node_path)
+        if not isinstance(node_path, str):
+            return JSONResponse({"success": False, "error": "Invalid nodePath"}, status_code=400)
+        node_path = node_path.strip() or "node"
+        group_reply_mode = _zget(body, "group_reply_mode", current.group_reply_mode)
+        if group_reply_mode not in {"mention", "ambient", "open"}:
+            return JSONResponse({"success": False, "error": "Invalid groupReplyMode"}, status_code=400)
+        group_filter = _zget(body, "group_filter", current.group_filter)
+        if group_filter not in {"off", "log", "on"}:
+            return JSONResponse({"success": False, "error": "Invalid groupFilter"}, status_code=400)
+
+        # Preserve CSKH settings when the existing setup page saves its old fields.
+        current_service = ZaloCustomerServiceConfig.model_validate(_zget(zalo_raw, "customer_service", {}) or {})
+        update = _zget(body, "customer_service", None)
+        if update is not None:
+            if not isinstance(update, dict):
+                return JSONResponse({"success": False, "error": "customerService must be an object"}, status_code=400)
+            # Normalize each supplied key before merging, supporting partial camel/snake updates.
+            fields = ZaloCustomerServiceConfig.model_fields
+            aliases = {field.alias: name for name, field in fields.items()}
+            data = current_service.model_dump()
+            data.update({aliases.get(key, key): value for key, value in update.items()})
+            try:
+                current_service = ZaloCustomerServiceConfig.model_validate(data)
+            except ValidationError as exc:
+                return JSONResponse({"success": False, "error": str(exc)}, status_code=400)
+        zalo_channel = _get_zalo_channel(request)
+        effective_service = current_service.model_copy(deep=True)
+        if zalo_channel:
+            effective_service.enabled = getattr(zalo_channel, "_customer_service_enabled", False)
+        if error := customer_service_target_error(effective_service, cfg):
+            return JSONResponse({"success": False, "error": error}, status_code=400)
 
         if isinstance(zalo_raw, dict):
-            zalo_raw["allow_from"] = allow_from_list
-            zalo_raw["node_path"] = node_path
+            for key in ("customer_service", "allow_from", "node_path", "group_reply_mode", "group_filter"):
+                zalo_raw.pop(key, None)
+            zalo_raw["customerService"] = current_service.model_dump(by_alias=True)
+            zalo_raw["allowFrom"] = allow_from_list
+            zalo_raw["nodePath"] = node_path
             zalo_raw["groupReplyMode"] = group_reply_mode
             zalo_raw["groupFilter"] = group_filter
         elif zalo_raw is not None:
@@ -225,8 +266,11 @@ async def zalo_save_config(request: Request):
             zalo_raw.node_path = node_path
             zalo_raw.group_reply_mode = group_reply_mode
             zalo_raw.group_filter = group_filter
+            zalo_raw.customer_service = current_service
 
         save_config(cfg)
+        if app := getattr(request, "app", None):
+            app.state.config = cfg
 
         # Apply live to the running channel so the next Zalo event uses the new mode.
         zalo_channel = _get_zalo_channel(request)
@@ -237,11 +281,11 @@ async def zalo_save_config(request: Request):
                 "nodePath": node_path,
                 "groupReplyMode": group_reply_mode,
                 "groupFilter": group_filter,
+                "customerService": current_service.model_dump(by_alias=True),
             }
             current_enabled = getattr(zalo_channel.config, "enabled", True)
             live_data["enabled"] = current_enabled
-            zalo_channel.config = ZaloPersonalConfig.model_validate(live_data)
-            zalo_channel._node_path = node_path
+            zalo_channel.apply_config(ZaloPersonalConfig.model_validate(live_data))
 
         logger.info(
             "Zalo config saved: allow_from={}, node_path={}, group_reply_mode={}, group_filter={}",
@@ -251,6 +295,8 @@ async def zalo_save_config(request: Request):
             group_filter,
         )
         return JSONResponse({"success": True, "message": "Saved. Applies to the next Zalo message."})
+    except ConfigSaveError:
+        raise
     except Exception as e:
         logger.error("Failed to save Zalo config: {}", e)
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)

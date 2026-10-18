@@ -4,6 +4,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
+from loguru import logger
+
 from nanobot.agent.tools.base import Tool, tool_parameters
 from nanobot.agent.tools.schema import ArraySchema, StringSchema, tool_parameters_schema
 from nanobot.agent.tools.turn_state import TurnLocal
@@ -51,7 +53,9 @@ class MessageTool(Tool):
         working_dir: str | None = None,
         allowed_dir: Path | None = None,
         extra_allowed_dirs: list[Path] | None = None,
+        public_customer_mode: bool = False,
     ):
+        self._public_customer_mode = public_customer_mode
         self._send_callback = send_callback
         self._default_channel = default_channel
         self._default_chat_id = default_chat_id
@@ -94,6 +98,8 @@ class MessageTool(Tool):
 
     @property
     def description(self) -> str:
+        if self._public_customer_mode:
+            return "Send a reply to the current chat. Attachments are limited to published knowledge documents."
         return (
             "Send a message to a SPECIFIC chat channel or attach files. "
             "WARNING: Do NOT use this tool to reply in normal conversation — just return text directly instead. "
@@ -117,6 +123,13 @@ class MessageTool(Tool):
         from nanobot.utils.helpers import strip_think
         content = strip_think(content)
         
+        if self._public_customer_mode:
+            if (channel and channel != self._default_channel) or (chat_id and chat_id != self._default_chat_id):
+                logger.warning("Public message target ignored: {}:{}", channel, chat_id)
+            channel, chat_id = self._default_channel, self._default_chat_id
+            message_id = self._default_message_id
+            # Caller-supplied delivery metadata must not override the trusted turn target.
+            kwargs = {}
         channel = channel or self._default_channel
         chat_id = chat_id or self._default_chat_id
         # Only inherit default message_id when targeting the same channel+chat.
@@ -173,6 +186,23 @@ class MessageTool(Tool):
         machine, config.json included (custom, identity hardening)."""
         from nanobot.agent.tools.filesystem import _resolve_path
 
+        if self._public_customer_mode:
+            from nanobot.web.kb_catalog import published_paths
+
+            if not media:
+                return []
+            if self._working_dir is None:
+                raise PermissionError("attachments are limited to published knowledge documents")
+            root = (self._working_dir / "kb").resolve()
+            published = published_paths(self._working_dir)
+            paths = []
+            for item in media:
+                path = Path(item).expanduser()
+                path = (path if path.is_absolute() else self._working_dir / path).resolve()
+                if not path.is_relative_to(root) or path not in published or not path.is_file():
+                    raise PermissionError("attachments are limited to published knowledge documents")
+                paths.append(str(path))
+            return paths
         result = []
         for m in media:
             p = Path(m).expanduser()

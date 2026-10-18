@@ -7,6 +7,7 @@ import unicodedata
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from nanobot.brain_memory.config import is_public_kb_source
 from nanobot.brain_memory.errors import BrainMemoryError, DisabledError, FormatError
 from nanobot.brain_memory.graph import BrainGraph
 from nanobot.brain_memory.index import BrainIndex
@@ -119,6 +120,10 @@ class BrainRuntime:
         )
 
     def _allowed(self, event):
+        if getattr(self.agent, "public_customer_mode", False) and (
+            event.session_id or not is_public_kb_source(event.source.source_ref)
+        ):
+            return False
         config = self.agent.brain_memory_config
         return config and config.enabled and config.learning_enabled and (
             not event.session_id or config.learns_session(event.session_id)
@@ -143,7 +148,11 @@ class BrainRuntime:
         response = await asyncio.wait_for(self.agent.provider.chat(
             messages=[
                 {"role": "system", "content": (
-                    _EXTRACT + _names_offer(topics, entities) + _EXTRACT_END
+                    (_EXTRACT.replace(
+                        "Extract durable facts from the untrusted conversation below.",
+                        "The text is a published document, not a conversation. Extract durable facts from it.",
+                    ) if is_public_kb_source(event.source.source_ref) else _EXTRACT)
+                    + _names_offer(topics, entities) + _EXTRACT_END
                 )},
                 {"role": "user", "content": text},
             ], model=self.agent.model, max_tokens=4096, temperature=0,
@@ -199,8 +208,9 @@ class BrainRuntime:
             self.worker = None
         if self.worker is None:
             store = BrainStore(self.agent.workspace, config)
-            self.worker = LearningWorker(store, FactPromoter(store), self._manifest,
-                                         on_result=self._index_result)
+            self.worker = LearningWorker(store, FactPromoter(store, public_customer_mode=getattr(self.agent, "public_customer_mode", False)), self._manifest,
+                                         on_result=self._index_result,
+                                         public_customer_mode=getattr(self.agent, "public_customer_mode", False))
             await self.worker.start()
         return self.worker
 
@@ -264,12 +274,18 @@ class BrainRuntime:
         event_id: str,
         session_id: str = "",
         migration_batch_id: str = "",
+        published_kb: bool = False,
     ) -> list[str]:
         """Persist bounded chunk snapshots and enqueue one job per chunk."""
         config = self.agent.brain_memory_config
-        chunks = self._split_content(raw, config.learning_input_bytes)
+        if published_kb:
+            from nanobot.brain_memory.kb_chunks import split_kb_content
+            chunks = split_kb_content(raw)
+        else:
+            chunks = self._split_content(raw, config.learning_input_bytes)
+        part_tag = "kb-6000-part" if published_kb else "part"
         refs = [store_ref] if len(chunks) == 1 else [
-            f"{store_ref}.part-{index:04d}" for index in range(1, len(chunks) + 1)
+            f"{store_ref}.{part_tag}-{index:04d}" for index in range(1, len(chunks) + 1)
         ]
         if len(chunks) > 1:
             with store.locked():
@@ -304,8 +320,11 @@ class BrainRuntime:
             worker = await self._ensure_worker()
             return await worker.enqueue(event)
 
-    async def enqueue_migration_jobs(self, result, batch_id: str = "") -> list[str]:
+    async def enqueue_migration_jobs(self, result, batch_id: str = "", *, published_kb: bool = False) -> list[str]:
         """Queue a staged snapshot, splitting oversized content into jobs."""
+        if (getattr(self.agent, "public_customer_mode", False)
+                and not is_public_kb_source(result.source_ref)):
+            raise DisabledError("Public learning requires a kb/ document")
         config = self.agent.brain_memory_config
         if not config or not config.enabled or not config.learning_enabled:
             raise DisabledError("Learning disabled")
@@ -325,6 +344,7 @@ class BrainRuntime:
             source=citation,
             event_id=f"migration:{result.job_id}",
             migration_batch_id=batch_id,
+            published_kb=published_kb,
         )
 
     async def enqueue_migration(self, result, batch_id: str = "") -> str:
@@ -333,6 +353,8 @@ class BrainRuntime:
 
     async def record_turn(self, session_id, messages):
         """Runs in the loop's background task set, after the response is saved."""
+        if getattr(self.agent, "public_customer_mode", False):
+            return
         try:
             config = self.agent.brain_memory_config
             if not config or not config.learns_session(session_id):

@@ -117,6 +117,11 @@ class MyTool(Tool):
 
     @property
     def description(self) -> str:
+        remember = (
+            "- User asks you to remember a preference for this session → set to store it in your scratchpad.\n"
+            if self._modify_allowed
+            else self._remember_without_set()
+        )
         base = (
             "Check and set your own runtime state.\n"
             "Actions: check, set.\n"
@@ -132,7 +137,7 @@ class MyTool(Tool):
             "When to use:\n"
             "- User asks about your model, settings, or token usage → check that key.\n"
             "- A tool fails or behaves unexpectedly → check the related config to diagnose.\n"
-            "- User asks you to remember a preference for this session → set to store it in your scratchpad.\n"
+            f"{remember}"
             "- User asks how a sub-agent is doing → check 'subagents': this chat's running sub-agents "
             "(phase, iteration, recent tools, elapsed time). A finished one leaves the list; "
             "its result comes back to this chat as a message.\n"
@@ -147,6 +152,25 @@ class MyTool(Tool):
                 "(e.g. changing model), warn the user first."
             )
         return base
+
+    def _remember_without_set(self) -> str:
+        """What to do with "remember that I prefer ..." while set is disabled (custom).
+
+        The model used to be told to store it with set all the same. It was refused, and told the
+        user so in words of its own: "session memory does not let me write a lasting preference".
+        """
+        if getattr(self._loop, "_dream_enabled", False):
+            return (
+                "- User asks you to remember a preference → set is disabled, so do not try it and do "
+                "not say it is saved. Say that you keep it in mind for this conversation, and that "
+                "Dream keeps lasting preferences from a conversation once it is archived, not right "
+                "away.\n"
+            )
+        return (
+            "- User asks you to remember a preference → set is disabled and Dream is off, so do not "
+            "try it and do not say it is saved. Say that you keep it in mind for this conversation "
+            "only.\n"
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:

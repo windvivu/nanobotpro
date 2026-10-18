@@ -1,0 +1,151 @@
+<style>
+    #cskh-mode { color: rgb(var(--c-text, var(--c-primary))); }
+    #cskh-mode [hidden], #cskh-mode-modal [hidden] { display: none !important; }
+    .cskh-mode-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 1rem; }
+    .cskh-mode-button { border: 1px solid rgb(var(--c-primary) / .5); padding: .65rem 1rem; border-radius: .4rem; }
+    .cskh-mode-button:disabled { opacity: .45; cursor: not-allowed; }
+    .cskh-mode-primary { background: rgb(var(--c-primary) / .16); font-weight: bold; }
+    .cskh-mode-list { padding-left: 1.2rem; list-style: disc; overflow-wrap: anywhere; }
+    .cskh-mode-list li { margin: .4rem 0; }
+    #cskh-mode-modal { padding: 1rem; color: rgb(var(--c-text, var(--c-primary))); }
+    #cskh-mode-modal .ui-card { max-height: 85vh; overflow: auto; width: 100%; max-width: 42rem; }
+</style>
+<section id="cskh-mode" class="ui-card p-5" aria-labelledby="cskh-mode-title">
+    <h2 id="cskh-mode-title" class="text-lg font-bold">{{ tr('cskh.mode.title') }}</h2>
+    <p class="text-sm mt-2">{{ tr('cskh.mode.description') }}</p>
+    <p id="cskh-mode-state" class="font-bold mt-3" role="status" aria-live="polite"></p>
+    <div id="cskh-mode-setup" hidden>
+        <label for="cskh-mode-chat" class="block text-sm mt-4">{{ tr('cskh.mode.chat_id') }}</label>
+        <input id="cskh-mode-chat" class="w-full mt-2 p-3 border border-primary/30 rounded bg-transparent" inputmode="text" maxlength="64" placeholder="123456789 / -100123456789" autocomplete="off">
+        <div class="cskh-mode-actions">
+            <button id="cskh-mode-preview" class="cskh-mode-button">{{ tr('cskh.mode.preview') }}</button>
+            <button id="cskh-mode-enable" class="cskh-mode-button cskh-mode-primary" disabled>{{ tr('cskh.mode.enable') }}</button>
+        </div>
+        <div id="cskh-mode-plan" class="text-sm mt-4" hidden>
+            <h3 class="font-bold">{{ tr('cskh.mode.changes') }}</h3>
+            <ul id="cskh-mode-changes" class="cskh-mode-list"></ul>
+            <p id="cskh-mode-persona" class="mt-2"></p>
+            <ul id="cskh-mode-blockers" class="cskh-mode-list" style="color:rgb(var(--c-danger, 239 68 68))"></ul>
+            <ul id="cskh-mode-warnings" class="cskh-mode-list"></ul>
+        </div>
+    </div>
+    <p id="cskh-mode-error" class="mt-3 text-sm" role="alert"></p>
+    <p id="cskh-mode-blocked" class="mt-3 text-sm"></p>
+    <div class="cskh-mode-actions">
+        <a id="cskh-mode-open" class="cskh-mode-button" href="/zalo/cskh" target="_blank" rel="noopener" hidden>{{ tr('cskh.mode.open') }}</a>
+        <a id="cskh-mode-restart" class="cskh-mode-button cskh-mode-primary" href="/restarting?next=/zalo/setup" hidden>{{ tr('cskh.mode.restart') }}</a>
+        <button id="cskh-mode-undo" class="cskh-mode-button" hidden>{{ tr('cskh.mode.undo') }}</button>
+    </div>
+</section>
+<!-- Same themed overlay/card confirmation pattern as the Zalo setup dialogs. -->
+<div id="cskh-mode-modal" class="fixed inset-0 z-50 bg-black/80 items-center justify-center" style="display:none" role="dialog" aria-modal="true" aria-labelledby="cskh-mode-modal-title">
+    <div class="ui-card p-6">
+        <h3 id="cskh-mode-modal-title" class="font-bold text-lg"></h3>
+        <p id="cskh-mode-modal-copy" class="mt-3 text-sm"></p>
+        <ul id="cskh-mode-modal-changes" class="cskh-mode-list text-sm"></ul>
+        <ul id="cskh-mode-modal-warnings" class="cskh-mode-list text-sm"></ul>
+        <label id="cskh-mode-ack-label" class="flex gap-3 mt-4 items-start">
+            <input id="cskh-mode-ack" type="checkbox" class="mt-1">
+            <span>{{ tr('cskh.mode.acknowledge') }}</span>
+        </label>
+        <div class="cskh-mode-actions">
+            <button id="cskh-mode-confirm" class="cskh-mode-button cskh-mode-primary">{{ tr('cskh.mode.confirm') }}</button>
+            <button id="cskh-mode-cancel" class="cskh-mode-button">{{ tr('cskh.mode.cancel') }}</button>
+        </div>
+    </div>
+</div>
+<script>
+(() => {
+    const words = {{ ui_translations() | tojson }};
+    const tr = key => words['cskh.mode.' + key] || key;
+    const el = name => document.getElementById('cskh-mode-' + name);
+    let plan = null, state = null, busy = false, action = '', returnFocus = null;
+    function list(name, items) {
+        el(name).replaceChildren(...items.map(text => {
+            const row = document.createElement('li'); row.textContent = text; return row;
+        }));
+    }
+    function value(v) {
+        if (typeof v === 'boolean') return tr(v ? 'on' : 'off');
+        return Array.isArray(v) ? (v.join(', ') || tr('empty')) : (v ?? tr('empty'));
+    }
+    function changeText(change) {
+        const match = /^tools\.mcpServers\.(.+)\.enabled$/.exec(change.key);
+        const label = match ? 'MCP ' + match[1] : tr('field.' + change.key);
+        return label + ': ' + value(change.old) + ' → ' + value(change.new);
+    }
+    function render() {
+        if (!state) return;
+        el('state').textContent = tr('state_' + Number(state.saved) + Number(state.running));
+        el('setup').hidden = state.saved || state.running;
+        el('restart').hidden = !state.restart_needed;
+        el('open').hidden = !state.running;
+        el('undo').hidden = !state.saved;
+        el('undo').disabled = busy || !state.can_undo;
+        el('blocked').textContent = state.saved ? state.undo_blocked : '';
+        el('preview').disabled = busy;
+        el('chat').disabled = busy;
+        el('enable').disabled = busy || !plan || !!plan.blockers.length;
+        el('confirm').disabled = busy || (!el('ack-label').hidden && !el('ack').checked);
+        el('cancel').disabled = busy;
+        el('confirm').textContent = tr(busy ? 'saving' : 'confirm');
+    }
+    async function api(name, body) {
+        const cookie = {{ csrf_cookie | tojson }} + '=';
+        const token = document.cookie.split(';').map(s => s.trim()).find(s => s.startsWith(cookie));
+        const options = {headers: {'Content-Type': 'application/json', 'X-CSRF-Token': token ? decodeURIComponent(token.slice(cookie.length)) : ''}};
+        if (body !== undefined) { options.method = 'POST'; options.body = JSON.stringify(body); }
+        const response = await fetch('/zalo/cskh-mode/api/' + name, options);
+        if (response.redirected) throw new Error(tr('login_again'));
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.blockers?.join('\n') || data.error || data.detail || tr('error'));
+        return data;
+    }
+    async function run(work) {
+        if (busy) return;
+        busy = true; el('error').textContent = ''; render();
+        try { await work(); } catch (error) { el('error').textContent = error.message; close(); }
+        finally { busy = false; render(); }
+    }
+    function close() {
+        el('modal').style.display = 'none'; returnFocus?.focus();
+    }
+    function confirm(actionName) {
+        action = actionName; returnFocus = document.activeElement;
+        el('modal-title').textContent = tr(actionName);
+        el('modal-copy').textContent = tr(actionName === 'undo' ? 'undo_confirm' : 'description');
+        list('modal-changes', actionName === 'enable' ? plan.changes.map(changeText) : (state.undo_changes || []).map(changeText));
+        list('modal-warnings', actionName === 'enable' ? plan.warnings : []);
+        el('ack-label').hidden = actionName !== 'enable' || !plan.warnings.length;
+        el('ack').checked = false;
+        el('modal').style.display = 'flex'; render(); el('cancel').focus();
+    }
+    el('chat').addEventListener('input', () => { plan = null; el('plan').hidden = true; render(); });
+    el('preview').addEventListener('click', () => run(async () => {
+        plan = null;
+        plan = await api('preview', {telegram_chat_id: el('chat').value});
+        list('changes', plan.changes.map(changeText)); list('blockers', plan.blockers); list('warnings', plan.warnings);
+        el('persona').textContent = tr('persona_' + plan.persona); el('plan').hidden = false;
+    }));
+    el('enable').addEventListener('click', () => confirm('enable'));
+    el('undo').addEventListener('click', () => confirm('undo'));
+    el('ack').addEventListener('change', render);
+    el('cancel').addEventListener('click', close);
+    el('modal').addEventListener('keydown', event => {
+        if (event.key === 'Escape' && !busy) close();
+        if (event.key === 'Tab') {
+            const controls = [...el('modal').querySelectorAll('input, button')].filter(node => !node.disabled && node.offsetParent);
+            const first = controls[0], last = controls[controls.length - 1];
+            if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+            if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+        }
+    });
+    el('confirm').addEventListener('click', () => run(async () => {
+        const result = await api(action, {telegram_chat_id: el('chat').value, acknowledged: true});
+        state = result; plan = null; close();
+        el('error').textContent = (result.warnings || []).join('\n');
+        state = await api('status');
+    }));
+    run(async () => { state = await api('status'); el('chat').value = state.escalation_target.replace(/^telegram:/, ''); });
+})();
+</script>

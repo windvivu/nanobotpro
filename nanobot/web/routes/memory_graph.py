@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
+from nanobot.brain_memory.config import is_public_kb_source, public_brain_config
 from nanobot.brain_memory.dashboard import learning_status, sources, undo_migration_batch
 from nanobot.brain_memory.errors import BrainMemoryError, ConflictError, DisabledError, FormatError
 from nanobot.brain_memory.graph import BrainGraph, GraphFilters
@@ -30,6 +31,29 @@ class BrainSettingsPayload(BaseModel):
     migration_stage_only: bool | None = None
 
 
+def _public_mode(request: Request) -> bool:
+    return bool(getattr(request.app.state, "public_customer_mode", request.app.state.config.public_customer_mode))
+
+
+def _brain_config(request: Request):
+    config = request.app.state.config.brain_memory
+    return public_brain_config(config) if _public_mode(request) else config
+
+
+def _public_settings_conflicts(changes: dict) -> list[str]:
+    conflicts = []
+    for field, required in (("enabled", True), ("retrieval_enabled", True),
+                            ("retrieval_sessions", None), ("learning_sessions", [])):
+        if field in changes and changes[field] != required:
+            conflicts.append(field)
+    if "migration_sources" in changes and (
+        changes["migration_sources"] is None
+        or any(not is_public_kb_source(ref) for ref in changes["migration_sources"])
+    ):
+        conflicts.append("migration_sources")
+    return conflicts
+
+
 def _require_csrf(request: Request) -> None:
     """Require a double-submit token for state-changing dashboard requests."""
     # With no dashboard password there is no browser session to bind a token
@@ -41,7 +65,7 @@ def _require_csrf(request: Request) -> None:
 @router.get("/memory/graph", response_class=HTMLResponse)
 async def memory_graph_page(request: Request):
     """Render the optional graph client; data still comes from the JSON API."""
-    config = request.app.state.config.brain_memory
+    config = _brain_config(request)
     return request.app.state.templates.TemplateResponse(
         request, "memory_graph.html", {
             "brain_memory": config,
@@ -55,7 +79,7 @@ def _snapshot(request: Request, *, topic: str | None, status: str,
               limit: int | None = None, refresh: bool = False):
     # Local read-only view, independent of bot processing flags. Building a
     # graph never creates the store/index or enqueues learning.
-    config = request.app.state.config.brain_memory.model_copy(
+    config = _brain_config(request).model_copy(
         update={"enabled": True, "graph_enabled": True}
     )
     if status not in {"active", "superseded", "quarantined", "rejected"}:
@@ -89,12 +113,12 @@ async def memory_graph(
     limit: int | None = Query(default=None, ge=1, le=5000),
 ):
     snapshot = _snapshot(request, topic=topic, status=status, min_confidence=min_confidence, query=query, limit=limit)
-    return _response(snapshot, request.app.state.config.brain_memory.max_response_bytes)
+    return _response(snapshot, _brain_config(request).max_response_bytes)
 
 
 @router.get("/api/memory/settings")
 async def memory_settings(request: Request):
-    config = request.app.state.config.brain_memory
+    config = _brain_config(request)
     workspace = request.app.state.config.workspace_path
     return {
         "enabled": config.enabled,
@@ -109,7 +133,7 @@ async def memory_settings(request: Request):
         "migration_sources": config.migration_sources,
         "migration_stage_only": config.migration_stage_only,
         "migration_delete_sources": False,
-        "sources": sources(workspace, config),
+        "sources": sources(workspace, config, public_customer_mode=_public_mode(request)),
     }
 
 
@@ -123,7 +147,10 @@ async def update_memory_settings(request: Request, payload: BrainSettingsPayload
     # Keep explicit null for retrieval_sessions: null means all sessions and
     # is different from an omitted field (leave the current selection intact).
     changes = payload.model_dump(exclude_unset=True)
-    if "migration_sources" in changes:
+    public_mode = _public_mode(request)
+    if public_mode and (conflicts := _public_settings_conflicts(changes)):
+        raise HTTPException(status_code=409, detail="Public KB mode locks: " + ", ".join(conflicts))
+    if "migration_sources" in changes and not public_mode:
         # Curated MEMORY.md is hidden after its first promotion, but remains a
         # configured source so the runtime can auto-sync later changes.
         automatic_sources = [
@@ -144,18 +171,19 @@ async def update_memory_settings(request: Request, payload: BrainSettingsPayload
     config.brain_memory = updated
     save_config(config)
     request.app.state.config = config
+    effective = public_brain_config(updated) if public_mode else updated
     agent = getattr(request.app.state, "agent", None)
     if agent is not None and hasattr(agent, "_reload_config"):
         agent._reload_config()
     if agent is not None and hasattr(agent, "brain_memory_config"):
         # Provider reload can fail independently of a successfully saved Brain
         # setting. Keep the runtime in sync with the persisted settings anyway.
-        if agent.brain_memory_config != updated:
+        if agent.brain_memory_config != effective:
             if runtime := getattr(agent, "brain_runtime", None):
                 runtime.config_changed()
-            agent.brain_memory_config = updated
+            agent.brain_memory_config = effective
             if context := getattr(agent, "context", None):
-                context._brain_memory_config = updated
+                context._brain_memory_config = effective
                 context._brain_context = None
     return await memory_settings(request)
 
@@ -163,7 +191,7 @@ async def update_memory_settings(request: Request, payload: BrainSettingsPayload
 @router.post("/api/memory/migrate")
 async def migrate_memory_sources(request: Request):
     _require_csrf(request)
-    config = request.app.state.config.brain_memory
+    config = _brain_config(request)
     if not config.migration_enabled:
         raise HTTPException(status_code=409, detail="Migration is disabled in Brain Graph settings")
     if not config.migration_stage_only and not config.learning_enabled:
@@ -188,6 +216,8 @@ async def migrate_memory_sources(request: Request):
             raise HTTPException(status_code=400, detail="Select at least one migration source")
         if any(not isinstance(item, str) for item in selected):
             raise HTTPException(status_code=400, detail="Invalid source selection")
+        if _public_mode(request) and any(not is_public_kb_source(ref) for ref in selected):
+            raise HTTPException(status_code=409, detail="Public KB mode requires source_refs under kb/")
         # A configured session can also be discovered by the sessions directory.
         # Normalize duplicates before creating snapshots/jobs so one click cannot
         # enqueue the same source more than once.
@@ -195,7 +225,7 @@ async def migrate_memory_sources(request: Request):
         if len(selected) > 50:
             raise HTTPException(status_code=400, detail="Select at most 50 migration sources")
         allowed = {
-            item["source_ref"] for item in sources(request.app.state.config.workspace_path, config)
+            item["source_ref"] for item in sources(request.app.state.config.workspace_path, config, public_customer_mode=_public_mode(request))
             if not item["migration_completed"]
         }
         if any(item not in allowed for item in selected):
@@ -238,7 +268,7 @@ async def memory_learning_status(request: Request):
     worker = getattr(runtime, "worker", None)
     return learning_status(
         request.app.state.config.workspace_path,
-        request.app.state.config.brain_memory,
+        _brain_config(request),
         worker,
     )
 
@@ -253,7 +283,7 @@ async def undo_last_migration(request: Request):
             raise ValueError("Invalid migration batch")
         return undo_migration_batch(
             request.app.state.config.workspace_path,
-            request.app.state.config.brain_memory,
+            _brain_config(request),
             batch_id,
         )
     except ConflictError as exc:
@@ -278,13 +308,13 @@ async def rebuild_memory_graph(
         request, topic=topic, status=status, min_confidence=min_confidence, query=query,
         limit=limit, refresh=True,
     )
-    return _response(snapshot, request.app.state.config.brain_memory.max_response_bytes)
+    return _response(snapshot, _brain_config(request).max_response_bytes)
 
 
 @router.get("/api/memory/facts/{fact_id}")
 async def memory_fact(request: Request, fact_id: str):
     """Return one active fact addressed by its validated immutable ID."""
-    config = request.app.state.config.brain_memory
+    config = _brain_config(request)
     try:
         validated_id = TypeAdapter(FactId).validate_python(fact_id)
         store = BrainStore(request.app.state.config.workspace_path, config)

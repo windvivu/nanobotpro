@@ -300,9 +300,11 @@ class WebFetchTool(Tool):
         "Works for most web pages and docs; may fail on login-walled or JS-heavy sites."
     )
 
-    def __init__(self, max_chars: int = 50000, proxy: str | None = None):
+    def __init__(self, max_chars: int = 50000, proxy: str | None = None,
+                 fetch_allowlist: list[str] | None = None):
         self.max_chars = max_chars
         self.proxy = proxy
+        self.fetch_allowlist = None if fetch_allowlist is None else tuple(fetch_allowlist)
 
     @property
     def read_only(self) -> bool:
@@ -310,6 +312,14 @@ class WebFetchTool(Tool):
 
     async def execute(self, url: str, extractMode: str = "markdown", maxChars: int | None = None, **kwargs: Any) -> Any:
         max_chars = maxChars or self.max_chars
+        if self.fetch_allowlist is not None:
+            try:
+                self._validate_public_url(url)
+            except ValueError as exc:
+                return json.dumps({"error": str(exc), "url": url}, ensure_ascii=False)
+            # A remote reader can follow redirects outside our policy. Public mode
+            # uses the local extractor so every outbound request can be checked.
+            return await self._fetch_readability(url, extractMode, max_chars)
         is_valid, error_msg = _validate_url_safe(url)
         if not is_valid:
             return json.dumps({"error": f"URL validation failed: {error_msg}", "url": url}, ensure_ascii=False)
@@ -336,6 +346,24 @@ class WebFetchTool(Tool):
         if result is None:
             result = await self._fetch_readability(url, extractMode, max_chars)
         return result
+
+    def _validate_public_url(self, url: str) -> None:
+        from urllib.parse import urlsplit
+
+        from nanobot.security.network import validate_url_target
+
+        host = (urlsplit(url).hostname or "").rstrip(".").lower().encode("idna").decode("ascii")
+        allowed = [entry.strip().rstrip(".").lower().encode("idna").decode("ascii")
+                   for entry in self.fetch_allowlist or () if entry.strip().rstrip(".")]
+        if not host or not any(host == entry or host.endswith("." + entry) for entry in allowed):
+            raise ValueError("URL host is not in fetchAllowlist")
+        ok, error = validate_url_target(url, allow_whitelist=False)
+        if not ok:
+            raise ValueError(f"URL blocked: {error}")
+
+    async def _validate_public_request(self, request: httpx.Request) -> None:
+        # httpx invokes request hooks before sending EACH redirect hop.
+        self._validate_public_url(str(request.url))
 
     async def _fetch_jina(self, url: str, max_chars: int) -> str | None:
         """Try fetching via Jina Reader API. Returns None on failure."""
@@ -383,11 +411,15 @@ class WebFetchTool(Tool):
                 max_redirects=MAX_REDIRECTS,
                 timeout=30.0,
                 proxy=self.proxy,
+                **({"event_hooks": {"request": [self._validate_public_request]}}
+                   if self.fetch_allowlist is not None else {}),
             ) as client:
                 r = await client.get(url, headers={"User-Agent": USER_AGENT})
                 r.raise_for_status()
 
             from nanobot.security.network import validate_resolved_url
+            if self.fetch_allowlist is not None:
+                self._validate_public_url(str(r.url))
             redir_ok, redir_err = validate_resolved_url(str(r.url))
             if not redir_ok:
                 return json.dumps({"error": f"Redirect blocked: {redir_err}", "url": url}, ensure_ascii=False)

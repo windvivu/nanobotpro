@@ -178,8 +178,31 @@ def create_app(config, session_manager=None, agent=None, channel_manager=None, t
         openapi_url=None,   # Disable OpenAPI schema
     )
 
+    from nanobot.config.loader import ConfigLoadError, ConfigSaveError
+
+    @app.exception_handler(ConfigSaveError)
+    async def config_save_error(request: Request, exc: ConfigSaveError):
+        from nanobot.config.loader import load_config
+        try:
+            request.app.state.config = load_config()
+        except ConfigLoadError as load_error:
+            return await config_load_error(request, load_error)
+        return JSONResponse({"success": False, "error": str(exc), "violations": exc.violations},
+                            status_code=409)
+
+    @app.exception_handler(ConfigLoadError)
+    async def config_load_error(request: Request, exc: ConfigLoadError):
+        # Abort the operation: do not save stale/default data over a damaged config.
+        logger.error("Dashboard config operation refused: {}", exc)
+        return JSONResponse({"success": False, "error": "Configuration could not be loaded; current runtime settings retained."},
+                            status_code=503)
+
     # Store references in app state for routes to access
     app.state.config = config
+    # Freeze the startup policy even when a route refreshes the persisted config.
+    app.state.public_customer_mode = bool(getattr(agent, "public_customer_mode", config.public_customer_mode))
+    from nanobot.web.routes.zalo_cskh import cskh_enabled
+    app.state.customer_service_enabled = cskh_enabled(config, app.state.public_customer_mode)
     app.state.session_manager = session_manager
     app.state.agent = agent
     app.state.channel_manager = channel_manager
@@ -253,6 +276,12 @@ def create_app(config, session_manager=None, agent=None, channel_manager=None, t
             return False
 
     app.state.templates.env.globals["zalo_enabled"] = _zalo_enabled
+
+    def _zalo_cskh_enabled() -> bool:
+        return app.state.customer_service_enabled
+
+    app.state.templates.env.globals["zalo_cskh_enabled"] = _zalo_cskh_enabled
+
 
 
     # --- Auth routes (register BEFORE middleware) ---
@@ -354,6 +383,10 @@ def create_app(config, session_manager=None, agent=None, channel_manager=None, t
     app.include_router(profiles_router)
     app.include_router(chat_router)
     app.include_router(zalo_setup_router)
+    from nanobot.web.routes.zalo_cskh import router as zalo_cskh_router
+    app.include_router(zalo_cskh_router)
+    from nanobot.web.routes.zalo_cskh_mode import router as zalo_cskh_mode_router
+    app.include_router(zalo_cskh_mode_router)
     app.include_router(api_router)
     app.include_router(oauth_router)
 

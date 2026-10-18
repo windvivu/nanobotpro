@@ -21,6 +21,16 @@ from nanobot.utils.restart import set_restart_notice_to_env
 _ADMIN_CHANNELS = frozenset({"cli", "webchat", "fleet", "system"})
 
 
+def public_command_denial(ctx: CommandContext) -> OutboundMessage | None:
+    if (getattr(ctx.loop, "public_customer_mode", False)
+            and ctx.msg.channel not in _ADMIN_CHANNELS
+            and ctx.raw.strip().startswith("/")
+            and ctx.raw.strip().lower() not in {"/help", "/new", "/stop"}):
+        return OutboundMessage(channel=ctx.msg.channel, chat_id=ctx.msg.chat_id,
+                               content="This command is not available.")
+    return None
+
+
 def _is_admin(ctx: CommandContext) -> bool:
     if ctx.msg.channel in _ADMIN_CHANNELS:
         return True
@@ -123,6 +133,7 @@ async def cmd_status(ctx: CommandContext) -> OutboundMessage:
             context_tokens_estimate=ctx_est,
             search_usage_text=search_usage_text,
             active_task_count=task_count,
+            public_customer_mode=getattr(loop, "public_customer_mode", False),
         ),
         metadata={**dict(ctx.msg.metadata or {}), "render_as": "text"},
     )
@@ -136,7 +147,7 @@ async def cmd_new(ctx: CommandContext) -> OutboundMessage:
     session.clear()
     loop.sessions.save(session)
     loop.sessions.invalidate(session.key)
-    if snapshot:
+    if snapshot and not getattr(loop, "public_customer_mode", False):
         loop._schedule_background(loop.consolidator.archive(snapshot))
     return OutboundMessage(
         channel=ctx.msg.channel, chat_id=ctx.msg.chat_id,
@@ -190,6 +201,11 @@ async def cmd_dream(ctx: CommandContext) -> OutboundMessage:
 
     loop = ctx.loop
     msg = ctx.msg
+
+    if getattr(loop, "public_customer_mode", False) or not getattr(loop, "_dream_enabled", False):
+        return OutboundMessage(
+            channel=msg.channel, chat_id=msg.chat_id, content="Dream is disabled.",
+        )
 
     async def _run_dream():
         t0 = time.monotonic()
@@ -386,7 +402,9 @@ async def cmd_help(ctx: CommandContext) -> OutboundMessage:
     return OutboundMessage(
         channel=ctx.msg.channel,
         chat_id=ctx.msg.chat_id,
-        content=build_help_text(),
+        content=("/help — Show available commands\n/new — Start a new conversation\n/stop — Stop the current task"
+                 if getattr(ctx.loop, "public_customer_mode", False) and ctx.msg.channel not in _ADMIN_CHANNELS
+                 else build_help_text()),
         metadata={**dict(ctx.msg.metadata or {}), "render_as": "text"},
     )
 

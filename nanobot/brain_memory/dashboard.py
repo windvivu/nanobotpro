@@ -9,11 +9,11 @@ from pathlib import Path
 from filelock import FileLock
 from pydantic import TypeAdapter, ValidationError
 
-from nanobot.brain_memory.config import BrainMemoryConfig
+from nanobot.brain_memory.config import BrainMemoryConfig, is_public_kb_source
 from nanobot.brain_memory.errors import ConflictError, FormatError
 from nanobot.brain_memory.index import BrainIndex
 from nanobot.brain_memory.migration import current_promotion_sequence
-from nanobot.brain_memory.paths import resolve_ref
+from nanobot.brain_memory.paths import resolve_ref, validate_ref
 from nanobot.brain_memory.schemas import FactId, Manifest, canonical_hash, content_hash
 from nanobot.brain_memory.store import BrainStore
 
@@ -61,7 +61,7 @@ def _job_summary(store: BrainStore, path: Path) -> dict | None:
         return None
 
 
-def learning_status(workspace: Path, config: BrainMemoryConfig, worker=None) -> dict:
+def learning_status(workspace: Path, config: BrainMemoryConfig, worker=None, *, batch_id: str | None = None) -> dict:
     """Return safe worker metadata and guarded undo state for the dashboard."""
     store = BrainStore(workspace.resolve(), config)
     jobs_dir = store.root / "manifests" / "pending" / "jobs"
@@ -77,7 +77,13 @@ def learning_status(workspace: Path, config: BrainMemoryConfig, worker=None) -> 
 
     batches_dir = store.root / ".migration" / "batches"
     latest = None
-    if batches_dir.is_dir():
+    if batch_id is not None:
+        # Explicit batch lookup is independent of the paginated job feed/latest batch.
+        validate_ref(f".migration/batches/{batch_id}.json")
+        latest = _safe_json(store, batches_dir / f"{batch_id}.json")
+        if latest.get("schema_version") != 1 or latest.get("batch_id") != batch_id:
+            raise FormatError("Migration batch is unavailable")
+    elif batches_dir.is_dir():
         records = []
         for path in batches_dir.glob("batch-*.json"):
             try:
@@ -117,6 +123,9 @@ def learning_status(workspace: Path, config: BrainMemoryConfig, worker=None) -> 
             summary["status"] in _TERMINAL_JOB_STATUSES for summary, _ in job_records
         )
         in_progress = bool(job_records) and not all_terminal
+        if batch_id is not None:
+            # Missing/corrupt job records cannot prove learning has stopped.
+            in_progress = in_progress or len(job_records) != len(latest.get("learning_job_ids", []))
         current_sequence = current_promotion_sequence(store)
         max_sequence = max(sequences) if sequences else None
         reason = "ready"
@@ -239,6 +248,43 @@ def undo_migration_batch(workspace: Path, config: BrainMemoryConfig, batch_id: s
     return {"batch_id": batch_id, "undone_fact_ids": moved}
 
 
+def retire_facts_by_source(workspace: Path, config: BrainMemoryConfig, source_ref: str) -> dict:
+    """Retire only facts with this exact provenance; leave batch undo state alone."""
+    validate_ref(source_ref)
+    store = BrainStore(workspace.resolve(), config.model_copy(update={"enabled": True}))
+    moved = []
+    with store.locked():
+        selected = []
+        for path in sorted(store.path("facts").glob("*.md")):
+            fact = store.read_fact(path.stem)
+            if fact.id != path.stem:
+                raise FormatError("Fact filename does not match its identity")
+            if fact.source.source_ref == source_ref and fact.status in {"active", "quarantined"}:
+                selected.append(fact.id)
+        if selected:
+            now = datetime.now(timezone.utc)
+            trash_ref = f".migration/trash/source-{Path(source_ref).stem}-{now.strftime('%Y%m%dT%H%M%S%fZ')}"
+            store.path(trash_ref).mkdir(parents=True, exist_ok=False)
+            try:
+                for fact_id in selected:
+                    source = store.path(f"facts/{fact_id}.md")
+                    target = store.path(f"{trash_ref}/{fact_id}.md")
+                    os.replace(source, target)
+                    moved.append(fact_id)
+            finally:
+                # Retain an audit trail even when a later move fails.
+                store._write_locked(f"{trash_ref}/retired.json", (json.dumps({
+                    "source_ref": source_ref, "retired_fact_ids": moved,
+                    "retired_at": now.isoformat(),
+                }, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
+    try:
+        BrainIndex(store).rebuild()
+    except (OSError, ValueError, FormatError):
+        # The catalog already denies public access; the index is derived data.
+        pass
+    return {"retired_fact_ids": moved}
+
+
 def _processed_hashes(
     store: BrainStore,
 ) -> tuple[set[tuple[str, str]], set[tuple[str, str]], set[str], set[str], set[str]]:
@@ -322,7 +368,7 @@ def _processed_hashes(
     return staged, promoted, staged_refs, promoted_refs, empty_manifest_refs
 
 
-def sources(workspace: Path, config: BrainMemoryConfig) -> list[dict]:
+def sources(workspace: Path, config: BrainMemoryConfig, *, public_customer_mode: bool = False) -> list[dict]:
     """List legacy memory and session metadata only; never return chat bodies."""
     workspace = workspace.resolve()
     brain_root = resolve_ref(workspace, config.root)
@@ -331,9 +377,11 @@ def sources(workspace: Path, config: BrainMemoryConfig) -> list[dict]:
     # Identity/personality files are instructions, not durable facts. Never
     # expose them as migration candidates for Brain Memory.
     candidates = ["MEMORY.md", "memory/MEMORY.md", "memory/HISTORY.md", *config.migration_sources]
+    if public_customer_mode:
+        candidates = [ref for ref in config.migration_sources if is_public_kb_source(ref)]
     candidates = list(dict.fromkeys(candidates))
     sessions = resolve_ref(workspace, "sessions")
-    if sessions.is_dir():
+    if not public_customer_mode and sessions.is_dir():
         candidates.extend(
             f"sessions/{p.name}" for p in sorted(sessions.glob("*.jsonl"))[:500]
             if f"sessions/{p.name}" not in candidates
