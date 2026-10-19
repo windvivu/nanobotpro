@@ -56,6 +56,9 @@ class ChannelManager:
 
             def public_inbound(msg):
                 meta = msg.metadata or {}
+                if msg.channel == "zalo" and meta.get("_cskh_group") is True:
+                    # A Zalo group the admin allowed for customer service (the channel sets the marker)
+                    return previous_filter(msg) if previous_filter else True
                 if (str(meta.get("thread_type", "")).lower() == "group"
                         or str(meta.get("chat_type", "")).lower() in {"group", "supergroup", "channel"}
                         or meta.get("is_group") is True):

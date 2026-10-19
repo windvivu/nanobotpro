@@ -1503,6 +1503,9 @@ class ZaloPersonalChannel(BaseChannel):
                     "thread_type": thread_type,
                     "sender_name": sender_name,
                     "group_ambient": group_ambient,
+                    # Customer service admitted this group (allowed on the dashboard): the bus-level
+                    # public gate lets it through on this marker, which only the channel sets
+                    **({"_cskh_group": True} if cskh_group_mode else {}),
                     # Group filter in "log": what it would have done, scored in send() against the answer
                     **({"group_filter": filter_note, "group_filter_preview": content[:60]} if filter_note else {}),
                 },
