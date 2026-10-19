@@ -185,6 +185,8 @@ async def customers(
                 "messages_out": customer["messages_out"],
                 "limited_count": customer["limited_count"],
                 "escalations": len(customer["escalations"]),
+                # When a paused customer can write to the bot again (None: until resumed).
+                "paused_until": customer.get("paused_until") if effective == "paused" else None,
             }
         )
     return {"customers": sorted(rows, key=lambda row: row["last_seen"], reverse=True)[:limit]}
@@ -224,7 +226,10 @@ async def customer_action(request: Request, customer_id: str, action: str):
     state, _ = _customer(request, customer_id)
     if action not in {"resume", "block", "unblock"}:
         raise HTTPException(404, "Unknown customer action")
-    state.set_status(customer_id, "blocked" if action == "block" else "active")
+    if action == "resume":
+        state.resume_customer(customer_id)
+    else:
+        state.set_status(customer_id, "blocked" if action == "block" else "active")
     return {"status": state.customer_status(customer_id)}
 
 

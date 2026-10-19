@@ -29,6 +29,8 @@ class _Customer(BaseModel):
     status: Literal["active", "paused", "blocked"] = "active"
     paused_until: float | None = None
     escalations: list[dict] = Field(default_factory=list)
+    # Set by the admin's Resume: escalations before it no longer hold back a new one.
+    escalation_cleared_at: float | None = None
     inbound_day: str = ""
     inbound_today: int = Field(default=0, ge=0)
     day_notice_sent: bool = False
@@ -254,6 +256,15 @@ class CustomerServiceState:
             customer = self._customer(sender_id, "", now)
             customer["status"] = status
             customer["paused_until"] = paused_until if status == "paused" else None
+        self._update(change)
+
+    def resume_customer(self, sender_id: str) -> None:
+        """Admin resume: the customer is active again and may be escalated again at once."""
+        def change(now):
+            customer = self._customer(sender_id, "", now)
+            customer["status"] = "active"
+            customer["paused_until"] = None
+            customer["escalation_cleared_at"] = now
         self._update(change)
 
     def set_paused_all(self, paused: bool) -> None:

@@ -359,6 +359,7 @@
   "cskh.phase_promote": "saving facts",
   "cskh.phase_retry": "waiting to retry",
   "cskh.attempts_done": "tried {k}/{n}",
+  "cskh.waiting_until": "Waiting for staff · until {time} ({m} min left)",
   "cskh.relearn": "Retry failed learning",
   "graph.kb_quota_exempt": "This daily limit does not apply to knowledge published from the customer service page in Public Customer Mode."
 }

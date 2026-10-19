@@ -19,7 +19,7 @@ body {margin:0;background:rgb(var(--c-canvas));color:rgb(var(--c-primary));font:
 button,input,textarea,select {font:inherit} button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible {outline:2px solid rgb(var(--c-accent));outline-offset:3px}
 a {color:rgb(var(--c-accent));text-underline-offset:3px}
 h1,h2,p {margin-top:0} input[type=checkbox] {accent-color:rgb(var(--c-accent))}
-.cskh {position:relative;z-index:1;width:100%;margin:0;padding:16px 12px;min-width:0;flex:1;display:flex;flex-direction:column;gap:20px}
+.cskh {position:relative;z-index:10;width:100%;margin:0;padding:16px 12px;min-width:0;flex:1;display:flex;flex-direction:column;gap:20px}
 .cskh .ui-card {padding:20px;min-width:0;border:1px solid rgb(var(--c-primary) / .2);border-radius:12px;background:rgb(var(--c-surface));box-shadow:var(--card-shadow, none)}
 .cskh h1 {font-size:1.5rem;font-weight:700} .cskh h2 {font-size:1.15rem;font-weight:700;margin-bottom:12px}
 .cskh p {margin:8px 0} .cskh .muted {opacity:.75;font-size:.9rem}
@@ -40,6 +40,9 @@ h1,h2,p {margin-top:0} input[type=checkbox] {accent-color:rgb(var(--c-accent))}
 .cskh-dialog footer {display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
 @media(max-width:640px) {.cskh {padding:12px 8px}.cskh .grid {grid-template-columns:1fr}.cskh .ui-card {padding:14px}}
 @media(max-width:640px) { #cskh-kb td .row {min-width:0;flex-direction:column;align-items:flex-start} }
+/* A long knowledge list scrolls inside its card; the header row stays visible. */
+#cskh-kb .table-wrap {max-height:min(60vh,520px);overflow:auto}
+#cskh-kb thead th {position:sticky;top:0;z-index:1;background:rgb(var(--c-surface))}
 </style>
 </head>
 <body>
@@ -129,9 +132,14 @@ h1,h2,p {margin-top:0} input[type=checkbox] {accent-color:rgb(var(--c-accent))}
             const customers=$('customer-rows'); customers.replaceChildren();
             cs.customers.forEach(c=>{const controls=node('div');controls.className='row';const path='/customers/'+encodeURIComponent(c.id);
                 controls.append(button('transcript',()=>showTranscript(c.id)),button(c.status==='blocked'?'unblock':'resume',async()=>{await api(path+(c.status==='blocked'?'/unblock':'/resume'),{});note(t('saved'));}),button('block',async()=>{if(await hubModal(t('block'),t('confirm_block'))) {await api(path+'/block',{});note(t('saved'));}}),button('escalate',async()=>{const summary=await hubModal(t('escalate'),t('summary'),true);if(summary){const r=await api(path+'/escalate',{summary});note(t(r.published_to_bus?'sent':'send_failed'));}}));
-                row(customers,[c.name+' ('+c.id+')',stamp(c.last_seen),t(c.status),c.messages_in+' / '+c.messages_out+' · '+t('limited')+': '+c.limited_count+' · '+t('escalations')+': '+c.escalations,controls]);});empty(customers,5);
+                // A customer paused by a handoff waits for staff until paused_until
+                const left=c.paused_until ? Math.max(1, Math.ceil((c.paused_until*1000-Date.now())/60000)) : 0;
+                const state=c.status==='paused' && c.paused_until ? t('waiting_until')
+                    .replace('{time}', new Date(c.paused_until*1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}))
+                    .replace('{m}', left) : t(c.status);
+                row(customers,[c.name+' ('+c.id+')',stamp(c.last_seen),state,c.messages_in+' / '+c.messages_out+' · '+t('limited')+': '+c.limited_count+' · '+t('escalations')+': '+c.escalations,controls]);});empty(customers,5);
             const escalations=$('escalation-rows');escalations.replaceChildren();es.escalations.forEach(e=>row(escalations,[e.name+' ('+e.customer_id+')',stamp(e.at),t(e.reason),t(e.delivered?'sent':'send_failed')]));empty(escalations,4);
-            const docs=$('kb-rows');docs.replaceChildren();kb.documents.forEach(d=>{const controls=node('div');controls.className='row';
+            const docs=$('kb-rows');docs.replaceChildren();kb.documents.slice().reverse().forEach(d=>{  /* newest upload first */const controls=node('div');controls.className='row';
                 (d.status==='pending'?['publish','delete']:d.status==='published'||d.cleanup_pending?['revoke']:['delete']).forEach(action=>controls.append(button(action,async()=>{if(action==='publish'||await hubModal(t(action),t('confirm_'+action))){const result=await api('/kb/'+d.document_id+'/'+action,{});note(t(result.cleanup_pending?'cleanup_pending':action==='publish'?'queued':'saved'));}})));
                 const learning=d.learning||{total:0,done:0,failed:0,in_progress:0};
                 if(d.status==='published' && learning.failed) controls.append(button('relearn',async()=>{await api('/kb/'+d.document_id+'/relearn',{});note(t('queued'));}));

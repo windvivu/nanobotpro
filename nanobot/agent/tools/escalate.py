@@ -94,8 +94,10 @@ class EscalateTool(Tool):
                 now = self._clock()
                 self._unpersisted = {key: at for key, at in self._unpersisted.items() if now - at < self._pause}
                 customer = state.snapshot()["customers"].get(sender_id, {})
-                recent = customer.get("escalations", [])
-                if (sender_id in self._unpersisted
+                # An admin Resume ends the wait: earlier handoffs no longer block a new one.
+                cleared = customer.get("escalation_cleared_at") or 0
+                recent = [entry for entry in customer.get("escalations", []) if entry["at"] > cleared]
+                if (self._unpersisted.get(sender_id, 0) > cleared
                         or any(now - entry["at"] < self._pause for entry in recent)):
                     return "already escalated; the customer is waiting for a human"
                 history = self._sessions.get_or_create(session_key).get_history(10)

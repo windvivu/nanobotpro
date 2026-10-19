@@ -359,6 +359,7 @@
   "cskh.phase_promote": "đang lưu ý",
   "cskh.phase_retry": "chờ thử lại",
   "cskh.attempts_done": "đã thử {k}/{n}",
+  "cskh.waiting_until": "Đang chờ nhân viên · đến {time} (còn {m} phút)",
   "cskh.relearn": "Học lại",
   "graph.kb_quota_exempt": "Hạn mức ngày này không áp dụng cho kiến thức xuất bản từ trang CSKH trong Public Customer Mode."
 }
