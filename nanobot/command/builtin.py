@@ -21,11 +21,42 @@ from nanobot.utils.restart import set_restart_notice_to_env
 _ADMIN_CHANNELS = frozenset({"cli", "webchat", "fleet", "system"})
 
 
+# Teaching from Telegram (customer service): only the chat that receives the escalation
+# notices may add knowledge or retire facts. The ban on learning from conversations stays:
+# a /teach note goes the same way as a note typed on the dashboard, nothing else is learned.
+_TEACH_COMMANDS = ("/teach", "/replace")
+
+
+def teacher_chat(loop) -> str:
+    """The Telegram chat_id allowed to teach, "" when customer service is off."""
+    try:
+        from nanobot.config.public_mode import _field
+        zalo = getattr(getattr(loop, "channels_config", None), "zalo", None)
+        service = _field(zalo, "customer_service", "customerService", None)
+        if not service or not _field(service, "enabled", "enabled", False):
+            return ""
+        channel, _, target = str(_field(service, "escalation_target", "escalationTarget", "")).strip().partition(":")
+        return target.strip() if channel == "telegram" else ""
+    except Exception:
+        return ""
+
+
+def _is_teacher(ctx: CommandContext) -> bool:
+    target = teacher_chat(ctx.loop)
+    return bool(target) and ctx.msg.channel == "telegram" and str(ctx.msg.chat_id) == target
+
+
+def _teach_command(raw: str) -> bool:
+    word = raw.strip().split(maxsplit=1)[0].lower() if raw.strip() else ""
+    return word in _TEACH_COMMANDS
+
+
 def public_command_denial(ctx: CommandContext) -> OutboundMessage | None:
     if (getattr(ctx.loop, "public_customer_mode", False)
             and ctx.msg.channel not in _ADMIN_CHANNELS
             and ctx.raw.strip().startswith("/")
-            and ctx.raw.strip().lower() not in {"/help", "/new", "/stop"}):
+            and ctx.raw.strip().lower() not in {"/help", "/new", "/stop"}
+            and not (_teach_command(ctx.raw) and _is_teacher(ctx))):
         return OutboundMessage(channel=ctx.msg.channel, chat_id=ctx.msg.chat_id,
                                content="This command is not available.")
     return None
@@ -397,12 +428,77 @@ async def cmd_dream_restore(ctx: CommandContext) -> OutboundMessage:
     )
 
 
+def _reply(ctx: CommandContext, text: str) -> OutboundMessage:
+    return OutboundMessage(channel=ctx.msg.channel, chat_id=ctx.msg.chat_id, content=text,
+                           metadata={**dict(ctx.msg.metadata or {}), "render_as": "text"})
+
+
+_TEACH_USAGE = ("Gõ: /teach <điều bot cần biết>\n"
+                "Ví dụ: /teach Gói Cơ bản từ 1/11 là 950.000 đ/năm\n"
+                "Sau đó /replace <số> để thu hồi ý cũ cùng chủ đề, ví dụ /replace 1 3")
+
+
+async def cmd_teach(ctx: CommandContext) -> OutboundMessage:
+    """/teach <text>: the note becomes knowledge at once; the facts it may replace are numbered."""
+    if not _is_teacher(ctx):
+        return _reply(ctx, "This command is not available.")
+    text = ctx.raw.strip().split(maxsplit=1)
+    if len(text) < 2 or not text[1].strip():
+        return _reply(ctx, _TEACH_USAGE)
+    from nanobot.brain_memory.errors import BrainMemoryError
+    from nanobot.security.public_output import public_error
+    from nanobot.web import kb_catalog
+    loop = ctx.loop
+    try:
+        result = await kb_catalog.add_note(loop.workspace, loop.brain_memory_config,
+                                           getattr(loop, "brain_runtime", None), text[1])
+    except (BrainMemoryError, ValueError, OSError) as exc:
+        return _reply(ctx, "Chưa dạy được: " + (str(exc) if isinstance(exc, BrainMemoryError) else public_error(exc)))
+    related = result["related"]
+    pending = getattr(loop, "_teach_related", None)
+    if pending is None:
+        pending = loop._teach_related = {}
+    pending[str(ctx.msg.chat_id)] = [fact["id"] for fact in related]
+    lines = ["Đã nhận, bot đang học: " + result["document"]["name"]]
+    if related:
+        lines.append("")
+        lines.append(f"Có {len(related)} ý đã học cùng chủ đề:")
+        for index, fact in enumerate(related, 1):
+            lines.append(f"{index}. {fact['title']} — {fact['body']}" + (f" ({fact['document']})" if fact["document"] else ""))
+        lines.append("")
+        lines.append("Ý nào đã sai thì gõ /replace kèm số, ví dụ /replace 1. Không thì bỏ qua.")
+    return _reply(ctx, "\n".join(lines))
+
+
+async def cmd_replace(ctx: CommandContext) -> OutboundMessage:
+    """/replace 1 3: retire the facts numbered in the last /teach reply of this chat."""
+    if not _is_teacher(ctx):
+        return _reply(ctx, "This command is not available.")
+    pending = (getattr(ctx.loop, "_teach_related", None) or {}).get(str(ctx.msg.chat_id)) or []
+    if not pending:
+        return _reply(ctx, "Chưa có danh sách ý cũ. Gõ /teach trước, rồi /replace kèm số.")
+    words = ctx.raw.strip().split()[1:]
+    if not words or not all(word.isdigit() and 1 <= int(word) <= len(pending) for word in words):
+        return _reply(ctx, f"Gõ /replace kèm số từ 1 đến {len(pending)}, ví dụ /replace 1 3.")
+    from nanobot.brain_memory.errors import BrainMemoryError
+    from nanobot.security.public_output import public_error
+    from nanobot.web import kb_catalog
+    chosen = list(dict.fromkeys(pending[int(word) - 1] for word in words))
+    try:
+        result = kb_catalog.retire_kb_facts(ctx.loop.workspace, ctx.loop.brain_memory_config, chosen)
+    except (BrainMemoryError, ValueError, OSError) as exc:
+        return _reply(ctx, "Chưa thu hồi được: " + (str(exc) if isinstance(exc, BrainMemoryError) else public_error(exc)))
+    ctx.loop._teach_related[str(ctx.msg.chat_id)] = [fact_id for fact_id in pending if fact_id not in chosen]
+    return _reply(ctx, f"Đã thu hồi {len(result['retired_fact_ids'])} ý.")
+
+
 async def cmd_help(ctx: CommandContext) -> OutboundMessage:
     """Return available slash commands."""
     return OutboundMessage(
         channel=ctx.msg.channel,
         chat_id=ctx.msg.chat_id,
         content=("/help — Show available commands\n/new — Start a new conversation\n/stop — Stop the current task"
+                 + ("\n/teach <nội dung> — Dạy bot một điều cần biết\n/replace <số> — Thu hồi ý cũ sau /teach" if _is_teacher(ctx) else "")
                  if getattr(ctx.loop, "public_customer_mode", False) and ctx.msg.channel not in _ADMIN_CHANNELS
                  else build_help_text()),
         metadata={**dict(ctx.msg.metadata or {}), "render_as": "text"},
@@ -436,6 +532,10 @@ def register_builtin_commands(router: CommandRouter) -> None:
     router.exact("/status", _admin_only(cmd_status))
     router.exact("/goal", cmd_goal)
     router.prefix("/goal ", cmd_goal)
+    router.exact("/teach", cmd_teach)
+    router.prefix("/teach ", cmd_teach)
+    router.exact("/replace", cmd_replace)
+    router.prefix("/replace ", cmd_replace)
     router.exact("/dream", _admin_only(cmd_dream))
     router.exact("/dream-log", _admin_only(cmd_dream_log))
     router.prefix("/dream-log ", _admin_only(cmd_dream_log))

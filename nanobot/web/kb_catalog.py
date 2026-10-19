@@ -17,7 +17,7 @@ from pathlib import Path
 from filelock import FileLock
 
 from nanobot.brain_memory.config import BrainMemoryConfig
-from nanobot.brain_memory.dashboard import learning_status, retire_facts_by_source
+from nanobot.brain_memory.dashboard import learning_status, retire_facts, retire_facts_by_source
 from nanobot.brain_memory.errors import BrainMemoryError, ConflictError, FormatError
 from nanobot.brain_memory.migration import migrate_source, migration_batch_id, write_migration_batch
 from nanobot.brain_memory.paths import resolve_ref
@@ -327,6 +327,60 @@ def revoke_document(workspace, config, document_id):
         return dict(doc, document_id=document_id)
 
 
+# A note the admin types on the page is a small document of its own: it is learned, listed,
+# revoked and deleted like any other, and the facts it replaces are retired by ID (custom).
+NOTE_PREFIX = "note-"
+NOTE_MAX_CHARS = 2000
+
+
+async def add_note(workspace, config, runtime, text):
+    """Publish one admin note and return it with the facts already in the KB on the same subject."""
+    if not isinstance(text, str) or not text.strip() or len(text) > NOTE_MAX_CHARS:
+        raise FormatError(f"Note must contain 1–{NOTE_MAX_CHARS} characters")
+    text = text.strip()
+    first = " ".join(text.split())
+    name = first if len(first) <= 120 else first[:117].rstrip() + "..."
+    doc = add_document(workspace, f"{NOTE_PREFIX}{secrets.token_hex(4)}.md", text.encode("utf-8"), name=name, config=config)
+    if doc["status"] == "pending" and not doc["batch_id"]:
+        doc = await publish_document(workspace, config, runtime, doc["document_id"])
+    elif doc["status"] == "revoked":
+        raise ConflictError("This note was revoked before; delete it in the table, then teach it again")
+    related = related_facts(workspace, config, text, exclude_file=doc["file"])
+    return {"document": doc, "related": related}
+
+
+def related_facts(workspace, config, text, *, exclude_file=None, limit=8):
+    """Published facts the retrieval would show next to this text: what a note may replace."""
+    from nanobot.brain_memory.index import BrainIndex
+    store = BrainStore(Path(workspace), config.model_copy(update={"enabled": True, "retrieval_enabled": True}))
+    allowed = published_paths(workspace)
+    found, seen = [], set()
+    for item in BrainIndex(store).search(text[:config.max_query_chars], limit=limit):
+        if item.fact_id in seen:
+            continue
+        seen.add(item.fact_id)
+        try:
+            fact = store.read_fact(item.fact_id)
+        except (BrainMemoryError, ValueError):
+            continue
+        ref = fact.source.source_ref
+        if fact.status != "active" or ref == exclude_file or (store.workspace / ref).resolve() not in allowed:
+            continue
+        found.append({"id": fact.id, "title": fact.title, "body": fact.body,
+                      "document": public_name(Path(workspace), ref) or ""})
+    return found
+
+
+def retire_kb_facts(workspace, config, fact_ids):
+    """Retire chosen facts and forget the cached counts of the documents they came from."""
+    result = retire_facts(Path(workspace), config, list(fact_ids))
+    with _catalog(workspace) as (_root_dir, catalog):
+        for doc in catalog["documents"].values():
+            if doc["file"] in result["source_refs"]:
+                _invalidate_progress(workspace, doc)
+    return {"retired_fact_ids": result["retired_fact_ids"]}
+
+
 def _batch_jobs(store, doc):
     if not doc.get("batch_id"):
         return []
@@ -408,7 +462,9 @@ def refresh_fact_counts(workspace, config, worker=None, *, tolerate_errors=False
                         progress = _learning(jobs)
                         detail = _learning_detail(jobs, config.learning_max_attempts)
                         if jobs:
-                            count = len({fact_id for job in jobs for fact_id in job.get("created_fact_ids", [])})
+                            # Facts retired one by one (replaced by a note) no longer count
+                            count = len({fact_id for job in jobs for fact_id in job.get("created_fact_ids", [])
+                                         if store.path(f"facts/{fact_id}.md").is_file()})
                         if jobs and not progress["in_progress"] and not progress["failed"]:
                             with _progress_cache_lock:
                                 _progress_cache[cache_key] = (dict(progress), count)

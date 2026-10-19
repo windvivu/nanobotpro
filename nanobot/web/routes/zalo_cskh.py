@@ -69,6 +69,21 @@ def _customer(request, customer_id):
     return state, customer
 
 
+_MEDIA_MARKER = re.compile(r"\[(image|file|audio|video|voice|sticker|document)(?::[^\]]*)?\]")
+
+
+def _shown(content, workspace):
+    """What the staff member reads: a message stored as blocks becomes its text; a media
+    marker loses the path it carries for the model (a server path is not for the page)."""
+    if isinstance(content, list):
+        parts = [block.get("text", "") if isinstance(block, dict) else str(block) for block in content]
+        content = "\n".join(part for part in parts if part)
+    if not isinstance(content, str):
+        content = json.dumps(content, ensure_ascii=False)
+    from nanobot.security.public_output import redact_workspace
+    return redact_workspace(_MEDIA_MARKER.sub(lambda m: f"[{m.group(1)}]", content), workspace)
+
+
 def _transcript(request, customer_id, limit):
     _customer(request, customer_id)
     key = f"zalo:{customer_id}"
@@ -90,7 +105,8 @@ def _transcript(request, customer_id, limit):
                 if item.get("role") == "assistant" and str(item.get("content", "")).strip() == "__SILENT__":
                     continue  # the bot chose not to answer a closing message
                 if item.get("role") in {"user", "assistant"}:
-                    rows.append({k: item.get(k, "") for k in ("role", "content", "timestamp")})
+                    rows.append({"role": item["role"], "timestamp": item.get("timestamp", ""),
+                                 "content": _shown(item.get("content", ""), request.app.state.config.workspace_path)})
     except (ValueError, TypeError, AttributeError) as exc:
         raise HTTPException(409, "Session cannot be read safely") from exc
     return list(rows)
@@ -409,6 +425,87 @@ async def upload(request: Request, file: UploadFile = File(...), name: str | Non
         raise _kb_error(exc) from exc
     finally:
         await file.close()
+
+
+class Note(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    text: str = Field(min_length=1, max_length=kb_catalog.NOTE_MAX_CHARS)
+
+
+class FactIds(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    fact_ids: list[str] = Field(min_length=1, max_length=50)
+
+
+class Question(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    content: str = Field(min_length=1, max_length=2000)
+
+
+KB_TRY_SESSION = "kbtest:admin"  # the admin's own questions to the knowledge; not a customer
+
+
+@router.post("/api/kb/teach")
+async def kb_teach(request: Request, note: Note):
+    """One admin note becomes knowledge at once; the reply lists the facts it may replace."""
+    _state(request)
+    agent = getattr(request.app.state, "agent", None)
+    try:
+        return await kb_catalog.add_note(
+            request.app.state.config.workspace_path, _brain_config(request),
+            getattr(agent, "brain_runtime", None), note.text,
+        )
+    except (BrainMemoryError, KeyError, ValueError, OSError) as exc:
+        raise _kb_error(exc) from exc
+
+
+@router.post("/api/kb/facts/retire")
+async def kb_retire_facts(request: Request, body: FactIds):
+    _state(request)
+    try:
+        return await run_in_threadpool(
+            kb_catalog.retire_kb_facts, request.app.state.config.workspace_path, _brain_config(request), body.fact_ids,
+        )
+    except (BrainMemoryError, KeyError, ValueError, OSError) as exc:
+        raise _kb_error(exc) from exc
+
+
+@router.post("/api/kb/ask")
+async def kb_ask(request: Request, question: Question):
+    """Ask the bot as a customer would, without being one: the escalate tool refuses outside
+    Zalo, so no Telegram alert, no pause, no customer record."""
+    _state(request)
+    agent = getattr(request.app.state, "agent", None)
+    if agent is None or not hasattr(agent, "process_direct"):
+        raise HTTPException(409, "Agent is not running")
+    try:
+        reply = await agent.process_direct(
+            question.content, session_key=KB_TRY_SESSION, channel="kbtest", chat_id="admin",
+        )
+    except Exception as exc:
+        raise HTTPException(502, public_error(exc)) from exc
+    return {"reply": (reply.content or "") if reply is not None else "", "silent": reply is None}
+
+
+@router.get("/api/kb/ask")
+async def kb_ask_history(request: Request):
+    _state(request)
+    session = request.app.state.session_manager.get_or_create(KB_TRY_SESSION)
+    return {"messages": [
+        {"role": m["role"], "content": m["content"]} for m in session.messages
+        if m.get("role") in {"user", "assistant"} and isinstance(m.get("content"), str)
+        and m["content"].strip() != "__SILENT__"
+    ]}
+
+
+@router.post("/api/kb/ask/clear")
+async def kb_ask_clear(request: Request):
+    _state(request)
+    sessions = request.app.state.session_manager
+    session = sessions.get_or_create(KB_TRY_SESSION)
+    session.clear()
+    sessions.save(session)
+    return {"cleared": True}
 
 
 @router.get("/api/kb/{document_id}/facts")

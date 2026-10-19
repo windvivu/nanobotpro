@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -283,6 +284,49 @@ def retire_facts_by_source(workspace: Path, config: BrainMemoryConfig, source_re
         # The catalog already denies public access; the index is derived data.
         pass
     return {"retired_fact_ids": moved}
+
+
+_FACT_ID = re.compile(r"^fact-[0-9a-f]{64}$")
+
+
+def retire_facts(workspace: Path, config: BrainMemoryConfig, fact_ids: list[str]) -> dict:
+    """Retire the facts named, whatever their document: the admin replaces what is wrong with a
+    note and takes the old facts out (custom, customer service). Same trash and audit trail as
+    retiring by source; the index is rebuilt."""
+    wanted = list(dict.fromkeys(fact_ids))
+    if any(not isinstance(fact_id, str) or not _FACT_ID.match(fact_id) for fact_id in wanted):
+        raise FormatError("Invalid fact ID")
+    store = BrainStore(workspace.resolve(), config.model_copy(update={"enabled": True}))
+    moved, sources = [], {}
+    with store.locked():
+        selected = []
+        for fact_id in wanted:
+            path = store.path(f"facts/{fact_id}.md")
+            if not path.is_file() or path.is_symlink():
+                continue  # already gone
+            fact = store.read_fact(fact_id)
+            if fact.status in {"active", "quarantined"}:
+                selected.append(fact.id)
+                sources[fact.id] = fact.source.source_ref
+        if selected:
+            now = datetime.now(timezone.utc)
+            trash_ref = f".migration/trash/facts-{now.strftime('%Y%m%dT%H%M%S%fZ')}"
+            store.path(trash_ref).mkdir(parents=True, exist_ok=False)
+            try:
+                for fact_id in selected:
+                    os.replace(store.path(f"facts/{fact_id}.md"), store.path(f"{trash_ref}/{fact_id}.md"))
+                    moved.append(fact_id)
+            finally:
+                store._write_locked(f"{trash_ref}/retired.json", (json.dumps({
+                    "fact_ids": wanted, "retired_fact_ids": moved,
+                    "source_refs": sorted({sources[fact_id] for fact_id in moved}),
+                    "retired_at": now.isoformat(),
+                }, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
+    try:
+        BrainIndex(store).rebuild()
+    except (OSError, ValueError, FormatError):
+        pass  # derived data; the next read rebuilds it
+    return {"retired_fact_ids": moved, "source_refs": sorted({sources[fact_id] for fact_id in moved})}
 
 
 def _processed_hashes(

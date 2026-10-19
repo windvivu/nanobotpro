@@ -89,7 +89,13 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
 <section id="cskh-kb" class="ui-card collapsible collapsed"><h2>{{ tr('cskh.knowledge') }}</h2>
 <p class="muted">{{ tr('cskh.kb_note') }}</p><form id="upload-form" class="row"><input name="file" type="file" accept=".md,.txt,.docx,.pdf" multiple required aria-label="{{ tr('cskh.file') }}"><input name="name" maxlength="200" placeholder="{{ tr('cskh.public_name') }}" aria-label="{{ tr('cskh.public_name') }}"><button type="submit">{{ tr('cskh.upload') }}</button></form>
 <div class="table-wrap"><table><thead><tr>{% for key in ['document','status','facts','actions'] %}<th>{{ tr('cskh.' ~ key) }}</th>{% endfor %}</tr></thead><tbody id="kb-rows"></tbody></table></div>
-<div class="row" style="margin-top:16px"><a href="/memory/graph" target="_blank" rel="noopener noreferrer">{{ tr('cskh.graph') }}</a><button id="install-persona">{{ tr('cskh.persona') }}</button></div></section>
+<div class="row" style="margin-top:16px"><a href="/memory/graph" target="_blank" rel="noopener noreferrer">{{ tr('cskh.graph') }}</a><button id="install-persona">{{ tr('cskh.persona') }}</button></div>
+<h3>{{ tr('cskh.teach_title') }}</h3><p class="muted">{{ tr('cskh.teach_hint') }}</p>
+<form id="teach-form"><textarea id="teach-text" maxlength="2000" rows="3" placeholder="{{ tr('cskh.teach_input') }}" aria-label="{{ tr('cskh.teach_title') }}"></textarea><div class="row"><button type="submit">{{ tr('cskh.teach_send') }}</button><span class="muted">{{ tr('cskh.enter_hint') }}</span></div></form>
+<div id="teach-related" hidden><p id="teach-related-title"></p><div id="teach-related-list"></div><div class="row"><button id="teach-replace" type="button">{{ tr('cskh.replace') }}</button><button id="teach-keep" type="button">{{ tr('cskh.keep') }}</button></div></div>
+<h3>{{ tr('cskh.ask_title') }}</h3><p class="muted">{{ tr('cskh.ask_hint') }}</p>
+<div id="kb-ask-log" class="test-log" aria-live="polite"></div>
+<form id="kb-ask-form" class="row"><input id="kb-ask-input" maxlength="2000" autocomplete="off" placeholder="{{ tr('cskh.ask_input') }}" aria-label="{{ tr('cskh.ask_title') }}"><button type="submit">{{ tr('cskh.ask_send') }}</button><button id="kb-ask-clear" type="button">{{ tr('cskh.ask_clear') }}</button></form></section>
 <section id="cskh-settings" class="ui-card collapsible collapsed"><h2>{{ tr('cskh.settings') }}</h2><form id="settings-form"><div class="grid">
 {% for field,key in [('welcomeMessage','welcome'),('handoffMessage','handoff')] %}<label>{{ tr('cskh.' ~ key) }}<textarea name="{{ field }}" maxlength="4000"></textarea></label>{% endfor %}
 {% for field,key in [('inboundPerMinute','per_minute'),('inboundPerDay','per_day'),('pauseAfterEscalationMinutes','pause_minutes')] %}<label>{{ tr('cskh.' ~ key) }}<input name="{{ field }}" type="number" min="1" max="1000000" required></label>{% endfor %}
@@ -297,6 +303,42 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
                 row(docs,[d.name+' · '+d.original_name,d.status==='published'?progress+step:t(d.status),factsCell(d),controls]);});empty(docs,4);
         } finally { polling=false; }
     }
+    // Teach: a note becomes knowledge; the facts it may replace are offered for retirement
+    let related = [];
+    function showRelated(items) {
+        related = items; const box = $('teach-related'), list = $('teach-related-list'); list.replaceChildren();
+        box.hidden = !items.length;
+        if (!items.length) return;
+        $('teach-related-title').textContent = t('related_title').replace('{n}', items.length);
+        items.forEach(f => { const label = node('label'); label.className = 'check';
+            const cb = node('input'); cb.type = 'checkbox'; cb.value = f.id;
+            label.append(cb, node('strong', f.title), node('span', ' — ' + f.body + (f.document ? ' (' + f.document + ')' : '')));
+            list.append(label); });
+    }
+    $('teach-form').onsubmit = e => { e.preventDefault(); act(e.submitter || e.target.querySelector('button'), async () => {
+        const text = $('teach-text').value.trim(); if (!text) return;
+        const data = await api('/kb/teach', {text}); $('teach-text').value = '';
+        showRelated(data.related); note(data.related.length ? t('related_found') : t('teach_done')); await refresh();
+    }); };
+    $('teach-text').addEventListener('keydown', e => { if (e.key !== 'Enter') return;
+        if (e.ctrlKey || e.metaKey) { e.preventDefault(); $('teach-text').setRangeText('\n', $('teach-text').selectionStart, $('teach-text').selectionEnd, 'end'); }
+        else if (!e.shiftKey && !e.isComposing) { e.preventDefault(); $('teach-form').requestSubmit(); } });
+    $('teach-replace').onclick = () => act($('teach-replace'), async () => {
+        const ids = [...$('teach-related-list').querySelectorAll('input:checked')].map(cb => cb.value); if (!ids.length) return;
+        const result = await api('/kb/facts/retire', {fact_ids: ids});
+        note(t('replaced').replace('{n}', result.retired_fact_ids.length)); showRelated([]); await refresh();
+    });
+    $('teach-keep').onclick = () => showRelated([]);
+    // Try the knowledge as a customer would, without being one: escalation does not work here
+    function askLine(role, text) { const el = node('div', text); el.className = 'test-msg ' + role; $('kb-ask-log').append(el); $('kb-ask-log').scrollTop = $('kb-ask-log').scrollHeight; }
+    api('/kb/ask').then(data => data.messages.forEach(m => askLine(m.role === 'user' ? 'customer' : 'bot', m.content))).catch(() => {});
+    $('kb-ask-form').onsubmit = e => { e.preventDefault(); act(e.submitter || e.target.querySelector('button'), async () => {
+        const text = $('kb-ask-input').value.trim(); if (!text) return;
+        $('kb-ask-input').value = ''; askLine('customer', text);
+        const data = await api('/kb/ask', {content: text});
+        askLine(data.silent ? 'staff' : 'bot', data.silent ? t('ask_silent') : data.reply);
+    }); };
+    $('kb-ask-clear').onclick = () => act($('kb-ask-clear'), async () => { await api('/kb/ask/clear', {}); $('kb-ask-log').replaceChildren(); });
     // The Facts count opens what the bot learned from that document
     function factsCell(d) {
         if (!d.fact_count) return String(d.fact_count);
