@@ -225,6 +225,43 @@ async def escalate(request: Request, customer_id: str, body: Summary):
     return {"published_to_bus": delivered}
 
 
+STAFF_PREFIX = "[Nhân viên] "
+
+
+class StaffReply(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    content: str = Field(min_length=1, max_length=2000)
+
+
+@router.post("/api/customers/{customer_id}/reply")
+async def staff_reply(request: Request, customer_id: str, body: StaffReply):
+    """Answer a customer as staff: the bot's Zalo account sends it, the bot's conversation
+    records it, and the bot stays quiet for this customer until Resume or the pause ends."""
+    channel, state = _state(request)
+    _customer(request, customer_id)  # only customers who have written to the bot
+    text = body.content.strip()
+    if not text:
+        raise HTTPException(400, "Reply is empty")
+    if not is_test_customer(customer_id) and channel.get_status().get("status") != "connected":
+        raise HTTPException(409, "Zalo is not connected; the reply was not sent")
+    try:
+        await channel.send(OutboundMessage(channel="zalo", chat_id=customer_id, content=text,
+                                           metadata={"thread_type": "User", "_staff_reply": True}))
+    except Exception as exc:
+        public_error(exc)
+        raise HTTPException(502, "Zalo did not accept the reply") from exc
+    pause = service_config(request.app.state.config).pause_after_escalation_minutes * 60
+    state.hold_for_staff(customer_id, time.time() + pause)
+    sessions = getattr(request.app.state, "session_manager", None)
+    if sessions is not None:
+        session = sessions.get_or_create(f"zalo:{customer_id}")
+        session.add_message("assistant", STAFF_PREFIX + text)
+        sessions.save(session)
+    customer = state.snapshot()["customers"].get(customer_id, {})
+    return {"sent": True, "status": state.customer_status(customer_id),
+            "paused_until": customer.get("paused_until")}
+
+
 @router.post("/api/customers/{customer_id}/{action}")
 async def customer_action(request: Request, customer_id: str, action: str):
     state, _ = _customer(request, customer_id)

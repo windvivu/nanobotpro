@@ -279,5 +279,14 @@ class CustomerServiceState:
             customer["escalation_cleared_at"] = now
         self._update(change)
 
+    def hold_for_staff(self, sender_id: str, until: float) -> None:
+        """Staff is talking to this customer: the bot stays quiet until then, or until Resume."""
+        def change(now):
+            customer = self._customer(sender_id, "", now)
+            if customer["status"] != "blocked":
+                customer["status"] = "paused"
+                customer["paused_until"] = max(until, customer.get("paused_until") or 0)
+        self._update(change)
+
     def set_paused_all(self, paused: bool) -> None:
         self._update(lambda now: self._data.update(paused_all=bool(paused)))

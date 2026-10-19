@@ -49,6 +49,8 @@ h1,h2,p {margin-top:0} input[type=checkbox] {accent-color:rgb(var(--c-accent))}
 .test-msg.customer {align-self:flex-end;background:rgb(var(--c-accent) / .15)}
 .test-msg.bot {align-self:flex-start;background:rgb(var(--c-primary) / .08)}
 #test-form input {flex:1;min-width:0}
+.staff-reply {display:flex;flex-direction:column;gap:8px;margin-top:16px;padding-top:12px;border-top:1px solid rgb(var(--c-primary) / .2)}
+.staff-reply textarea {width:100%;min-height:72px} .staff-reply button {align-self:flex-end}
 </style>
 </head>
 <body>
@@ -123,9 +125,28 @@ h1,h2,p {margin-top:0} input[type=checkbox] {accent-color:rgb(var(--c-accent))}
     async function showTranscript(id) {
         const data = await api('/customers/' + encodeURIComponent(id) + '/transcript');
         $('modal-title').textContent=t('transcript') + ' · ' + id; $('modal-body').replaceChildren();
-        data.messages.forEach(message => { $('modal-body').append(node('strong',(message.role==='user'?t('customer'):t('bot')) + ' · ' + stamp(message.timestamp)),node('pre',typeof message.content==='string'?message.content:JSON.stringify(message.content))); });
+        data.messages.forEach(message => { $('modal-body').append(node('strong',(message.role==='user'?t('customer'):(typeof message.content==='string'&&message.content.startsWith('[Nhân viên] ')?t('staff'):t('bot'))) + ' · ' + stamp(message.timestamp)),node('pre',typeof message.content==='string'?message.content:JSON.stringify(message.content))); });
         if (!data.messages.length) $('modal-body').append(node('p',t('empty')));
-        $('modal-confirm').hidden=true; modal.showModal();
+        // Staff reply: sent from the bot's Zalo account and kept in the bot's conversation
+        const form = node('form'); form.className = 'staff-reply';
+        const box = node('textarea'); box.maxLength = 2000; box.rows = 3;
+        box.placeholder = t('staff_reply_hint'); box.setAttribute('aria-label', t('staff_reply'));
+        const send = node('button', t('staff_send')); send.type = 'submit';
+        const status = node('p'); status.className = 'muted'; status.setAttribute('role', 'status');
+        form.append(node('strong', t('staff_reply')), box, send, status);
+        form.onsubmit = async event => {
+            event.preventDefault();
+            const text = box.value.trim(); if (!text) return;
+            send.disabled = true; status.textContent = t('working');
+            try {
+                await api('/customers/' + encodeURIComponent(id) + '/reply', {content: text});
+                box.value = ''; await showTranscript(id); await refresh();
+                note(t('staff_sent'));
+            } catch (e) { status.textContent = t('error') + ': ' + e.message; send.disabled = false; }
+        };
+        $('modal-body').append(form);
+        $('modal-confirm').hidden=true; if (!modal.open) modal.showModal();
+        const last = $('modal-body').querySelector('pre:last-of-type'); if (last) last.scrollIntoView({block: 'nearest'});
     }
     async function refresh() {
         if (polling) return; polling=true;
@@ -169,7 +190,7 @@ h1,h2,p {margin-top:0} input[type=checkbox] {accent-color:rgb(var(--c-accent))}
         } finally { polling=false; }
     }
     // Test customer: talk to the bot as a brand-new Zalo customer; replies stay on this page.
-    let tester = null, testSeen = 0, testTimer = null;
+    let tester = null, testSeen = 0, testTimer = null, testBusy = false;
     function testLine(role, text) {
         const el = node('div', text); el.className = 'test-msg ' + role; $('test-log').append(el);
         $('test-log').scrollTop = $('test-log').scrollHeight;
@@ -182,12 +203,22 @@ h1,h2,p {margin-top:0} input[type=checkbox] {accent-color:rgb(var(--c-accent))}
             : info.status === 'paused' || info.status === 'blocked' ? t(info.status) + ' · ' + t('test_paused_note') : '';
     }
     async function testPoll() {
-        if (!tester) return;
+        // One poll at a time, and each line once: a slow server must not make polls overlap and
+        // print the same reply again, nor show an earlier test customer's reply in a new chat.
+        if (!tester || testBusy) return;
+        testBusy = true;
+        const who = tester.id;
         try {
-            const data = await api('/test-customers/' + tester.id + '/messages?after=' + testSeen);
-            data.messages.forEach(m => { testSeen = Math.max(testSeen, m.seq); if (m.role === 'bot') testLine('bot', m.content); });
+            const data = await api('/test-customers/' + who + '/messages?after=' + testSeen);
+            if (!tester || tester.id !== who) return;
+            data.messages.forEach(m => {
+                if (m.seq <= testSeen) return;
+                testSeen = m.seq;
+                if (m.role === 'bot') testLine('bot', m.content);
+            });
             testState(data);
         } catch (e) { /* the next poll tries again */ }
+        finally { testBusy = false; }
     }
     $('test-new').onclick = () => act($('test-new'), async () => {
         tester = await api('/test-customers', {}); testSeen = 0;
