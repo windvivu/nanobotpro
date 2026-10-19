@@ -75,6 +75,12 @@ GROUP_FILTER_MEMORY = 80            # recent messages remembered per group
 # Customer service in an allowed group (custom): the group's daily cap is a multiple of a
 # customer's, and the model is told a handoff needs a private chat.
 GROUP_DAY_FACTOR = 5
+# Abuse gates for customers (custom): what one message may cost the model. Zalo carries one
+# picture per message; the daily count bounds vision calls, the size bounds the download.
+CSKH_TEXT_MAX_CHARS = 2000
+CSKH_TEXT_CUT_NOTE = " [message cut at 2000 characters]"
+CSKH_IMAGE_MAX_BYTES = 5 * 1024 * 1024
+CSKH_IMAGES_PER_DAY = 20
 CSKH_GROUP_NOTE = ("[GROUP — this is a Zalo group, not a private chat. Handoff to staff is not "
                    "available here: if someone needs a person, ask them to message you privately. "
                    "Keep answers short; do not address other members' private matters.]")
@@ -473,6 +479,22 @@ class ZaloPersonalChannel(BaseChannel):
                 sessions.delete_session(f"zalo:{customer_id}")
         self._test_outbox.clear()
         return len(ids)
+
+    _media_transport = None  # tests hand in an httpx transport
+
+    async def _fetch_media(self, media_url: str, *, max_bytes: int | None) -> bytes:
+        """Download a customer's attachment; over max_bytes the download stops (custom)."""
+        import httpx
+        chunks, size = [], 0
+        async with httpx.AsyncClient(timeout=30.0, transport=self._media_transport) as client:
+            async with client.stream("GET", media_url) as resp:
+                resp.raise_for_status()
+                async for chunk in resp.aiter_bytes():
+                    size += len(chunk)
+                    if max_bytes is not None and size > max_bytes:
+                        raise ValueError(f"attachment over {max_bytes} bytes")
+                    chunks.append(chunk)
+        return b"".join(chunks)
 
     async def send(self, msg: OutboundMessage) -> None:
         """Send a message through Zalo.
@@ -1342,6 +1364,7 @@ class ZaloPersonalChannel(BaseChannel):
                     logger.debug("Zalo customerService: group message ignored")
                     return
                 if not self.is_allowed(sender_id) or sender_id == thread_id:
+                    logger.info("[Zalo] customerService: group message from {} not admitted (allowFrom)", sender_id)
                     return
                 accepted, _notice = state.admit_inbound(
                     sender_id, sender_name,
@@ -1349,6 +1372,8 @@ class ZaloPersonalChannel(BaseChannel):
                     per_day=self.customer_service.inbound_per_day,
                 )
                 if not accepted:
+                    logger.info("[Zalo] customerService: group message from {} dropped ({})", sender_id,
+                                state.customer_status(sender_id))
                     return
                 if not state.admit_group_inbound(thread_id, sender_name,
                                                  per_day=self.customer_service.inbound_per_day * GROUP_DAY_FACTOR):
@@ -1356,6 +1381,7 @@ class ZaloPersonalChannel(BaseChannel):
                     return
             elif self._customer_service_enabled:
                 if not self.is_allowed(sender_id):
+                    logger.info("[Zalo] customerService: message from {} not admitted (allowFrom)", sender_id)
                     return
                 state = self._get_customer_state()
                 allowed, notice = state.admit_inbound(
@@ -1381,6 +1407,13 @@ class ZaloPersonalChannel(BaseChannel):
                         )
                         self._schedule_customer_task(lambda: self.send(reminder))
                     return
+
+            if self._customer_service_enabled and content and len(content) > CSKH_TEXT_MAX_CHARS:
+                content = content[:CSKH_TEXT_MAX_CHARS] + CSKH_TEXT_CUT_NOTE
+            if self._customer_service_enabled and media_url:
+                if not self._get_customer_state().admit_image(sender_id, per_day=CSKH_IMAGES_PER_DAY):
+                    logger.info("[Zalo] customerService: picture from {} dropped, daily allowance spent", sender_id)
+                    media_url = None
 
             # ── Group chat filter (Option C) ───────────────────────────
             group_ambient = False
@@ -1435,7 +1468,7 @@ class ZaloPersonalChannel(BaseChannel):
             if media_url:
                 try:
                     import time as _time
-                    import httpx
+
                     from nanobot.config.paths import get_media_dir
                     ext_map = {
                         "photo": ".jpg", "gif": ".gif", "video": ".mp4",
@@ -1446,10 +1479,9 @@ class ZaloPersonalChannel(BaseChannel):
                     media_dir.mkdir(parents=True, exist_ok=True)
                     unique_id = f"{thread_id}_{int(_time.time() * 1000)}"
                     file_path = media_dir / f"{unique_id}{ext}"
-                    async with httpx.AsyncClient(timeout=30.0) as client:
-                        resp = await client.get(media_url)
-                        resp.raise_for_status()
-                        await asyncio.to_thread(file_path.write_bytes, resp.content)
+                    data = await self._fetch_media(
+                        media_url, max_bytes=CSKH_IMAGE_MAX_BYTES if self._customer_service_enabled else None)
+                    await asyncio.to_thread(file_path.write_bytes, data)
                     media_paths.append(str(file_path))
                     logger.info("[Zalo] Downloaded {} → {}", media_type, file_path.name)
                 except Exception as e:

@@ -3,6 +3,7 @@
 import base64
 import mimetypes
 import platform
+import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,48 @@ from nanobot.utils.helpers import build_assistant_message, current_time_str, det
 from nanobot.utils.prompt_templates import render_template
 
 PUBLIC_CUSTOMER_SKILLS = frozenset()
+
+
+_NOTE_BLOCK = re.compile(r"\[(?:GROUP\b|Quoted:)[^\]]*\]")
+
+
+QUERY_WORDS = 64      # a message longer than this is searched by its head and its tail (the index takes 64 terms)
+QUERY_HEAD, QUERY_TAIL = 20, 44  # the question of a long message is usually at its end
+SHORT_MESSAGE_WORDS = 4  # up to three words: "ok", "còn gì nữa": searched together with the previous question
+
+
+def _bare(message: str) -> str:
+    return " ".join(_NOTE_BLOCK.sub(" ", message).split())
+
+
+def retrieval_plan(message: Any, history: Sequence[Mapping[str, Any]] | None = None) -> tuple[Any, bool]:
+    """(query, cut) for the knowledge index. The notes a channel prepends ([GROUP ...],
+    [Quoted: ...]) are dropped: the index takes a query's first 64 terms, and a 39-word note left
+    the question itself out (custom, seen live). Other brackets, such as a sub-agent's report
+    header, name what the message is about and stay. A long message is searched by its head and
+    its tail (cut=True: the caller may ask the model for the question instead); a very short one
+    together with the person's previous question."""
+    if not isinstance(message, str):
+        return message, False
+    bare = _bare(message)
+    if not bare:
+        return message, False
+    words = bare.split()
+    if len(words) > QUERY_WORDS:
+        return " ".join(words[:QUERY_HEAD] + words[-QUERY_TAIL:]), True
+    if len(words) < SHORT_MESSAGE_WORDS and history:
+        for entry in reversed(history):
+            content = entry.get("content") if isinstance(entry, Mapping) else None
+            if entry.get("role") == "user" and isinstance(content, str):
+                previous = _bare(content).split()
+                if len(previous) >= SHORT_MESSAGE_WORDS:
+                    return " ".join(previous[-QUERY_TAIL:] + words), False
+                break
+    return bare, False
+
+
+def retrieval_query(message: Any, history: Sequence[Mapping[str, Any]] | None = None) -> Any:
+    return retrieval_plan(message, history)[0]
 
 
 class ContextBuilder:
@@ -66,7 +109,7 @@ class ContextBuilder:
                             BrainIndex(store), config, public_customer_mode=self.public_customer_mode,
                         )
                     # A long message (a pasted text, a sub-agent's report) is searched by its start: the
-                    # index refuses queries over maxQueryChars and only uses their first 32 terms (custom)
+                    # index refuses queries over maxQueryChars and only uses their first 64 terms (custom)
                     brain_context = self._brain_context.render(memory_query[:config.max_query_chars])
                 except Exception as exc:
                     if self.public_customer_mode:
@@ -214,8 +257,13 @@ class ContextBuilder:
         memory_session: str | None = None,
         senders: Sequence[str] | None = None,
         include_user_profile: bool = True,
+        memory_query: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Build the complete message list for an LLM call."""
+        """Build the complete message list for an LLM call.
+
+        memory_query: what to search the knowledge index with, when the caller knows better
+        than the message itself (a question the model distilled from a long one, custom).
+        """
         extra_runtime_lines = goal_state_runtime_lines(session_metadata)
         runtime_ctx = self._build_runtime_context(
             channel, chat_id, self.timezone,
@@ -239,7 +287,8 @@ class ContextBuilder:
 
         messages = [
             {"role": "system", "content": self.build_system_prompt(
-                skill_names, channel=channel, memory_query=current_message,
+                skill_names, channel=channel,
+                memory_query=memory_query if memory_query is not None else retrieval_query(current_message, history),
                 memory_session=memory_session or (f"{channel}:{chat_id}" if channel and chat_id else None),
                 include_user_profile=include_user_profile,
             )},

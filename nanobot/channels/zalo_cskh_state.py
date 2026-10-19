@@ -51,6 +51,8 @@ class _Customer(BaseModel):
     inbound_day: str = ""
     inbound_today: int = Field(default=0, ge=0)
     day_notice_sent: bool = False
+    images_day: str = ""
+    images_today: int = Field(default=0, ge=0)
 
 
 class _Group(BaseModel):
@@ -320,6 +322,18 @@ class CustomerServiceState:
             customer["messages_in"] += 1
             self._count(now, "in", sender_id)
         self._update(change)
+
+    def admit_image(self, sender_id: str, *, per_day: int) -> bool:
+        """Count one picture from a customer; False once today's allowance is spent (custom):
+        every picture is a vision call, and the text quota alone does not bound that."""
+        def change(now):
+            customer = self._customer(sender_id, "", now)
+            today = self._day(now)
+            if customer.get("images_day") != today:
+                customer.update(images_day=today, images_today=0)
+            customer["images_today"] = customer.get("images_today", 0) + 1
+            return customer["images_today"] <= per_day
+        return self._update(change)
 
     def record_outbound(self, sender_id: str) -> None:
         def change(now):

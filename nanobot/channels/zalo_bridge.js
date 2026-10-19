@@ -58,6 +58,12 @@ let lastActivityAt = Date.now();
 let heartbeatTimer = null;
 const HEARTBEAT_INTERVAL_MS     = 60 * 1000;     // ping + check every minute
 const IDLE_RESTART_THRESHOLD_MS = 5 * 60 * 1000; // no traffic/pong this long = dead
+// Seen live: after the session cookies rotated, the socket stayed open and answered pings
+// but Zalo no longer pushed messages to it, for hours. Two guards (custom): the listener is
+// restarted when the cookies rotate, and when the server sent no frame at all (pongs aside)
+// for this long.
+let lastFrameAt = Date.now();
+const DEAF_RESTART_THRESHOLD_MS = 30 * 60 * 1000;
 
 // Close codes (zca-js CloseReason) meaning the account was opened in another
 // Zalo Web/PC session — only one web listener per account. Reconnecting at once
@@ -97,8 +103,10 @@ function saveCredentials(api) {
             fs.writeFileSync(CREDS_FILE, body); // e.g. target briefly locked on Windows
             try { fs.unlinkSync(tmpFile); } catch (_) {}
         }
+        const rotated = lastSavedCreds !== ""; // not the first save after login
         lastSavedCreds = snapshot;
         logErr("Credentials saved to " + CREDS_FILE);
+        if (rotated) restartListener("session cookies rotated");
     } catch (err) {
         logErr("Warning: Could not save credentials: " + err.message);
     }
@@ -108,13 +116,24 @@ function markActivity() {
     lastActivityAt = Date.now();
 }
 
+/** Drop the socket so the usual "closed" path reconnects it (custom). */
+function restartListener(reason) {
+    const ws = api && api.listener && api.listener.ws;
+    if (!ws || ws.readyState !== ws.OPEN || reconnectTimer) return;
+    logErr(`Restarting listener: ${reason}`);
+    lastFrameAt = Date.now();
+    ws.terminate(); // → "closed" → scheduleReconnect()
+}
+
 /** Start (or restart) the listener and watch its socket for liveness signals. */
 function startListener() {
     api.listener.start();
     markActivity();
+    lastFrameAt = Date.now();
     const ws = api.listener.ws; // the `ws` WebSocket zca-js just created
     if (ws && typeof ws.on === "function") {
         ws.on("message", markActivity);
+        ws.on("message", () => { lastFrameAt = Date.now(); });
         ws.on("pong", markActivity);
     }
 }
@@ -128,6 +147,11 @@ function heartbeat() {
     if (idleMs > IDLE_RESTART_THRESHOLD_MS) {
         logErr(`Idle watchdog: no traffic or pong for ${Math.round(idleMs / 1000)}s — terminating dead connection`);
         ws.terminate(); // → "closed" → scheduleReconnect()
+        return;
+    }
+    const deafMs = Date.now() - lastFrameAt;
+    if (deafMs > DEAF_RESTART_THRESHOLD_MS) {
+        restartListener(`no server frame for ${Math.round(deafMs / 60000)} min`);
         return;
     }
     try { ws.ping(); } catch (_) {}
@@ -348,6 +372,9 @@ async function main() {
 
             // Skip self-sent messages (double-check: isSelf flag + senderId match)
             const senderId = String(message.data.uidFrom || message.threadId);
+            // One line per incoming message, before any filter: a message that never shows up
+            // in Python's log can then be told apart from one Zalo never delivered (custom)
+            logErr(`Incoming ${message.type === ThreadType.Group ? "group" : "user"} message from ${senderId} in ${message.threadId}${message.isSelf ? " (self)" : ""}`);
             if (message.isSelf || senderId === selfId) {
                 return;
             }

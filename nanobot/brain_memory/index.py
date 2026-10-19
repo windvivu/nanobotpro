@@ -43,6 +43,9 @@ _STOPWORDS = frozenset("""
 # Vietnamese is written in short syllables: "tin"* would also match "tính" and "tiền", so only
 # a token this long is matched by prefix (partial words, plural forms).
 _PREFIX_MIN = 4
+# Terms a query may carry: a message up to about 64 words is searched whole (custom); a longer
+# one is cut to its head and tail by the caller
+QUERY_TERMS = 64
 
 
 def _fts_query(query: str) -> str:
@@ -52,7 +55,7 @@ def _fts_query(query: str) -> str:
     terms = [term for term in terms if term not in _STOPWORDS] or terms
     return " OR ".join(
         f'"{term.replace(chr(34), "")}"' + ("*" if len(term) >= _PREFIX_MIN else "")
-        for term in terms[:32]
+        for term in terms[:QUERY_TERMS]
     )
 
 
