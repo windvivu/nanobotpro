@@ -71,11 +71,25 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
 .page-pane {display:flex;flex-direction:column;gap:20px} .page-pane[hidden] {display:none}
 /* Customers tab: the list beside the conversation on a wide screen, stacked on a narrow one */
 .inbox,.pair {display:grid;grid-template-columns:minmax(0,1fr);gap:20px;align-items:start}
-@media(min-width:1280px) {.inbox {grid-template-columns:minmax(0,5fr) minmax(0,7fr)} .inbox #cskh-customers th:nth-child(4),.inbox #cskh-customers td:nth-child(4) {display:none}}
+@media(min-width:1280px) {.inbox {grid-template-columns:minmax(0,5fr) minmax(0,7fr)} .inbox:not(.conv-closed) #cskh-customers th:nth-child(4),.inbox:not(.conv-closed) #cskh-customers td:nth-child(4) {display:none}
+  .inbox.conv-closed {grid-template-columns:minmax(0,1fr) auto}}
+/* A long customer list scrolls inside its card, the column heads stay in view */
+#cskh-customers .table-wrap {max-height:min(70vh,640px);overflow:auto}
+#cskh-customers thead th {position:sticky;top:0;z-index:1;background:rgb(var(--c-surface))}
+@media(max-width:640px) { #cskh-customers .table-wrap {max-height:60vh}}
+/* Conversations fold away until clicked: a narrow strip on the right of a wide screen, a header bar on a narrow one */
+.cskh .conv-toggle {display:inline-flex;align-items:center;gap:8px;border:none;background:none;padding:0;font:inherit;font-weight:700;cursor:pointer;color:inherit}
+.cskh .conv-toggle:hover {background:none;color:rgb(var(--c-accent))}
+.conv-toggle .conv-arrow::before {content:'▾'} .conv-closed .conv-toggle .conv-arrow::before {content:'◂'}
+.conv-toggle .badge {min-width:1.5em;padding:0 6px;border-radius:999px;background:rgb(var(--c-accent));color:rgb(var(--c-surface));font-size:.75rem;line-height:1.5em;text-align:center}
+.conv-toggle.unread .badge {box-shadow:0 0 0 3px rgb(var(--c-accent) / .35)}
+.conv-closed #conv-body {display:none} .conv-closed #cskh-conversations h2 {margin-bottom:0}
+@media(min-width:1280px) {.conv-closed #cskh-conversations {padding:16px 10px;position:sticky;top:60px}
+  .conv-closed .conv-toggle {writing-mode:vertical-rl;padding:6px 0}}
 @media(min-width:1100px) {.pair {grid-template-columns:repeat(2,minmax(0,1fr))}}
 /* Side by side, the row buttons shrink and the conversation stays in view while the list scrolls */
-@media(min-width:1280px) {.inbox #cskh-customers td .row {min-width:0;gap:6px} .inbox #cskh-customers td .row button {padding:4px 8px;font-size:.82rem}
-  .inbox #cskh-conversations {position:sticky;top:60px}}
+@media(min-width:1280px) {.inbox:not(.conv-closed) #cskh-customers td .row {min-width:0;gap:6px} .inbox:not(.conv-closed) #cskh-customers td .row button {padding:4px 8px;font-size:.82rem}
+  .inbox:not(.conv-closed) #cskh-conversations {position:sticky;top:60px}}
 @media(max-width:640px) {.cskh .page-tab {padding:8px 10px;gap:6px}}
 .status-bar {display:flex;flex-direction:column;gap:10px;padding:14px 20px}
 .status-bar .status-line {display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
@@ -95,15 +109,16 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
 <div id="cskh-today" class="today"><span class="muted">{{ tr('cskh.today') }}</span><div id="daily-metrics" class="metrics"></div></div></section>
 <div class="page-tabs" role="tablist" aria-label="{{ tr('cskh.page_tabs') }}">{% for name, key in [('customers','tab_customers'),('knowledge','knowledge'),('groups','groups'),('settings','settings')] %}<button type="button" class="page-tab" role="tab" id="tab-{{ name }}" data-tab="{{ name }}" aria-controls="pane-{{ name }}">{{ tr('cskh.' ~ key) }}<span class="badge" data-badge="{{ name }}" hidden></span></button>{% endfor %}</div>
 <div id="pane-customers" class="page-pane" data-pane="customers" role="tabpanel" aria-labelledby="tab-customers">
-<div class="inbox">
+<div class="inbox conv-closed">
 <section id="cskh-customers" class="ui-card"><h2>{{ tr('cskh.customers') }}</h2>
-<div class="row"><input id="customer-query" type="search" placeholder="{{ tr('cskh.search') }}" aria-label="{{ tr('cskh.search') }}"><select id="customer-status" aria-label="{{ tr('cskh.status') }}"><option value="">{{ tr('cskh.all') }}</option>{% for value in ['active','paused','blocked'] %}<option value="{{ value }}">{{ tr('cskh.' ~ value) }}</option>{% endfor %}</select></div>
+<div class="row"><input id="customer-query" type="search" placeholder="{{ tr('cskh.search') }}" aria-label="{{ tr('cskh.search') }}"><select id="customer-status" aria-label="{{ tr('cskh.status') }}"><option value="">{{ tr('cskh.all') }}</option>{% for value in ['active','paused','blocked'] %}<option value="{{ value }}">{{ tr('cskh.' ~ value) }}</option>{% endfor %}<option value="waiting">{{ tr('cskh.filter_waiting') }}</option><option value="escalated">{{ tr('cskh.filter_escalated') }}</option></select></div>
 <div class="table-wrap"><table><thead><tr>{% for key in ['customer','last_seen','status','counts','actions'] %}<th>{{ tr('cskh.' ~ key) }}</th>{% endfor %}</tr></thead><tbody id="customer-rows"></tbody></table></div></section>
-<section id="cskh-conversations" class="ui-card"><h2>{{ tr('cskh.conversations') }}</h2>
+<section id="cskh-conversations" class="ui-card"><h2><button id="conv-toggle" class="conv-toggle" type="button" aria-expanded="false" aria-controls="conv-body"><span class="conv-arrow" aria-hidden="true"></span><span>{{ tr('cskh.conversations') }}</span><span id="conv-count" class="badge" hidden></span></button></h2>
+<div id="conv-body">
 <div class="row conv-tools"><button id="test-new" type="button" title="{{ tr('cskh.test_note') }}">{{ tr('cskh.test_new') }}</button><button id="test-clear" type="button">{{ tr('cskh.test_clear') }}</button></div>
 <div id="conv-tabs" class="tabs" role="tablist"></div>
 <p id="conv-empty" class="muted">{{ tr('cskh.no_tabs') }}</p>
-<div id="conv-panels"></div></section>
+<div id="conv-panels"></div></div></section>
 </div>
 <section id="cskh-escalations" class="ui-card"><h2>{{ tr('cskh.escalations') }}</h2><div class="table-wrap"><table><thead><tr>{% for key in ['customer','time','reason','delivery'] %}<th>{{ tr('cskh.' ~ key) }}</th>{% endfor %}</tr></thead><tbody id="escalation-rows"></tbody></table></div></section>
 </div>
@@ -225,7 +240,7 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
             const last = data.messages[data.messages.length - 1];
             const mark = data.messages.length + '|' + (last ? last.timestamp + '|' + String(last.content).length : '');
             if (force || mark !== tab.mark) {
-                if (tab.mark !== null && tab.id !== activeTab) tab.el.classList.add('unread');
+                if (tab.mark !== null && tab.id !== activeTab) { tab.el.classList.add('unread'); updateConvToggle(); }
                 tab.mark = mark; renderLines(tab, data.messages);
             }
             const rows = (await api('/customers?q=' + enc(tab.id))).customers;
@@ -234,19 +249,31 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
         } catch (e) { /* the next poll tries again */ }
         finally { tab.busy = false; }
     }
+    // Conversations stay folded until clicked, or until a conversation is opened (not on page load)
+    let convReady = false;
+    function setConversations(open) {
+        document.querySelector('.inbox').classList.toggle('conv-closed', !open);
+        $('conv-toggle').setAttribute('aria-expanded', String(open));
+    }
+    function updateConvToggle() {
+        const count = $('conv-count'); count.textContent = tabs.size ? String(tabs.size) : ''; count.hidden = !tabs.size;
+        $('conv-toggle').classList.toggle('unread', !!document.querySelector('#conv-tabs .tab.unread'));
+    }
+    $('conv-toggle').onclick = () => setConversations(document.querySelector('.inbox').classList.contains('conv-closed'));
     function activate(id) {
         activeTab = id;
         tabs.forEach(tab => { const on = tab.id === id; tab.el.classList.toggle('active', on); tab.el.setAttribute('aria-selected', String(on)); tab.panel.hidden = !on; if (on) tab.el.classList.remove('unread'); });
-        saveTabs();
+        saveTabs(); updateConvToggle();
         const tab = tabs.get(id); if (tab) { pollTab(tab).catch(() => {}); tab.box.focus(); }
     }
     function closeTab(id) {
         const tab = tabs.get(id); if (!tab) return;
         tab.el.remove(); tab.panel.remove(); tabs.delete(id);
         if (activeTab === id) { const next = [...tabs.keys()].pop(); activeTab = null; if (next) activate(next); }
-        $('conv-empty').hidden = tabs.size > 0; saveTabs();
+        $('conv-empty').hidden = tabs.size > 0; saveTabs(); updateConvToggle();
     }
     function openTab(id, name, test) {
+        if (convReady) setConversations(true);
         if (tabs.has(id)) { activate(id); return tabs.get(id); }
         const el = node('button'); el.type = 'button'; el.className = 'tab'; el.setAttribute('role', 'tab');
         const label = node('span', (test ? '[' + t('test_badge') + '] ' : '') + (name || id)); label.className = 'tab-name'; label.title = id;
@@ -288,6 +315,7 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
         const saved = JSON.parse(localStorage.getItem('cskh-tabs') || 'null');
         if (saved && Array.isArray(saved.open)) { saved.open.forEach(tab => tab && tab.id && openTab(tab.id, tab.name, tab.test)); if (saved.active && tabs.has(saved.active)) activate(saved.active); }
     } catch (e) { /* optional */ }
+    updateConvToggle(); convReady = true;
     let refreshing = null;
     async function refresh() {
         // An action's refresh waits for the poll in flight, then reads again: it must show the result.
@@ -385,7 +413,7 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
         if (pageTab !== 'knowledge') setPageTab('knowledge');
         const box = $('teach-text');
         box.value = t('teach_q') + ': ' + e.question + '\n' + t('teach_a') + ': ';
-        teachingFor = {id: e.id, question: e.question};
+        teachingFor = {id: e.id, question: e.question, prefill: box.value.trim()};
         $('teach-linked-text').textContent = t('teaching_for') + ': ' + e.question; $('teach-linked').hidden = false;
         box.scrollIntoView({block: 'center'}); box.focus();
         box.setSelectionRange(box.value.length, box.value.length);
@@ -431,7 +459,7 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
         const data = await api('/kb/teach', {text}); $('teach-text').value = '';
         // The linked question is marked handled only when the note still answers it (review 13)
         const linked = teachingFor; unlinkTeach();
-        if (linked && text.includes(linked.question)) await api('/unanswered/' + linked.id + '/handled', {}).catch(() => {});
+        if (linked && text.includes(linked.question) && text !== linked.prefill) await api('/unanswered/' + linked.id + '/handled', {}).catch(() => {});
         showRelated(data.related); note(data.related.length ? t('related_found') : t('teach_done')); await refresh();
     }); };
     $('teach-text').addEventListener('keydown', e => { if (e.key !== 'Enter') return;

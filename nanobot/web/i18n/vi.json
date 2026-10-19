@@ -270,6 +270,8 @@
   "cskh.tools": "Công cụ",
   "cskh.teaching_for": "Đang dạy cho câu",
   "cskh.unlink": "Bỏ liên kết",
+  "cskh.filter_waiting": "Đang chờ nhân viên",
+  "cskh.filter_escalated": "Đã từng chuyển tiếp",
   "cskh.knowledge": "Kiến thức",
   "cskh.settings": "Thiết lập",
   "cskh.pause_all": "Tạm dừng toàn bộ",

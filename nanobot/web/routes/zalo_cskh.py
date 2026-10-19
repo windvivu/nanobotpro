@@ -207,12 +207,15 @@ async def customers(
     limit: int = Query(50, ge=1, le=500),
 ):
     _, state = _state(request)
-    if status not in {"", "active", "paused", "blocked"}:
+    if status not in {"", "active", "paused", "blocked", "waiting", "escalated"}:
         raise HTTPException(400, "Invalid customer status")
     rows = []
     for key, customer in state.snapshot()["customers"].items():
         effective = state.customer_status(key)
-        if (status and status != effective) or q.casefold() not in (
+        # waiting: handed to staff and not resumed yet; escalated: handed over at least once
+        matches = {"waiting": lambda: _needs_attention(state, key, customer),
+                   "escalated": lambda: bool(customer["escalations"])}.get(status, lambda: status == effective)
+        if (status and not matches()) or q.casefold() not in (
             key + " " + customer["name"]
         ).casefold():
             continue

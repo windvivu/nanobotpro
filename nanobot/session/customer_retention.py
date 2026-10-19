@@ -125,14 +125,16 @@ class CustomerSessionRetention:
                 # Recheck every resolved target immediately before destructive operations.
                 if any(not self._safe_file(p, root) for p in paths):
                     continue
+                if key.startswith("zalo:"):
+                    # Their unanswered questions go with them (custom, review 13). A locked log keeps
+                    # the whole customer for the next sweep, so nothing is left behind for good.
+                    from nanobot.agent.unanswered import UnansweredLog
+                    if UnansweredLog(self.sessions.workspace).forget(key.partition(":")[2]) is None:
+                        continue
                 if key.startswith("zalo:") and self.get_customer_state is not None:
                     state = self.get_customer_state()
                     if state is not None:
                         state.forget_customer(key.partition(":")[2])
-                if key.startswith("zalo:"):
-                    # Their unanswered questions go with them (custom, review 13)
-                    from nanobot.agent.unanswered import UnansweredLog
-                    UnansweredLog(self.sessions.workspace).forget(key.partition(":")[2])
                 for path in paths:
                     path.unlink()
                 self.sessions.invalidate(key)

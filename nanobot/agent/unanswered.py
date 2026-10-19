@@ -88,6 +88,13 @@ def unanswered_reason(question: str | None, reply: str | None, *, escalated_out_
     return None
 
 
+def _well_formed(entry: object) -> bool:
+    """An entry the page can show: valid JSON is not enough (review 13 follow-up)."""
+    return (isinstance(entry, dict) and isinstance(entry.get("at"), (int, float)) and not isinstance(entry.get("at"), bool)
+            and isinstance(entry.get("id"), str) and entry.get("reason") in REASONS
+            and all(isinstance(entry.get(key, ""), str) for key in ("customer_id", "name", "chat_id", "question", "reply")))
+
+
 class UnansweredLog:
     """One JSON file per workspace, written whole under a file lock."""
 
@@ -108,7 +115,8 @@ class UnansweredLog:
         except FileNotFoundError:
             return []
         except (OSError, ValueError) as exc:
-            aside = self.path.with_name(f"unanswered.corrupt-{int(self._clock())}.json")
+            # A unique name: two broken files in the same second must not overwrite each other
+            aside = self.path.with_name(f"unanswered.corrupt-{int(self._clock())}-{secrets.token_hex(4)}.json")
             try:
                 os.replace(self.path, aside)
             except OSError:
@@ -117,7 +125,10 @@ class UnansweredLog:
                            aside.name if aside else "-")
             return []
         oldest = self._clock() - MAX_AGE_DAYS * 86400
-        return [entry for entry in data if isinstance(entry, dict) and entry.get("at", 0) >= oldest]
+        kept = [entry for entry in data if _well_formed(entry) and entry["at"] >= oldest]
+        if dropped := sum(not _well_formed(entry) for entry in data):
+            logger.warning("Unanswered questions: {} malformed entries skipped", dropped)
+        return kept
 
     def _write(self, entries: list[dict]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -170,9 +181,10 @@ class UnansweredLog:
             logger.warning("Unanswered question not marked: the log is locked")
         return False
 
-    def forget(self, identifier: str) -> int:
+    def forget(self, identifier: str) -> int | None:
         """Drop a customer's (or a group's) questions when their records are deleted (review 13).
-        Handled entries stay hidden until they age out or the cap drops them."""
+        Handled entries stay hidden until they age out or the cap drops them. None: the log was
+        locked and nothing was dropped; the caller keeps the customer's records to try again."""
         try:
             with self._lock:
                 entries = self._read()
@@ -183,4 +195,4 @@ class UnansweredLog:
                 return len(entries) - len(kept)
         except Timeout:
             logger.warning("Unanswered questions not forgotten: the log is locked")
-            return 0
+            return None

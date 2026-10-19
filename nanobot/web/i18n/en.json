@@ -270,6 +270,8 @@
   "cskh.tools": "Tools",
   "cskh.teaching_for": "Teaching for",
   "cskh.unlink": "Unlink",
+  "cskh.filter_waiting": "Waiting for staff",
+  "cskh.filter_escalated": "Ever escalated",
   "cskh.knowledge": "Knowledge",
   "cskh.settings": "Settings",
   "cskh.pause_all": "Pause all",
