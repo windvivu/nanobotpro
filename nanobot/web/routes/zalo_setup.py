@@ -107,6 +107,14 @@ async def zalo_connect(request: Request):
         task = asyncio.create_task(zalo_channel.connect())
         _connect_tasks.add(task)
         task.add_done_callback(_connect_tasks.discard)
+
+        def surface_error(done: asyncio.Task) -> None:
+            result = None if done.cancelled() or done.exception() else done.result()
+            if isinstance(result, dict) and result.get("status") == "error":
+                zalo_channel._setup_state = "failed"
+                zalo_channel._setup_error = str(result.get("message", "connect failed"))[:600]
+
+        task.add_done_callback(surface_error)
         await asyncio.sleep(0)  # let connect() mark itself as connecting
         return JSONResponse({**zalo_channel.get_status(), "status": "installing"})
 

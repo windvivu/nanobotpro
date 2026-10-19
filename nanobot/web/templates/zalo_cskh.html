@@ -49,6 +49,8 @@ h1,h2,p {margin-top:0} input[type=checkbox] {accent-color:rgb(var(--c-accent))}
 .test-msg.customer {align-self:flex-end;background:rgb(var(--c-accent) / .15)}
 .test-msg.bot {align-self:flex-start;background:rgb(var(--c-primary) / .08)}
 #test-form input {flex:1;min-width:0}
+tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
+.test-msg.staff {align-self:flex-start;background:rgb(var(--c-accent) / .12);border:1px dashed rgb(var(--c-accent) / .6)}
 .staff-reply {display:flex;flex-direction:column;gap:8px;margin-top:16px;padding-top:12px;border-top:1px solid rgb(var(--c-primary) / .2)}
 .staff-reply textarea {width:100%;min-height:72px} .staff-reply button {align-self:flex-end}
 </style>
@@ -120,13 +122,23 @@ h1,h2,p {margin-top:0} input[type=checkbox] {accent-color:rgb(var(--c-accent))}
     }
     function button(label, fn) { const el = node('button', t(label)); el.type='button'; el.onclick=()=>act(el,()=>fn(el)); return el; }
     const stamp = value => value ? new Date(typeof value === 'number' ? value * 1000 : value).toLocaleString() : '—';
-    function row(body, values) { const tr = node('tr'); values.forEach(value => { const td=node('td'); if(value instanceof Node) td.append(value); else td.textContent=value; tr.append(td); }); body.append(tr); }
+    function row(body, values) { const tr = node('tr'); values.forEach(value => { const td=node('td'); if(value instanceof Node) td.append(value); else td.textContent=value; tr.append(td); }); body.append(tr); return tr; }
     function empty(body, columns) { if (!body.children.length) { const tr=node('tr'),td=node('td',t('empty')); td.colSpan=columns;tr.append(td);body.append(tr); } }
-    async function showTranscript(id) {
+    let transcriptId = null, transcriptCount = -1;
+    async function loadTranscript(id) {
+        // Reloads while the dialog is open: a customer's answer to staff shows up on its own.
         const data = await api('/customers/' + encodeURIComponent(id) + '/transcript');
+        if (transcriptId !== id || data.messages.length === transcriptCount) return;
+        transcriptCount = data.messages.length;
+        const lines = $('transcript-lines'); lines.replaceChildren();
+        data.messages.forEach(message => { lines.append(node('strong',(message.role==='user'?t('customer'):(typeof message.content==='string'&&message.content.startsWith('[Nhân viên] ')?t('staff'):t('bot'))) + ' · ' + stamp(message.timestamp)),node('pre',typeof message.content==='string'?message.content:JSON.stringify(message.content))); });
+        if (!data.messages.length) lines.append(node('p',t('empty')));
+        const last = lines.querySelector('pre:last-of-type'); if (last) last.scrollIntoView({block: 'nearest'});
+    }
+    async function showTranscript(id) {
+        transcriptId = id; transcriptCount = -1;
         $('modal-title').textContent=t('transcript') + ' · ' + id; $('modal-body').replaceChildren();
-        data.messages.forEach(message => { $('modal-body').append(node('strong',(message.role==='user'?t('customer'):(typeof message.content==='string'&&message.content.startsWith('[Nhân viên] ')?t('staff'):t('bot'))) + ' · ' + stamp(message.timestamp)),node('pre',typeof message.content==='string'?message.content:JSON.stringify(message.content))); });
-        if (!data.messages.length) $('modal-body').append(node('p',t('empty')));
+        const lines = node('div'); lines.id = 'transcript-lines'; $('modal-body').append(lines);
         // Staff reply: sent from the bot's Zalo account and kept in the bot's conversation
         const form = node('form'); form.className = 'staff-reply';
         const box = node('textarea'); box.maxLength = 2000; box.rows = 3;
@@ -140,17 +152,27 @@ h1,h2,p {margin-top:0} input[type=checkbox] {accent-color:rgb(var(--c-accent))}
             send.disabled = true; status.textContent = t('working');
             try {
                 await api('/customers/' + encodeURIComponent(id) + '/reply', {content: text});
-                box.value = ''; await showTranscript(id); await refresh();
-                note(t('staff_sent'));
-            } catch (e) { status.textContent = t('error') + ': ' + e.message; send.disabled = false; }
+                box.value = ''; await loadTranscript(id); await refresh();
+                status.textContent = ''; note(t('staff_sent'));
+            } catch (e) { status.textContent = t('error') + ': ' + e.message; }
+            finally { send.disabled = false; }
         };
         $('modal-body').append(form);
         $('modal-confirm').hidden=true; if (!modal.open) modal.showModal();
-        const last = $('modal-body').querySelector('pre:last-of-type'); if (last) last.scrollIntoView({block: 'nearest'});
+        await loadTranscript(id);
     }
+    modal.addEventListener('close', () => { transcriptId = null; });
+    let refreshing = null;
     async function refresh() {
+        // An action's refresh waits for the poll in flight, then reads again: it must show the result.
+        if (refreshing) { try { await refreshing; } catch (e) { /* reported by that call */ } }
+        refreshing = refreshOnce();
+        try { await refreshing; } finally { refreshing = null; }
+    }
+    async function refreshOnce() {
         if (polling) return; polling=true;
         try {
+            if (transcriptId && modal.open) loadTranscript(transcriptId).catch(() => {});
             const filter='?q='+encodeURIComponent($('customer-query').value)+'&status='+encodeURIComponent($('customer-status').value);
             const [ov,cs,es,kb] = await Promise.all([api('/overview'),api('/customers'+filter),api('/escalations'),api('/kb')]);
             paused=ov.paused_all; $('pause-all').textContent=t(paused?'resume_all':'pause_all');
@@ -169,7 +191,8 @@ h1,h2,p {margin-top:0} input[type=checkbox] {accent-color:rgb(var(--c-accent))}
                 const state=c.status==='paused' && c.paused_until ? t('waiting_until')
                     .replace('{time}', new Date(c.paused_until*1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}))
                     .replace('{m}', left) : t(c.status);
-                row(customers,[(c.test ? '['+t('test_badge')+'] ' : '')+c.name+' ('+c.id+')',stamp(c.last_seen),state,c.messages_in+' / '+c.messages_out+' · '+t('limited')+': '+c.limited_count+' · '+t('escalations')+': '+c.escalations,controls]);});empty(customers,5);
+                const tr = row(customers,[(c.attention ? '\u{1F514} ' : '')+(c.test ? '['+t('test_badge')+'] ' : '')+c.name+' ('+c.id+')',stamp(c.last_seen),state,c.messages_in+' / '+c.messages_out+' · '+t('limited')+': '+c.limited_count+' · '+t('escalations')+': '+c.escalations,controls]);
+                if (c.attention) { tr.className = 'attention'; tr.title = t('attention'); }});empty(customers,5);
             const escalations=$('escalation-rows');escalations.replaceChildren();es.escalations.forEach(e=>row(escalations,[e.name+' ('+e.customer_id+')',stamp(e.at),t(e.reason),t(e.delivered?'sent':'send_failed')]));empty(escalations,4);
             const docs=$('kb-rows');docs.replaceChildren();kb.documents.slice().reverse().forEach(d=>{  /* newest upload first */const controls=node('div');controls.className='row';
                 (d.status==='pending'?['publish','delete']:d.status==='published'||d.cleanup_pending?['revoke']:['delete']).forEach(action=>controls.append(button(action,async()=>{if(action==='publish'||await hubModal(t(action),t('confirm_'+action))){const result=await api('/kb/'+d.document_id+'/'+action,{});note(t(result.cleanup_pending?'cleanup_pending':action==='publish'?'queued':'saved'));}})));
@@ -192,7 +215,7 @@ h1,h2,p {margin-top:0} input[type=checkbox] {accent-color:rgb(var(--c-accent))}
     // Test customer: talk to the bot as a brand-new Zalo customer; replies stay on this page.
     let tester = null, testSeen = 0, testTimer = null, testBusy = false;
     function testLine(role, text) {
-        const el = node('div', text); el.className = 'test-msg ' + role; $('test-log').append(el);
+        const el = node('div', role === 'staff' ? t('staff') + ': ' + text : text); el.className = 'test-msg ' + role; $('test-log').append(el);
         $('test-log').scrollTop = $('test-log').scrollHeight;
     }
     function testState(info) {
@@ -214,31 +237,41 @@ h1,h2,p {margin-top:0} input[type=checkbox] {accent-color:rgb(var(--c-accent))}
             data.messages.forEach(m => {
                 if (m.seq <= testSeen) return;
                 testSeen = m.seq;
-                if (m.role === 'bot') testLine('bot', m.content);
+                testLine(m.role, m.content);
             });
             testState(data);
         } catch (e) { /* the next poll tries again */ }
         finally { testBusy = false; }
     }
-    $('test-new').onclick = () => act($('test-new'), async () => {
-        tester = await api('/test-customers', {}); testSeen = 0;
+    function useTester(who) {
+        tester = who; testSeen = 0;
         $('test-log').replaceChildren(); $('test-state').textContent = '';
         $('test-who').textContent = tester.name + ' (' + tester.id + ')';
-        $('test-input').disabled = $('test-send').disabled = false; $('test-input').focus();
+        $('test-input').disabled = $('test-send').disabled = false;
+        try { localStorage.setItem('cskh-test-customer', JSON.stringify(tester)); } catch (e) { /* optional */ }
         if (!testTimer) testTimer = setInterval(testPoll, 1500);
+        return testPoll();
+    }
+    $('test-new').onclick = () => act($('test-new'), async () => {
+        await useTester(await api('/test-customers', {})); $('test-input').focus();
     });
+    try {
+        const saved = JSON.parse(localStorage.getItem('cskh-test-customer') || 'null');
+        if (saved && saved.id && saved.name) useTester(saved).catch(() => {});
+    } catch (e) { /* optional */ }
     $('test-form').onsubmit = async event => {
         event.preventDefault();
         const text = $('test-input').value.trim();
         if (!tester || !text) return;
-        $('test-input').value = ''; testLine('customer', text);
-        try { testState(await api('/test-customers/' + tester.id + '/messages', {name: tester.name, content: text})); }
+        $('test-input').value = '';
+        try { testState(await api('/test-customers/' + tester.id + '/messages', {name: tester.name, content: text})); await testPoll(); }
         catch (e) { note(t('error') + ': ' + e.message); }
     };
     $('test-clear').onclick = () => act($('test-clear'), async () => {
         if (!await hubModal(t('test_clear'), t('confirm_test_clear'))) return;
         const result = await api('/test-customers/clear', {});
         tester = null; testSeen = 0;
+        try { localStorage.removeItem('cskh-test-customer'); } catch (e) { /* optional */ }
         $('test-log').replaceChildren(); $('test-who').textContent = ''; $('test-state').textContent = '';
         $('test-input').disabled = $('test-send').disabled = true;
         note(t('test_cleared').replace('{n}', result.removed));

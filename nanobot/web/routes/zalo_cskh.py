@@ -189,6 +189,10 @@ async def customers(
                 "limited_count": customer["limited_count"],
                 "escalations": len(customer["escalations"]),
                 "test": is_test_customer(key),
+                # Escalated and not yet resumed: a staff member should look at this customer.
+                "attention": effective == "paused" and any(
+                    entry["at"] > (customer.get("escalation_cleared_at") or 0)
+                    for entry in customer["escalations"]),
                 # When a paused customer can write to the bot again (None: until resumed).
                 "paused_until": customer.get("paused_until") if effective == "paused" else None,
             }
@@ -245,11 +249,13 @@ async def staff_reply(request: Request, customer_id: str, body: StaffReply):
     if not is_test_customer(customer_id) and channel.get_status().get("status") != "connected":
         raise HTTPException(409, "Zalo is not connected; the reply was not sent")
     try:
+        # _confirm: no ack from Zalo in time, or not connected, raises; nothing is recorded then.
         await channel.send(OutboundMessage(channel="zalo", chat_id=customer_id, content=text,
-                                           metadata={"thread_type": "User", "_staff_reply": True}))
+                                           metadata={"thread_type": "User", "_staff_reply": True,
+                                                     "_confirm": True}))
     except Exception as exc:
         public_error(exc)
-        raise HTTPException(502, "Zalo did not accept the reply") from exc
+        raise HTTPException(502, "Zalo did not confirm delivery; the reply was not recorded") from exc
     pause = service_config(request.app.state.config).pause_after_escalation_minutes * 60
     state.hold_for_staff(customer_id, time.time() + pause)
     sessions = getattr(request.app.state, "session_manager", None)

@@ -443,13 +443,11 @@ class ZaloPersonalChannel(BaseChannel):
 
     def _deliver_to_test_customer(self, msg: OutboundMessage) -> None:
         """A reply to a test customer stays on the dashboard; nothing goes to Zalo."""
-        if msg.metadata.get("_progress"):
-            return
         text = msg.content or ""
         files = [Path(str(item)).name for item in (getattr(msg, "media", None) or [])]
         if files:
             text = (text + "\n" if text else "") + "[" + ", ".join(files) + "]"
-        self._test_log(msg.chat_id, "bot", text)
+        self._test_log(msg.chat_id, "staff" if msg.metadata.get("_staff_reply") else "bot", text)
         if self._customer_service_enabled:
             try:
                 self._get_customer_state().record_outbound(msg.chat_id)
@@ -471,27 +469,39 @@ class ZaloPersonalChannel(BaseChannel):
         return len(ids)
 
     async def send(self, msg: OutboundMessage) -> None:
-        """Send a message through Zalo."""
-        if is_test_customer(msg.chat_id):
-            self._deliver_to_test_customer(msg)
-            return
-        if (
+        """Send a message through Zalo.
+
+        metadata "_confirm": the caller needs to know (staff reply): not connected, or no
+        delivery ack in time, raises instead of queueing or logging.
+        """
+        test_customer = is_test_customer(msg.chat_id)
+        confirm = bool(msg.metadata.get("_confirm"))
+        if not test_customer and (
             self._status != self.STATUS_CONNECTED
             or not self._process
             or self._process.returncode is not None
         ):
+            if confirm:
+                raise RuntimeError("Zalo is not connected")
             self._queue_outbound(msg)
             return
 
         # While queued messages are being delivered, line up behind them so a
         # new message never overtakes older ones.
         flushing = self._flush_task is not None and not self._flush_task.done()
-        if flushing and asyncio.current_task() is not self._flush_task and not msg.metadata.get("_progress"):
+        if (flushing and not test_customer and asyncio.current_task() is not self._flush_task
+                and not msg.metadata.get("_progress")):
+            if confirm:
+                await asyncio.shield(self._flush_task)
+                await self.send(msg)
+                return
             self._pending_outbound.append((time.monotonic(), msg))
             return
 
         # Progress messages: send one "processing" hint per chat per turn, drop the rest
         if msg.metadata.get("_progress", False):
+            if test_customer:
+                return
             if msg.metadata.get("_tool_hint") and msg.chat_id not in self._hint_sent:
                 self._hint_sent.add(msg.chat_id)
                 hint_thread_type = (
@@ -524,6 +534,10 @@ class ZaloPersonalChannel(BaseChannel):
         chat_id = msg.chat_id
         await self._take_send_slot(chat_id)
         now = time.monotonic()
+        if test_customer:
+            self._deliver_to_test_customer(msg)  # the dashboard stands in for the bridge
+            self._hint_sent.discard(chat_id)
+            return
 
         thread_type = msg.metadata.get("thread_type") or self._known_thread_types.get(chat_id, "User")
         if not msg.metadata.get("thread_type") and thread_type != "User":
@@ -549,6 +563,8 @@ class ZaloPersonalChannel(BaseChannel):
             except TimeoutError:
                 logger.error("[Zalo] No delivery ack within {}s for {} — not retrying",
                              self.TEXT_ACK_TIMEOUT_S, chat_id)
+                if confirm:
+                    raise
 
         # ── Send media files if any ──
         if msg.media:
@@ -1302,6 +1318,14 @@ class ZaloPersonalChannel(BaseChannel):
                             metadata={"thread_type": "User"},
                         )
                         self._schedule_customer_task(lambda: self.send(reminder))
+                    elif content and state.customer_status(sender_id) == "paused":
+                        # Waiting for staff: the bot stays quiet, but what the customer writes
+                        # must reach the conversation the staff member reads on the dashboard.
+                        await self._handle_message(
+                            sender_id=sender_id, chat_id=thread_id, content=content,
+                            metadata={"thread_type": "User", "sender_name": sender_name, "_held": True},
+                            session_key=f"zalo:{thread_id}",
+                        )
                     return
 
             # ── Group chat filter (Option C) ───────────────────────────

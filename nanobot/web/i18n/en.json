@@ -360,6 +360,7 @@
   "cskh.phase_retry": "waiting to retry",
   "cskh.attempts_done": "tried {k}/{n}",
   "cskh.waiting_until": "Waiting for staff · until {time} ({m} min left)",
+  "cskh.attention": "Customer is waiting for staff",
   "cskh.staff": "Staff",
   "cskh.staff_reply": "Reply to the customer as staff",
   "cskh.staff_reply_hint": "Sent from the bot's Zalo account. The bot stays quiet with this customer until you press Resume or the wait ends.",

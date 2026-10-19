@@ -823,21 +823,22 @@ class AgentLoop:
                         tool.set_context(channel, chat_id)
 
     async def _back_claimed_handoff(self, msg: InboundMessage, final_content: str | None,
-                                    tools_used: list[str] | None) -> None:
+                                    tools_used: list[str] | None) -> str | None:
         """Escalate for real when a customer reply claims a handoff the model never made.
 
         Public Zalo customer service only. The escalate tool alerts the admin and sends the
         customer the configured handoff message, and the claimed text is then not sent.
+        Returns the text the customer received, so the conversation records that instead.
         """
         if not getattr(self, "public_customer_mode", False) or msg.channel != "zalo":
-            return
+            return None
         tool = self.tools.get("escalate")
         message_tool = self.tools.get("message")
         if tool is None or "escalate" in (tools_used or []) or getattr(message_tool, "_sent_in_turn", False):
-            return
+            return None
         from nanobot.agent.handoff_claims import claims_handoff
         if not claims_handoff(final_content):
-            return
+            return None
         logger.warning("Public Customer Mode: reply claimed a handoff without escalate; escalating {}",
                        msg.chat_id)
         asked = " ".join(str(msg.content or "").split())[:300]
@@ -847,8 +848,9 @@ class AgentLoop:
             result = await tool.execute(reason="other", summary=summary)
         except Exception as exc:
             logger.warning("Claimed-handoff escalation failed: {}", type(exc).__name__)
-            return
+            return None
         logger.info("Claimed-handoff escalation for {}: {}", msg.chat_id, result)
+        return tool._handoff if str(result).startswith("the customer was told") else None
 
     @staticmethod
     def _strip_think(text: str | None) -> str | None:
@@ -1722,6 +1724,12 @@ class AgentLoop:
         # Restore any unfinished turn from a previous crash/restart
         if self._restore_runtime_checkpoint(session):
             self.sessions.save(session)
+        if self.public_customer_mode and msg.metadata.get("_held"):
+            # Custom (customer service): the customer is waiting for staff. Keep what they
+            # wrote where staff reads it; the bot does not answer.
+            session.add_message("user", msg.content)
+            self.sessions.save(session)
+            return None
         session, _compact_summary = self.auto_compact.prepare_session(session, key)
 
         # Slash commands — delegate to command router
@@ -1785,7 +1793,11 @@ class AgentLoop:
 
         # Custom (customer service): a reply that tells the customer a person will take over must
         # be backed by a real handoff, or nobody is ever alerted.
-        await self._back_claimed_handoff(msg, final_content, tools_used)
+        if handoff := await self._back_claimed_handoff(msg, final_content, tools_used):
+            for entry in reversed(all_msgs):
+                if entry.get("role") == "assistant":
+                    entry["content"] = handoff
+                    break
 
         self._save_turn(session, all_msgs, 1 + len(history))
         self._clear_runtime_checkpoint(session)

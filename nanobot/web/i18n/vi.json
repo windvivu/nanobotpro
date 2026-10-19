@@ -360,6 +360,7 @@
   "cskh.phase_retry": "chờ thử lại",
   "cskh.attempts_done": "đã thử {k}/{n}",
   "cskh.waiting_until": "Đang chờ nhân viên · đến {time} (còn {m} phút)",
+  "cskh.attention": "Khách đang chờ nhân viên",
   "cskh.staff": "Nhân viên",
   "cskh.staff_reply": "Trả lời khách với tư cách nhân viên",
   "cskh.staff_reply_hint": "Tin này gửi từ tài khoản Zalo của bot. Bot sẽ im với khách này cho tới khi bạn bấm Resume hoặc hết giờ chờ.",
