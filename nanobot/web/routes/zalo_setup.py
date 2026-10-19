@@ -308,6 +308,14 @@ async def save_zalo_config(request: Request, body: dict):
             live_data["enabled"] = current_enabled
             zalo_channel.apply_config(ZaloPersonalConfig.model_validate(live_data))
 
+        # The escalate tool keeps its own copy of these settings: hand it the new ones, so a new
+        # Telegram target or handoff text applies without a restart (custom, review 12 #5)
+        agent = getattr(app.state, "agent", None) if app is not None else None
+        tools = getattr(agent, "tools", None)
+        tool = tools.get("escalate") if tools is not None else None
+        if tool is not None and hasattr(tool, "apply_settings"):
+            tool.apply_settings(current_service)
+
         logger.info(
             "Zalo config saved: allow_from={}, node_path={}, group_reply_mode={}, group_filter={}",
             allow_from_list,

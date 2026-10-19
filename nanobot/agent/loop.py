@@ -878,6 +878,47 @@ class AgentLoop:
         logger.debug("Knowledge query distilled from a {}-word message", len(content.split()))
         return distilled
 
+    async def _note_unanswered(self, msg: InboundMessage, reply: str | None, tools_used: list[str] | None,
+                               knowledge_hits: int | None, turn_started: float) -> None:
+        """Keep a customer question the knowledge did not answer (custom): the CSKH page lists
+        them, so the admin teaches the bot what was missing. Never fails the turn."""
+        if not getattr(self, "public_customer_mode", False) or msg.channel != "zalo":
+            return
+        from nanobot.channels.zalo_cskh_state import is_test_customer
+        if is_test_customer(msg.sender_id) or (msg.metadata or {}).get("_held"):
+            return
+        try:
+            from nanobot.agent.context import strip_channel_notes
+            from nanobot.agent.unanswered import UnansweredLog, unanswered_reason
+            question = strip_channel_notes(msg.content) if isinstance(msg.content, str) else ""
+            name = (msg.metadata or {}).get("sender_name", "") or ""
+            if name and question.startswith(name + ": "):
+                question = question[len(name) + 2:]  # a group message carries its sender's name
+            reply_text = reply if isinstance(reply, str) and not reply.startswith("*[Executed tools") else ""
+            reason = unanswered_reason(
+                question, reply_text, knowledge_hits=knowledge_hits,
+                escalated_out_of_scope="escalate" in (tools_used or [])
+                and self._escalated_out_of_scope(msg.sender_id, turn_started),
+            )
+            if reason:
+                # Off the event loop: the write takes the log's lock (review 13)
+                await asyncio.to_thread(
+                    UnansweredLog(self.workspace).record,
+                    customer_id=msg.sender_id, name=name, chat_id=msg.chat_id,
+                    question=question, reply=reply_text, reason=reason,
+                )
+        except Exception as exc:
+            logger.warning("Unanswered question not recorded: {}", type(exc).__name__)
+
+    def _escalated_out_of_scope(self, customer_id: str, since: float) -> bool:
+        retention = getattr(self, "customer_retention", None)
+        getter = getattr(retention, "get_customer_state", None)
+        state = getter() if getter else None
+        if state is None:
+            return False
+        entries = state.snapshot()["customers"].get(customer_id, {}).get("escalations", [])
+        return any(entry.get("reason") == "out_of_scope" and entry.get("at", 0) >= since for entry in entries)
+
     async def _back_claimed_handoff(self, msg: InboundMessage, final_content: str | None,
                                     tools_used: list[str] | None) -> str | None:
         """Escalate for real when a customer reply claims a handoff the model never made.
@@ -916,7 +957,7 @@ class AgentLoop:
             logger.warning("Claimed-handoff escalation failed: {}", type(exc).__name__)
             return None
         logger.info("Claimed-handoff escalation for {}: {}", msg.chat_id, result)
-        return tool._handoff if str(result).startswith("the customer was told") else None
+        return tool.last_handoff if str(result).startswith("the customer was told") else None
 
     @staticmethod
     def _strip_think(text: str | None) -> str | None:
@@ -1829,6 +1870,7 @@ class AgentLoop:
         history = session.get_history(max_messages=0)
         group_turn = self._is_group_turn(msg, msg.channel, msg.chat_id)
         memory_query = await self._knowledge_query(msg.content, history)
+        turn_started = time.time()
         initial_messages = self.context.build_messages(
             history=history,
             current_message=msg.content,
@@ -1844,6 +1886,7 @@ class AgentLoop:
             memory_session=session.key,
             include_user_profile=not group_turn,
         )
+        knowledge_hits = getattr(self.context, "last_knowledge_hits", None)  # before any await
 
         async def _bus_progress(content: str, *, tool_hint: bool = False) -> None:
             meta = dict(msg.metadata or {})
@@ -1885,6 +1928,8 @@ class AgentLoop:
         self._save_turn(session, all_msgs, 1 + len(history))
         self._clear_runtime_checkpoint(session)
         self.sessions.save(session)
+        if not silent:
+            await self._note_unanswered(msg, final_content, tools_used, knowledge_hits, turn_started)
         self._schedule_background(self.memory_consolidator.maybe_consolidate_by_tokens(session))
         brain_config = getattr(self, "brain_memory_config", None)
         runtime = getattr(self, "brain_runtime", None)

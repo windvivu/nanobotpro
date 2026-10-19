@@ -129,6 +129,10 @@ class CustomerSessionRetention:
                     state = self.get_customer_state()
                     if state is not None:
                         state.forget_customer(key.partition(":")[2])
+                if key.startswith("zalo:"):
+                    # Their unanswered questions go with them (custom, review 13)
+                    from nanobot.agent.unanswered import UnansweredLog
+                    UnansweredLog(self.sessions.workspace).forget(key.partition(":")[2])
                 for path in paths:
                     path.unlink()
                 self.sessions.invalidate(key)

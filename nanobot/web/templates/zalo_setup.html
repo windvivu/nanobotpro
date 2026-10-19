@@ -99,6 +99,11 @@
                         style="color: var(--session-color, rgb(var(--c-primary) / 0.6));">--</span>
                 </div>
 
+                <div class="flex justify-between items-center p-2" title="{{ tr('zalo.last_inbound_hint') }}">
+                    <span class="text-sm uppercase tracking-wider text-primary/60">{{ tr('zalo.last_inbound') }}</span>
+                    <span class="text-sm font-bold" id="last-inbound">--</span>
+                </div>
+
                 <div class="flex justify-between items-center p-2">
                     <span class="text-sm uppercase tracking-wider text-primary/60">Bridge</span>
                     {% if bridge_status.installed == True %}
@@ -441,10 +446,27 @@
     let currentSetup = '';
     let isDisconnecting = false;
 
+    // When the bot last received a message: a connection can stay up yet deliver nothing (custom)
+    function lastInboundText(data) {
+        const at = data.lastInboundAt || data.connectedAt;
+        if (data.status !== 'connected' || !at) return '--';
+        const minutes = Math.max(0, Math.floor(((data.serverTime || Date.now() / 1000) - at) / 60));
+        const when = minutes < 1 ? window.nanobotTr('zalo.just_now', 'just now')
+            : minutes < 60 ? window.nanobotTr('zalo.minutes_ago', '{n} min ago', {n: minutes})
+            : minutes < 1440 ? window.nanobotTr('zalo.hours_ago', '{n} h ago', {n: Math.floor(minutes / 60)})
+            : new Date(at * 1000).toLocaleString();
+        return data.lastInboundAt ? when : window.nanobotTr('zalo.none_since', 'none since connecting ({when})', {when});
+    }
+    function showLastInbound(data) {
+        const el = document.getElementById('last-inbound');
+        if (el) el.textContent = lastInboundText(data);
+    }
+
     function updateUI(data) {
         if (isDisconnecting && data.status !== 'disconnected' && data.status !== 'error') {
             return;
         }
+        showLastInbound(data);
         const statusDot = document.getElementById('status-dot');
         const statusText = document.getElementById('status-text');
         const headerDot = document.getElementById('header-dot');
@@ -762,6 +784,7 @@
                 const data = await res.json();
                 const setupChanged = (data.bridgeSetup || '') !== currentSetup;
                 showBridgeSetup(data);
+                showLastInbound(data);
                 if (setupChanged && data.status === currentStatus) updateUI(data);
 
                 if (data.status !== currentStatus || !!data.reconnecting !== currentReconnecting

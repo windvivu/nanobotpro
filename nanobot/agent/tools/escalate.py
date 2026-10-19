@@ -3,6 +3,7 @@
 import asyncio
 import time
 import weakref
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote
 
@@ -33,6 +34,14 @@ def build_escalation_notice(workspace, sender_id, sender_name, reason, summary, 
     )
 
 
+@dataclass(frozen=True)
+class EscalationSettings:
+    """What one escalation uses: where the alert goes, what the customer is told, how long they wait."""
+    target: str
+    handoff: str
+    pause: float
+
+
 class EscalateTool(Tool):
     name = "escalate"
     description = (
@@ -59,14 +68,12 @@ class EscalateTool(Tool):
         "required": ["reason", "summary"],
     }
     _context = TurnLocal()
+    last_handoff = ""
 
     def __init__(self, *, public_customer_mode: bool, customer_service, send_callback,
                  sessions, workspace: Path, get_customer_state, on_handoff=None, clock=time.time):
         self._enabled = public_customer_mode and customer_service.enabled
-        channel, _, target = customer_service.escalation_target.strip().partition(":")
-        self._target = target.strip() if channel == "telegram" else ""
-        self._handoff = customer_service.handoff_message
-        self._pause = customer_service.pause_after_escalation_minutes * 60
+        self.apply_settings(customer_service)
         self._send = send_callback
         self._sessions = sessions
         self._workspace = workspace
@@ -82,10 +89,23 @@ class EscalateTool(Tool):
         self._context = (channel, chat_id, sender_id or chat_id, sender_name or "",
                          session_key or f"{channel}:{chat_id}")
 
+    def apply_settings(self, customer_service) -> None:
+        """Take the customer service settings the dashboard just saved: the Telegram target, the
+        handoff text and the pause apply to the next escalation without a restart (custom, review
+        12 #5). Whether the service runs at all is decided at startup and stays. One snapshot is
+        swapped in whole: an escalation in progress keeps the one it started with (review 13)."""
+        channel, _, target = customer_service.escalation_target.strip().partition(":")
+        self.settings = EscalationSettings(
+            target=target.strip() if channel == "telegram" else "",
+            handoff=customer_service.handoff_message,
+            pause=customer_service.pause_after_escalation_minutes * 60,
+        )
+
     async def execute(self, reason: str, summary: str, **kwargs) -> str:
         # Unknown arguments (including destinations) cannot alter trusted routing.
         channel, chat_id, sender_id, sender_name, session_key = self._context
-        if not self._enabled or channel != "zalo" or not chat_id or not sender_id or not self._target:
+        settings = self.settings  # one snapshot for the whole escalation
+        if not self._enabled or channel != "zalo" or not chat_id or not sender_id or not settings.target:
             return "escalation is not available here"
         if chat_id != sender_id:
             # A group: the pause and the alert belong to one customer in a private chat (custom)
@@ -99,13 +119,13 @@ class EscalateTool(Tool):
                 if state is None:
                     return "escalation is temporarily unavailable"
                 now = self._clock()
-                self._unpersisted = {key: at for key, at in self._unpersisted.items() if now - at < self._pause}
+                self._unpersisted = {key: at for key, at in self._unpersisted.items() if now - at < settings.pause}
                 customer = state.snapshot()["customers"].get(sender_id, {})
                 # An admin Resume ends the wait: earlier handoffs no longer block a new one.
                 cleared = customer.get("escalation_cleared_at") or 0
                 recent = [entry for entry in customer.get("escalations", []) if entry["at"] > cleared]
                 if (self._unpersisted.get(sender_id, 0) > cleared
-                        or any(now - entry["at"] < self._pause for entry in recent)):
+                        or any(now - entry["at"] < settings.pause for entry in recent)):
                     return "already escalated; the customer is waiting for a human"
                 history = self._sessions.get_or_create(session_key).get_history(10)
                 notice = build_escalation_notice(
@@ -114,7 +134,7 @@ class EscalateTool(Tool):
                 self._unpersisted[sender_id] = now
                 delivered = True
                 try:
-                    await self._send(OutboundMessage(channel="telegram", chat_id=self._target,
+                    await self._send(OutboundMessage(channel="telegram", chat_id=settings.target,
                                                      content=notice, metadata={"_escalation": True}))
                 except Exception as exc:
                     delivered = False
@@ -122,14 +142,15 @@ class EscalateTool(Tool):
                 handoff_sent = False
                 try:
                     await self._send(OutboundMessage(channel="zalo", chat_id=chat_id,
-                                                     content=self._handoff, metadata={"thread_type": "User"}))
+                                                     content=settings.handoff, metadata={"thread_type": "User"}))
                     handoff_sent = True
+                    self.last_handoff = settings.handoff  # what this customer was told
                     if self._on_handoff:
                         self._on_handoff()
                 except Exception as exc:
                     public_error(exc)
                 # Keep this in one atomic shared-state write, even if Telegram failed.
-                state.record_escalation(sender_id, reason, delivered, now + self._pause)
+                state.record_escalation(sender_id, reason, delivered, now + settings.pause)
                 self._unpersisted.pop(sender_id, None)
                 return ("the customer was told a human will follow up" if handoff_sent
                         else "handoff recorded; customer notification was unavailable")

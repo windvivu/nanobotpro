@@ -154,6 +154,15 @@ async def page(request: Request):
     )
 
 
+def _needs_attention(state, key, customer) -> bool:
+    """Escalated and not yet resumed: a staff member should look at this customer."""
+    return state.customer_status(key) == "paused" and any(
+        entry["at"] > (customer.get("escalation_cleared_at") or 0) for entry in customer["escalations"])
+
+
+NEW_GROUP_DAYS = 7  # a group not yet allowed counts on the Groups tab this long after it was first seen
+
+
 @router.get("/api/overview")
 async def overview(request: Request):
     channel, state = _state(request)
@@ -162,6 +171,10 @@ async def overview(request: Request):
         kb_catalog.refresh_fact_counts, request.app.state.config.workspace_path,
         _brain_config(request), tolerate_errors=True,
     )
+    from nanobot.agent.unanswered import UnansweredLog
+    unanswered = len(await run_in_threadpool(UnansweredLog(request.app.state.config.workspace_path).entries))
+    learning_errors = sum(bool(doc["learning"].get("error")) or bool(doc["learning"].get("failed")) for doc in docs)
+    recent = time.time() - NEW_GROUP_DAYS * 86400
     return {
         "bridge": channel.get_status(),
         "public_customer_mode": _public_mode(request),
@@ -173,6 +186,12 @@ async def overview(request: Request):
         ),
         "learning_pending": sum(doc["learning"]["in_progress"] for doc in docs),
         "learning_errors": sum(bool(doc["learning"].get("error")) for doc in docs),
+        # What waits for the admin on each tab of the page
+        "badges": {
+            "customers": sum(_needs_attention(state, key, c) for key, c in snapshot["customers"].items()),
+            "knowledge": unanswered + learning_errors,
+            "groups": sum(not g["allowed"] and g["first_seen"] >= recent for g in snapshot.get("groups", {}).values()),
+        },
         "kb": {
             status: sum(doc["status"] == status for doc in docs)
             for status in ("published", "pending")
@@ -208,10 +227,7 @@ async def customers(
                 "limited_count": customer["limited_count"],
                 "escalations": len(customer["escalations"]),
                 "test": is_test_customer(key),
-                # Escalated and not yet resumed: a staff member should look at this customer.
-                "attention": effective == "paused" and any(
-                    entry["at"] > (customer.get("escalation_cleared_at") or 0)
-                    for entry in customer["escalations"]),
+                "attention": _needs_attention(state, key, customer),
                 # When a paused customer can write to the bot again (None: until resumed).
                 "paused_until": customer.get("paused_until") if effective == "paused" else None,
             }
@@ -383,6 +399,27 @@ async def group_settings(request: Request, group_id: str, body: GroupSettings):
         raise HTTPException(404, "Group not found")
     state.set_group(group_id, allowed=body.allowed, mode=body.mode, name=body.name)
     return {"group": dict(state.snapshot()["groups"][group_id], id=group_id)}
+
+
+@router.get("/api/unanswered")
+async def unanswered(request: Request):
+    """Questions the bot could not answer from its knowledge, newest first, not yet handled."""
+    _state(request)
+    from nanobot.agent.unanswered import UnansweredLog
+    log = UnansweredLog(request.app.state.config.workspace_path)
+    return {"entries": await run_in_threadpool(log.entries)}
+
+
+@router.post("/api/unanswered/{entry_id}/handled")
+async def unanswered_handled(request: Request, entry_id: str):
+    _state(request)
+    if not re.fullmatch(r"[0-9a-f]{12}", entry_id):
+        raise HTTPException(400, "Invalid entry id")
+    from nanobot.agent.unanswered import UnansweredLog
+    log = UnansweredLog(request.app.state.config.workspace_path)
+    if not await run_in_threadpool(log.mark_handled, entry_id):
+        raise HTTPException(404, "Entry not found")
+    return {"handled": True}
 
 
 @router.post("/api/pause-all")

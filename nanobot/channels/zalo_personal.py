@@ -77,6 +77,9 @@ GROUP_FILTER_MEMORY = 80            # recent messages remembered per group
 GROUP_DAY_FACTOR = 5
 # Abuse gates for customers (custom): what one message may cost the model. Zalo carries one
 # picture per message; the daily count bounds vision calls, the size bounds the download.
+# Attachments come from Zalo's own CDN (review 13 P1): a message's href is the sender's data,
+# so anything else (a shared link, a crafted payload, a redirect to the LAN) is not fetched.
+ZALO_MEDIA_HOSTS = ("zdn.vn", "zadn.vn", "zalo.me", "zaloapp.com", "zalo.vn")
 CSKH_TEXT_MAX_CHARS = 2000
 CSKH_TEXT_CUT_NOTE = " [message cut at 2000 characters]"
 CSKH_IMAGE_MAX_BYTES = 5 * 1024 * 1024
@@ -303,6 +306,10 @@ class ZaloPersonalChannel(BaseChannel):
         self._reconnect_task: asyncio.Task | None = None
         self._reconnect_waiting: bool = False
         self._last_disconnect_reason: str = ""
+        # When the bridge last handed over a message, and when it logged in: the dashboard shows
+        # them, as a listener can stay connected yet receive nothing (custom, seen live)
+        self._last_inbound_at: float | None = None
+        self._connected_at: float | None = None
         self._duplicate_streak: int = 0
         self._ready_at: float = 0.0  # monotonic time of the last "ready"
         # Messages sent while the bridge is coming back on its own; delivered
@@ -482,12 +489,40 @@ class ZaloPersonalChannel(BaseChannel):
 
     _media_transport = None  # tests hand in an httpx transport
 
+    @staticmethod
+    def _public_address_error(url: str) -> str | None:
+        """None when the host resolves to public addresses only (tests replace it)."""
+        from nanobot.security.network import validate_url_target
+        ok, error = validate_url_target(url, allow_whitelist=False)
+        return None if ok else error
+
+    def media_url_error(self, url: str) -> str | None:
+        """Why an attachment URL must not be fetched, or None (custom, review 13 P1)."""
+        from urllib.parse import urlsplit
+        try:
+            parts = urlsplit(url)
+            host = (parts.hostname or "").rstrip(".").lower()
+        except ValueError:
+            return "invalid URL"
+        if parts.scheme not in ("http", "https"):
+            return f"scheme {parts.scheme or 'none'} not allowed"
+        if not host or not any(host == name or host.endswith("." + name) for name in ZALO_MEDIA_HOSTS):
+            return f"host {host or 'none'} is not a Zalo media host"
+        return self._public_address_error(url)
+
     async def _fetch_media(self, media_url: str, *, max_bytes: int | None) -> bytes:
         """Download a customer's attachment; over max_bytes the download stops (custom).
-        Group pictures come through a 301 (zdn.vn → zadn.vn), so redirects are followed."""
+        Group pictures come through a 301 (zdn.vn → zadn.vn), so redirects are followed; every
+        hop, the first included, is checked before it is sent (review 13 P1)."""
         import httpx
         chunks, size = [], 0
+
+        async def before_send(request: httpx.Request) -> None:
+            if error := await asyncio.to_thread(self.media_url_error, str(request.url)):
+                raise ValueError(f"attachment refused: {error}")
+
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=True, max_redirects=5,
+                                     event_hooks={"request": [before_send]},
                                      transport=self._media_transport) as client:
             async with client.stream("GET", media_url) as resp:
                 resp.raise_for_status()
@@ -1017,6 +1052,9 @@ class ZaloPersonalChannel(BaseChannel):
             "bridgeSetup": self._setup_state,
             "bridgeSetupError": self._setup_error,
             "bridgeInstalled": self._bridge_installed(),
+            "lastInboundAt": self._last_inbound_at,
+            "connectedAt": self._connected_at,
+            "serverTime": time.time(),  # "x min ago" against this clock, not the browser's
         }
 
         # Check if QR image exists
@@ -1295,6 +1333,7 @@ class ZaloPersonalChannel(BaseChannel):
             self._reconnect_attempts = 0  # reset backoff counter on successful connect
             self._last_disconnect_reason = ""
             self._ready_at = time.monotonic()
+            self._connected_at = time.time()
             self._ready_event.set()
             logger.info("Zalo logged in as user {}", self._user_id)
 
@@ -1337,6 +1376,8 @@ class ZaloPersonalChannel(BaseChannel):
         elif event_type == "message":
             thread_id = event.get("threadId", "")
             sender_id = event.get("senderId", thread_id)
+            if not is_test_customer(sender_id):  # a dashboard test customer is not Zalo talking
+                self._last_inbound_at = time.time()
             content = event.get("content", "")
             thread_type = event.get("threadType", "User")
             sender_name = event.get("senderName", "")
@@ -1412,11 +1453,6 @@ class ZaloPersonalChannel(BaseChannel):
 
             if self._customer_service_enabled and content and len(content) > CSKH_TEXT_MAX_CHARS:
                 content = content[:CSKH_TEXT_MAX_CHARS] + CSKH_TEXT_CUT_NOTE
-            if self._customer_service_enabled and media_url:
-                if not self._get_customer_state().admit_image(sender_id, per_day=CSKH_IMAGES_PER_DAY):
-                    logger.info("[Zalo] customerService: picture from {} dropped, daily allowance spent", sender_id)
-                    media_url = None
-
             # ── Group chat filter (Option C) ───────────────────────────
             group_ambient = False
             filter_note = ""
@@ -1467,6 +1503,12 @@ class ZaloPersonalChannel(BaseChannel):
 
             # ── Download media if present (after the group filter: a skipped message downloads nothing) ──
             media_paths: list[str] = []
+            # A picture counts against the daily allowance only once it is going to be fetched: one
+            # the group filter dropped costs nothing (review 13 B5)
+            if (media_url and self._customer_service_enabled
+                    and not self._get_customer_state().admit_image(sender_id, per_day=CSKH_IMAGES_PER_DAY)):
+                logger.info("[Zalo] customerService: picture from {} dropped, daily allowance spent", sender_id)
+                media_url = None
             if media_url:
                 try:
                     import time as _time

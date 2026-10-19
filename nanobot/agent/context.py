@@ -28,7 +28,8 @@ QUERY_HEAD, QUERY_TAIL = 20, 44  # the question of a long message is usually at 
 SHORT_MESSAGE_WORDS = 4  # up to three words: "ok", "còn gì nữa": searched together with the previous question
 
 
-def _bare(message: str) -> str:
+def strip_channel_notes(message: str) -> str:
+    """The message without the notes a channel prepends ([GROUP ...], [Quoted: ...])."""
     return " ".join(_NOTE_BLOCK.sub(" ", message).split())
 
 
@@ -41,7 +42,7 @@ def retrieval_plan(message: Any, history: Sequence[Mapping[str, Any]] | None = N
     together with the person's previous question."""
     if not isinstance(message, str):
         return message, False
-    bare = _bare(message)
+    bare = strip_channel_notes(message)
     if not bare:
         return message, False
     words = bare.split()
@@ -51,7 +52,7 @@ def retrieval_plan(message: Any, history: Sequence[Mapping[str, Any]] | None = N
         for entry in reversed(history):
             content = entry.get("content") if isinstance(entry, Mapping) else None
             if entry.get("role") == "user" and isinstance(content, str):
-                previous = _bare(content).split()
+                previous = strip_channel_notes(content).split()
                 if len(previous) >= SHORT_MESSAGE_WORDS:
                     return " ".join(previous[-QUERY_TAIL:] + words), False
                 break
@@ -81,6 +82,9 @@ class ContextBuilder:
         self._chatbot_config = chatbot_config
         self._brain_memory_config = brain_memory_config
         self._brain_context: BrainContextAdapter | None = None
+        # Facts the last system prompt carried from the knowledge index; None when it was not
+        # searched. The loop reads it right after build_messages (custom, unanswered questions)
+        self.last_knowledge_hits: int | None = None
 
     def build_system_prompt(
         self,
@@ -99,6 +103,7 @@ class ContextBuilder:
             parts.append(bootstrap)
 
         brain_context = ""
+        self.last_knowledge_hits = None
         if memory_query and self._brain_memory_config is not None:
             config = self._brain_memory_config
             if config.reads_session(memory_session):
@@ -110,7 +115,13 @@ class ContextBuilder:
                         )
                     # A long message (a pasted text, a sub-agent's report) is searched by its start: the
                     # index refuses queries over maxQueryChars and only uses their first 64 terms (custom)
-                    brain_context = self._brain_context.render(memory_query[:config.max_query_chars])
+                    query = memory_query[:config.max_query_chars]
+                    if hasattr(self._brain_context, "retrieve"):
+                        retrieved = self._brain_context.retrieve(query)
+                        brain_context = retrieved.render()
+                        self.last_knowledge_hits = len(retrieved.chunks)
+                    else:
+                        brain_context = self._brain_context.render(query)
                 except Exception as exc:
                     if self.public_customer_mode:
                         from nanobot.security.public_output import public_error
