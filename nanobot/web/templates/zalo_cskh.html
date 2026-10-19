@@ -43,7 +43,18 @@ h1,h2,p {margin-top:0} input[type=checkbox] {accent-color:rgb(var(--c-accent))}
 /* A long knowledge list scrolls inside its card; the header row stays visible. */
 #cskh-kb .table-wrap {max-height:min(60vh,520px);overflow:auto}
 #cskh-kb thead th {position:sticky;top:0;z-index:1;background:rgb(var(--c-surface))}
-/* Test customer chat */
+/* Conversations: one tab per customer */
+.tabs {display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid rgb(var(--c-primary) / .2);padding-bottom:6px;margin-bottom:10px}
+.tabs:empty {display:none}
+.tab {display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid rgb(var(--c-primary) / .3);border-bottom:none;border-radius:8px 8px 0 0;background:rgb(var(--c-primary) / .05);cursor:pointer;font:inherit;color:inherit;max-width:260px}
+.tab.active {background:rgb(var(--c-accent) / .15);border-color:rgb(var(--c-accent) / .6);font-weight:700}
+.tab.unread .tab-name::after {content:' \25CF';color:rgb(var(--c-accent))}
+.tab .tab-name {overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tab .tab-close {border:none;background:none;padding:0 2px;cursor:pointer;color:inherit;opacity:.7;font:inherit} .tab .tab-close:hover {opacity:1}
+.conv-panel {display:flex;flex-direction:column;gap:8px} .conv-panel[hidden] {display:none}
+.conv-panel .conv-state {min-height:1.4em} .conv-panel textarea {width:100%;min-height:64px}
+.conv-panel .conv-actions {display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+/* Conversation bubbles (also used by test customers) */
 .test-log {min-height:120px;max-height:360px;overflow:auto;display:flex;flex-direction:column;gap:8px;margin:12px 0;padding:10px;border:1px solid rgb(var(--c-primary) / .2);border-radius:8px}
 .test-msg {max-width:80%;padding:8px 12px;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere}
 .test-msg.customer {align-self:flex-end;background:rgb(var(--c-accent) / .15)}
@@ -68,14 +79,15 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
 <section id="cskh-customers" class="ui-card"><h2>{{ tr('cskh.customers') }}</h2>
 <div class="row"><input id="customer-query" type="search" placeholder="{{ tr('cskh.search') }}" aria-label="{{ tr('cskh.search') }}"><select id="customer-status" aria-label="{{ tr('cskh.status') }}"><option value="">{{ tr('cskh.all') }}</option>{% for value in ['active','paused','blocked'] %}<option value="{{ value }}">{{ tr('cskh.' ~ value) }}</option>{% endfor %}</select></div>
 <div class="table-wrap"><table><thead><tr>{% for key in ['customer','last_seen','status','counts','actions'] %}<th>{{ tr('cskh.' ~ key) }}</th>{% endfor %}</tr></thead><tbody id="customer-rows"></tbody></table></div></section>
+<section id="cskh-conversations" class="ui-card"><h2>{{ tr('cskh.conversations') }}</h2>
+<div id="conv-tabs" class="tabs" role="tablist"></div>
+<p id="conv-empty" class="muted">{{ tr('cskh.no_tabs') }}</p>
+<div id="conv-panels"></div></section>
 <section id="cskh-escalations" class="ui-card collapsible collapsed"><h2>{{ tr('cskh.escalations') }}</h2><div class="table-wrap"><table><thead><tr>{% for key in ['customer','time','reason','delivery'] %}<th>{{ tr('cskh.' ~ key) }}</th>{% endfor %}</tr></thead><tbody id="escalation-rows"></tbody></table></div></section>
 <section id="cskh-test" class="ui-card collapsible collapsed"><h2>{{ tr('cskh.test_title') }}</h2><p class="muted">{{ tr('cskh.test_note') }}</p>
-<div class="row"><button id="test-new" type="button">{{ tr('cskh.test_new') }}</button><button id="test-clear" type="button">{{ tr('cskh.test_clear') }}</button><strong id="test-who"></strong></div>
-<div id="test-log" class="test-log" aria-live="polite"></div>
-<form id="test-form" class="row"><input id="test-input" maxlength="2000" autocomplete="off" disabled placeholder="{{ tr('cskh.test_input') }}" aria-label="{{ tr('cskh.test_input') }}"><button id="test-send" type="submit" disabled>{{ tr('cskh.test_send') }}</button></form>
-<p id="test-state" class="muted" role="status"></p></section>
+<div class="row"><button id="test-new" type="button">{{ tr('cskh.test_new') }}</button><button id="test-clear" type="button">{{ tr('cskh.test_clear') }}</button></div></section>
 <section id="cskh-kb" class="ui-card collapsible collapsed"><h2>{{ tr('cskh.knowledge') }}</h2>
-<p class="muted">{{ tr('cskh.kb_note') }}</p><form id="upload-form" class="row"><input name="file" type="file" accept=".md,.txt,.docx,.pdf" required aria-label="{{ tr('cskh.file') }}"><input name="name" maxlength="200" placeholder="{{ tr('cskh.public_name') }}" aria-label="{{ tr('cskh.public_name') }}"><button type="submit">{{ tr('cskh.upload') }}</button></form>
+<p class="muted">{{ tr('cskh.kb_note') }}</p><form id="upload-form" class="row"><input name="file" type="file" accept=".md,.txt,.docx,.pdf" multiple required aria-label="{{ tr('cskh.file') }}"><input name="name" maxlength="200" placeholder="{{ tr('cskh.public_name') }}" aria-label="{{ tr('cskh.public_name') }}"><button type="submit">{{ tr('cskh.upload') }}</button></form>
 <div class="table-wrap"><table><thead><tr>{% for key in ['document','status','facts','actions'] %}<th>{{ tr('cskh.' ~ key) }}</th>{% endfor %}</tr></thead><tbody id="kb-rows"></tbody></table></div>
 <div class="row" style="margin-top:16px"><a href="/memory/graph" target="_blank" rel="noopener noreferrer">{{ tr('cskh.graph') }}</a><button id="install-persona">{{ tr('cskh.persona') }}</button></div></section>
 <section id="cskh-settings" class="ui-card collapsible collapsed"><h2>{{ tr('cskh.settings') }}</h2><form id="settings-form"><div class="grid">
@@ -128,53 +140,109 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
     const stamp = value => value ? new Date(typeof value === 'number' ? value * 1000 : value).toLocaleString() : '—';
     function row(body, values) { const tr = node('tr'); values.forEach(value => { const td=node('td'); if(value instanceof Node) td.append(value); else td.textContent=value; tr.append(td); }); body.append(tr); return tr; }
     function empty(body, columns) { if (!body.children.length) { const tr=node('tr'),td=node('td',t('empty')); td.colSpan=columns;tr.append(td);body.append(tr); } }
-    let transcriptId = null, transcriptCount = -1;
-    async function loadTranscript(id) {
-        // Reloads while the dialog is open: a customer's answer to staff shows up on its own.
-        const data = await api('/customers/' + encodeURIComponent(id) + '/transcript');
-        if (transcriptId !== id || data.messages.length === transcriptCount) return;
-        transcriptCount = data.messages.length;
-        const lines = $('transcript-lines'); lines.replaceChildren();
-        data.messages.forEach(message => { lines.append(node('strong',(message.role==='user'?t('customer'):(typeof message.content==='string'&&message.content.startsWith('[Nhân viên] ')?t('staff'):t('bot'))) + ' · ' + stamp(message.timestamp)),node('pre',typeof message.content==='string'?message.content:JSON.stringify(message.content))); });
-        if (!data.messages.length) lines.append(node('p',t('empty')));
-        const last = lines.querySelector('pre:last-of-type'); if (last) last.scrollIntoView({block: 'nearest'});
+    // ── Conversations: one tab per customer; staff and test customers share the same panel ──
+    const tabs = new Map(); let activeTab = null, tabTimer = null;
+    const enc = id => encodeURIComponent(id);
+    function saveTabs() {
+        try { localStorage.setItem('cskh-tabs', JSON.stringify({open: [...tabs.values()].map(tab => ({id: tab.id, name: tab.name, test: tab.test})), active: activeTab})); }
+        catch (e) { /* optional */ }
     }
-    async function showTranscript(id) {
-        transcriptId = id; transcriptCount = -1;
-        $('modal-title').textContent=t('transcript') + ' · ' + id; $('modal-body').replaceChildren();
-        const lines = node('div'); lines.id = 'transcript-lines'; $('modal-body').append(lines);
-        // Staff reply: sent from the bot's Zalo account and kept in the bot's conversation
-        const form = node('form'); form.className = 'staff-reply';
-        const box = node('textarea'); box.maxLength = 2000; box.rows = 3;
-        box.placeholder = t('staff_reply_hint'); box.setAttribute('aria-label', t('staff_reply'));
-        // Send sits in the dialog footer next to Close; Enter sends, Ctrl+Enter breaks the line
-        const send = $('modal-confirm'); send.textContent = t('staff_send'); send.hidden = false;
-        send.onclick = () => form.requestSubmit();
+    function fmtUntil(until) { return new Date(until * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}); }
+    function lineOf(message) {
+        let role = 'bot', content = typeof message.content === 'string' ? message.content : JSON.stringify(message.content);
+        if (message.role === 'user') role = 'customer';
+        else if (content.startsWith('[Nhân viên] ')) { role = 'staff'; content = content.slice('[Nhân viên] '.length); }
+        return {role, content, timestamp: message.timestamp};
+    }
+    function renderLines(tab, messages) {
+        tab.log.replaceChildren();
+        messages.map(lineOf).forEach(line => {
+            const el = node('div', line.role === 'staff' ? t('staff') + ': ' + line.content : line.content);
+            el.className = 'test-msg ' + line.role; el.title = stamp(line.timestamp); tab.log.append(el);
+        });
+        if (!messages.length) tab.log.append(node('p', t('empty')));
+        tab.log.scrollTop = tab.log.scrollHeight;
+    }
+    function setState(tab, info) {
+        const until = info.status === 'paused' && info.paused_until ? info.paused_until : null;
+        tab.state.replaceChildren();
+        if (info.status === 'blocked') tab.state.append(node('span', t('blocked')));
+        else if (info.status === 'paused') {
+            tab.state.append(node('span', until ? t('waiting_until').replace('{time}', fmtUntil(until)).replace('{m}', Math.max(1, Math.ceil((until * 1000 - Date.now()) / 60000))) : t('paused')));
+            tab.state.append(button('resume', async () => { await api('/customers/' + enc(tab.id) + '/resume', {}); await pollTab(tab, true); }));
+        }
+    }
+    async function pollTab(tab, force = false) {
+        // One poll per tab at a time; the lines are redrawn only when their count changes.
+        if (tab.busy) return; tab.busy = true;
+        try {
+            let data;
+            try { data = await api('/customers/' + enc(tab.id) + '/transcript'); }
+            catch (e) { data = {messages: []}; }  // a test customer who has not written yet
+            if (force || data.messages.length !== tab.count) {
+                if (tab.count >= 0 && data.messages.length > tab.count && tab.id !== activeTab) tab.el.classList.add('unread');
+                tab.count = data.messages.length; renderLines(tab, data.messages);
+            }
+            const rows = (await api('/customers?q=' + enc(tab.id))).customers;
+            const row = rows.find(r => r.id === tab.id);
+            setState(tab, row || {status: 'active'});
+        } catch (e) { /* the next poll tries again */ }
+        finally { tab.busy = false; }
+    }
+    function activate(id) {
+        activeTab = id;
+        tabs.forEach(tab => { const on = tab.id === id; tab.el.classList.toggle('active', on); tab.el.setAttribute('aria-selected', String(on)); tab.panel.hidden = !on; if (on) tab.el.classList.remove('unread'); });
+        saveTabs();
+        const tab = tabs.get(id); if (tab) { pollTab(tab).catch(() => {}); tab.box.focus(); }
+    }
+    function closeTab(id) {
+        const tab = tabs.get(id); if (!tab) return;
+        tab.el.remove(); tab.panel.remove(); tabs.delete(id);
+        if (activeTab === id) { const next = [...tabs.keys()].pop(); activeTab = null; if (next) activate(next); }
+        $('conv-empty').hidden = tabs.size > 0; saveTabs();
+    }
+    function openTab(id, name, test) {
+        if (tabs.has(id)) { activate(id); return tabs.get(id); }
+        const el = node('button'); el.type = 'button'; el.className = 'tab'; el.setAttribute('role', 'tab');
+        const label = node('span', (test ? '[' + t('test_badge') + '] ' : '') + (name || id)); label.className = 'tab-name'; label.title = id;
+        const close = node('button', '×'); close.type = 'button'; close.className = 'tab-close'; close.setAttribute('aria-label', t('close_tab'));
+        close.onclick = event => { event.stopPropagation(); closeTab(id); };
+        el.append(label, close); el.onclick = () => activate(id); $('conv-tabs').append(el);
+        const panel = node('div'); panel.className = 'conv-panel'; panel.hidden = true; panel.setAttribute('role', 'tabpanel');
+        const head = node('p'); head.className = 'muted'; head.textContent = (name ? name + ' · ' : '') + id;
+        const log = node('div'); log.className = 'test-log'; log.setAttribute('aria-live', 'polite');
+        const state = node('div'); state.className = 'conv-state row';
+        const form = node('form'); const box = node('textarea'); box.maxLength = 2000;
+        box.placeholder = test ? t('test_input') : t('staff_reply_hint'); box.setAttribute('aria-label', t('staff_reply'));
+        const actions = node('div'); actions.className = 'conv-actions';
+        const send = async asStaff => {
+            const content = box.value.trim(); if (!content) return;
+            box.value = '';
+            if (asStaff) { await api('/customers/' + enc(id) + '/reply', {content}); note(t('staff_sent')); }
+            else await api('/test-customers/' + enc(id) + '/messages', {name: name, content});
+            await pollTab(tab, true); await refresh();
+        };
+        const staffBtn = button(test ? 'staff_reply_short' : 'staff_send', () => send(true));
+        if (test) { const asCustomer = button('send_as_customer', () => send(false)); actions.append(asCustomer); }
+        actions.append(staffBtn, node('span', t('enter_hint'))); actions.lastChild.className = 'muted';
+        form.onsubmit = event => { event.preventDefault(); act(staffBtn, () => send(!test)); };
         box.addEventListener('keydown', event => {
             if (event.key !== 'Enter') return;
-            if (event.ctrlKey || event.metaKey) {
-                event.preventDefault();
-                const at = box.selectionStart; box.setRangeText('\n', at, box.selectionEnd, 'end');
-            } else if (!event.shiftKey && !event.isComposing) { event.preventDefault(); form.requestSubmit(); }
+            if (event.ctrlKey || event.metaKey) { event.preventDefault(); box.setRangeText('\n', box.selectionStart, box.selectionEnd, 'end'); }
+            else if (!event.shiftKey && !event.isComposing) { event.preventDefault(); form.requestSubmit(); }
         });
-        const status = node('p'); status.className = 'muted'; status.setAttribute('role', 'status');
-        form.append(node('strong', t('staff_reply')), box, status);
-        form.onsubmit = async event => {
-            event.preventDefault();
-            const text = box.value.trim(); if (!text) return;
-            send.disabled = true; status.textContent = t('working');
-            try {
-                await api('/customers/' + encodeURIComponent(id) + '/reply', {content: text});
-                box.value = ''; await loadTranscript(id); await refresh();
-                status.textContent = ''; note(t('staff_sent'));
-            } catch (e) { status.textContent = t('error') + ': ' + e.message; }
-            finally { send.disabled = false; }
-        };
-        $('modal-body').append(form);
-        if (!modal.open) modal.showModal();
-        await loadTranscript(id); box.focus();
+        form.append(box, actions); panel.append(head, log, state, form); $('conv-panels').append(panel);
+        const tab = {id, name, test: !!test, count: -1, busy: false, el, panel, log, state, box};
+        tabs.set(id, tab); $('conv-empty').hidden = true;
+        activate(id);
+        if (!tabTimer) tabTimer = setInterval(() => { const tab = tabs.get(activeTab); if (tab && !document.hidden) pollTab(tab).catch(() => {}); }, 2000);
+        return tab;
     }
-    modal.addEventListener('close', () => { transcriptId = null; });
+    function pollTabs() { tabs.forEach(tab => { if (tab.id !== activeTab) pollTab(tab).catch(() => {}); }); }
+    try {
+        const saved = JSON.parse(localStorage.getItem('cskh-tabs') || 'null');
+        if (saved && Array.isArray(saved.open)) { saved.open.forEach(tab => tab && tab.id && openTab(tab.id, tab.name, tab.test)); if (saved.active && tabs.has(saved.active)) activate(saved.active); }
+    } catch (e) { /* optional */ }
     let refreshing = null;
     async function refresh() {
         // An action's refresh waits for the poll in flight, then reads again: it must show the result.
@@ -185,7 +253,7 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
     async function refreshOnce() {
         if (polling) return; polling=true;
         try {
-            if (transcriptId && modal.open) loadTranscript(transcriptId).catch(() => {});
+            pollTabs();
             const filter='?q='+encodeURIComponent($('customer-query').value)+'&status='+encodeURIComponent($('customer-status').value);
             const [ov,cs,es,kb] = await Promise.all([api('/overview'),api('/customers'+filter),api('/escalations'),api('/kb')]);
             paused=ov.paused_all; $('pause-all').textContent=t(paused?'resume_all':'pause_all');
@@ -198,7 +266,7 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
             ['new_customers','in','out','limited','escalations','friend_accepts'].forEach(key=>{const el=node('div');el.className='metric';el.append(node('span',t(key)),node('strong',ov.daily[key]||0));$('daily-metrics').append(el);});
             const customers=$('customer-rows'); customers.replaceChildren();
             cs.customers.forEach(c=>{const controls=node('div');controls.className='row';const path='/customers/'+encodeURIComponent(c.id);
-                controls.append(button('transcript',()=>showTranscript(c.id)),button(c.status==='blocked'?'unblock':'resume',async()=>{await api(path+(c.status==='blocked'?'/unblock':'/resume'),{});note(t('saved'));}),button('block',async()=>{if(await hubModal(t('block'),t('confirm_block'))) {await api(path+'/block',{});note(t('saved'));}}),button('escalate',async()=>{const summary=await hubModal(t('escalate'),t('summary'),true);if(summary){const r=await api(path+'/escalate',{summary});note(t(r.published_to_bus?'sent':'send_failed'));}}));
+                controls.append(button('transcript',()=>openTab(c.id,c.name,c.test)),button(c.status==='blocked'?'unblock':'resume',async()=>{await api(path+(c.status==='blocked'?'/unblock':'/resume'),{});note(t('saved'));}),button('block',async()=>{if(await hubModal(t('block'),t('confirm_block'))) {await api(path+'/block',{});note(t('saved'));}}),button('escalate',async()=>{const summary=await hubModal(t('escalate'),t('summary'),true);if(summary){const r=await api(path+'/escalate',{summary});note(t(r.published_to_bus?'sent':'send_failed'));}}));
                 // A customer paused by a handoff waits for staff until paused_until
                 const left=c.paused_until ? Math.max(1, Math.ceil((c.paused_until*1000-Date.now())/60000)) : 0;
                 const state=c.status==='paused' && c.paused_until ? t('waiting_until')
@@ -225,68 +293,15 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
                 row(docs,[d.name+' · '+d.original_name,d.status==='published'?progress+step:t(d.status),d.fact_count,controls]);});empty(docs,4);
         } finally { polling=false; }
     }
-    // Test customer: talk to the bot as a brand-new Zalo customer; replies stay on this page.
-    let tester = null, testSeen = 0, testTimer = null, testBusy = false;
-    function testLine(role, text) {
-        const el = node('div', role === 'staff' ? t('staff') + ': ' + text : text); el.className = 'test-msg ' + role; $('test-log').append(el);
-        $('test-log').scrollTop = $('test-log').scrollHeight;
-    }
-    function testState(info) {
-        const until = info.paused_until ? new Date(info.paused_until * 1000) : null;
-        $('test-state').textContent = info.status === 'paused' && until
-            ? t('waiting_until').replace('{time}', until.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}))
-                .replace('{m}', Math.max(1, Math.ceil((until - Date.now()) / 60000))) + ' · ' + t('test_paused_note')
-            : info.status === 'paused' || info.status === 'blocked' ? t(info.status) + ' · ' + t('test_paused_note') : '';
-    }
-    async function testPoll() {
-        // One poll at a time, and each line once: a slow server must not make polls overlap and
-        // print the same reply again, nor show an earlier test customer's reply in a new chat.
-        if (!tester || testBusy) return;
-        testBusy = true;
-        const who = tester.id;
-        try {
-            const data = await api('/test-customers/' + who + '/messages?after=' + testSeen);
-            if (!tester || tester.id !== who) return;
-            data.messages.forEach(m => {
-                if (m.seq <= testSeen) return;
-                testSeen = m.seq;
-                testLine(m.role, m.content);
-            });
-            testState(data);
-        } catch (e) { /* the next poll tries again */ }
-        finally { testBusy = false; }
-    }
-    function useTester(who) {
-        tester = who; testSeen = 0;
-        $('test-log').replaceChildren(); $('test-state').textContent = '';
-        $('test-who').textContent = tester.name + ' (' + tester.id + ')';
-        $('test-input').disabled = $('test-send').disabled = false;
-        try { localStorage.setItem('cskh-test-customer', JSON.stringify(tester)); } catch (e) { /* optional */ }
-        if (!testTimer) testTimer = setInterval(testPoll, 1500);
-        return testPoll();
-    }
+    // Test customers: a new simulated Zalo customer opens as a conversation tab
     $('test-new').onclick = () => act($('test-new'), async () => {
-        await useTester(await api('/test-customers', {})); $('test-input').focus();
+        const who = await api('/test-customers', {});
+        $('cskh-conversations').scrollIntoView({block: 'nearest'}); openTab(who.id, who.name, true);
     });
-    try {
-        const saved = JSON.parse(localStorage.getItem('cskh-test-customer') || 'null');
-        if (saved && saved.id && saved.name) useTester(saved).catch(() => {});
-    } catch (e) { /* optional */ }
-    $('test-form').onsubmit = async event => {
-        event.preventDefault();
-        const text = $('test-input').value.trim();
-        if (!tester || !text) return;
-        $('test-input').value = '';
-        try { testState(await api('/test-customers/' + tester.id + '/messages', {name: tester.name, content: text})); await testPoll(); }
-        catch (e) { note(t('error') + ': ' + e.message); }
-    };
     $('test-clear').onclick = () => act($('test-clear'), async () => {
         if (!await hubModal(t('test_clear'), t('confirm_test_clear'))) return;
         const result = await api('/test-customers/clear', {});
-        tester = null; testSeen = 0;
-        try { localStorage.removeItem('cskh-test-customer'); } catch (e) { /* optional */ }
-        $('test-log').replaceChildren(); $('test-who').textContent = ''; $('test-state').textContent = '';
-        $('test-input').disabled = $('test-send').disabled = true;
+        [...tabs.values()].filter(tab => tab.test).forEach(tab => closeTab(tab.id));
         note(t('test_cleared').replace('{n}', result.removed));
     });
     // Collapsible sections: click the heading; the state is kept per browser
@@ -303,12 +318,25 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
     $('pause-all').onclick=()=>act($('pause-all'),async()=>{if(paused||await hubModal(t('pause_all'),t('confirm_pause'))){await api('/pause-all',{paused:!paused});note(t('saved'));}});
     $('telegram-test').onclick=()=>act($('telegram-test'),async()=>{const r=await api('/telegram-test',{});note(t(r.published_to_bus?'sent':'send_failed'));});
     $('install-persona').onclick=()=>act($('install-persona'),async()=>{let r=await api('/persona',{force:false});if(r.needs_confirmation&&await hubModal(t('persona'),t('confirm_persona')))r=await api('/persona',{force:true});note(t(r.installed?'saved':'cancelled'));});
-    $('upload-form').onsubmit=e=>{e.preventDefault();act(e.submitter,async()=>{const data=new FormData(e.target);if(!data.get('name'))data.delete('name');await api('/kb/upload',data);e.target.reset();note(t('saved'));});};
+    // Several files at once: each goes through the same upload, one after the other; a failure
+    // stops the batch and names the file, the ones before it are kept.
+    $('upload-form').onsubmit=e=>{e.preventDefault();act(e.submitter,async()=>{
+        const form=e.target, files=[...form.elements.file.files], name=form.elements.name.value.trim();
+        let done=0;
+        for (const file of files) {
+            const data=new FormData(); data.append('file', file);
+            if (name && files.length===1) data.append('name', name);
+            note(t('uploading').replace('{k}', done+1).replace('{n}', files.length).replace('{file}', file.name));
+            try { await api('/kb/upload', data); done++; }
+            catch (err) { throw new Error(file.name + ': ' + err.message + (done ? ' (' + t('uploaded').replace('{n}', done) + ')' : '')); }
+        }
+        form.reset(); note(t('uploaded').replace('{n}', done));
+    });};
     $('settings-form').onsubmit=e=>{e.preventDefault();act(e.submitter,async()=>{const form=e.target,body={};['welcomeMessage','handoffMessage'].forEach(k=>body[k]=form.elements[k].value);['inboundPerMinute','inboundPerDay','pauseAfterEscalationMinutes'].forEach(k=>body[k]=Number(form.elements[k].value));body.autoAcceptFriend=form.elements.autoAcceptFriend.checked;await api('/settings',body);note(t('saved'));});};
     async function loadSettings(){const data=await api('/settings');Object.entries(data).forEach(([key,value])=>{const el=$('settings-form').elements[key];if(el){if(el.type==='checkbox')el.checked=value;else el.value=value;}});}
     $('customer-status').onchange=()=>refresh().catch(e=>note(e.message));
     let debounce; $('customer-query').oninput=()=>{clearTimeout(debounce);debounce=setTimeout(()=>refresh().catch(e=>note(e.message)),250);};
-    Promise.all([refresh(),loadSettings()]).then(()=>{const customer=new URLSearchParams(location.search).get('customer');if(customer)return showTranscript(customer);}).catch(e=>note(t('error')+': '+e.message));
+    Promise.all([refresh(),loadSettings()]).then(()=>{const customer=new URLSearchParams(location.search).get('customer');if(customer)openTab(customer,'',false);}).catch(e=>note(t('error')+': '+e.message));
     const timer=setInterval(()=>{if(!document.hidden&&!busy)refresh().catch(e=>note(t('error')+': '+e.message));},5000);
     window.addEventListener('pagehide',()=>clearInterval(timer));
 })();
