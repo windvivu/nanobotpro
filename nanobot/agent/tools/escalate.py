@@ -23,8 +23,9 @@ def build_escalation_notice(workspace, sender_id, sender_name, reason, summary, 
         for item in history[-10:] if item.get("role") in {"user", "assistant"}
         and isinstance(item.get("content"), str)
     )[:2000]
+    from nanobot.channels.zalo_cskh_state import is_test_customer
     return (
-        "[CSKH Zalo] Cần người hỗ trợ\n"
+        ("[THỬ] " if is_test_customer(sender_id) else "") + "[CSKH Zalo] Cần người hỗ trợ\n"
         f"Khách: {plain(sender_name)[:200]} ({plain(sender_id)})\n"
         f"Lý do: {reason} — {plain(summary)[:500]}\n"
         f"Trang: /zalo/cskh?customer={quote(sender_id, safe='')}\n"

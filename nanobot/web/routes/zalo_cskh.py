@@ -1,6 +1,8 @@
 """Authenticated admin surface for a public Zalo customer service instance."""
 
 import json
+import re
+import secrets
 import time
 from collections import deque
 from datetime import date
@@ -14,6 +16,7 @@ from nanobot.agent.tools.escalate import build_escalation_notice
 from nanobot.brain_memory.errors import BrainMemoryError, ConflictError, DisabledError
 from nanobot.brain_memory.paths import resolve_ref
 from nanobot.bus.events import OutboundMessage
+from nanobot.channels.zalo_cskh_state import TEST_CUSTOMER_PREFIX, is_test_customer
 from nanobot.channels.zalo_personal import ZaloCustomerServiceConfig, customer_service_target_error
 from nanobot.security.public_output import public_error
 from nanobot.session.manager import SessionManager
@@ -185,6 +188,7 @@ async def customers(
                 "messages_out": customer["messages_out"],
                 "limited_count": customer["limited_count"],
                 "escalations": len(customer["escalations"]),
+                "test": is_test_customer(key),
                 # When a paused customer can write to the bot again (None: until resumed).
                 "paused_until": customer.get("paused_until") if effective == "paused" else None,
             }
@@ -231,6 +235,56 @@ async def customer_action(request: Request, customer_id: str, action: str):
     else:
         state.set_status(customer_id, "blocked" if action == "block" else "active")
     return {"status": state.customer_status(customer_id)}
+
+
+_TEST_ID = re.compile(re.escape(TEST_CUSTOMER_PREFIX) + r"[0-9a-f]{8}")
+
+
+class TestMessage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=60)
+    content: str = Field(min_length=1, max_length=2000)
+
+
+def _test_customer(request, customer_id):
+    if not _TEST_ID.fullmatch(customer_id):
+        raise HTTPException(404, "Test customer not found")
+    return _state(request)
+
+
+def _test_status(state, customer_id):
+    customer = state.snapshot()["customers"].get(customer_id, {})
+    status = state.customer_status(customer_id)
+    return {"status": status,
+            "paused_until": customer.get("paused_until") if status == "paused" else None}
+
+
+@router.post("/api/test-customers")
+async def create_test_customer(request: Request):
+    """A new simulated Zalo customer for trying the bot; nothing is sent to Zalo."""
+    _, state = _state(request)
+    number = 1 + sum(1 for key in state.snapshot()["customers"] if is_test_customer(key))
+    return {"id": TEST_CUSTOMER_PREFIX + secrets.token_hex(4), "name": f"Khách thử {number}"}
+
+
+@router.post("/api/test-customers/clear")
+async def clear_test_customers(request: Request):
+    channel, _ = _state(request)
+    removed = channel.clear_test_customers(getattr(request.app.state, "session_manager", None))
+    return {"removed": removed}
+
+
+@router.post("/api/test-customers/{customer_id}/messages")
+async def send_test_message(request: Request, customer_id: str, body: TestMessage):
+    channel, state = _test_customer(request, customer_id)
+    await channel.simulate_customer_message(customer_id, body.name, body.content)
+    return _test_status(state, customer_id)
+
+
+@router.get("/api/test-customers/{customer_id}/messages")
+async def test_messages(request: Request, customer_id: str, after: int = Query(0, ge=0)):
+    channel, state = _test_customer(request, customer_id)
+    return {"messages": channel.test_messages(customer_id, after), **_test_status(state, customer_id)}
 
 
 class Pause(BaseModel):

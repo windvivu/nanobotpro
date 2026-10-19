@@ -360,6 +360,16 @@
   "cskh.phase_retry": "waiting to retry",
   "cskh.attempts_done": "tried {k}/{n}",
   "cskh.waiting_until": "Waiting for staff · until {time} ({m} min left)",
+  "cskh.test_title": "Try as a Zalo customer",
+  "cskh.test_note": "Each “New test customer” is a new customer. Messages take the same path as a real Zalo customer's: limits, pause, block, handoff. The bot's replies show here only and are not sent through Zalo. A handoff still notifies Telegram, marked [THỬ]. Test customers are not counted in Today.",
+  "cskh.test_new": "New test customer",
+  "cskh.test_clear": "Remove test customers",
+  "cskh.confirm_test_clear": "Remove every test customer and their conversations?",
+  "cskh.test_cleared": "Removed {n} test customers",
+  "cskh.test_send": "Send",
+  "cskh.test_input": "Write as a customer",
+  "cskh.test_paused_note": "the bot will not answer until the wait ends or you press Resume",
+  "cskh.test_badge": "Test",
   "cskh.relearn": "Retry failed learning",
   "graph.kb_quota_exempt": "This daily limit does not apply to knowledge published from the customer service page in Public Customer Mode."
 }

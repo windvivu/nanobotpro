@@ -17,6 +17,14 @@ from zoneinfo import ZoneInfo
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
 
+# Customers simulated from the dashboard to try the bot. Real Zalo ids are numeric, so a
+# message from Zalo can never carry this prefix.
+TEST_CUSTOMER_PREFIX = "test-"
+
+
+def is_test_customer(customer_id) -> bool:
+    return str(customer_id).startswith(TEST_CUSTOMER_PREFIX)
+
 
 class _Customer(BaseModel):
     model_config = ConfigDict(extra="allow")
@@ -94,11 +102,16 @@ class CustomerServiceState:
         if customer is None:
             customer = _Customer(name=name, first_seen=now, last_seen=now).model_dump()
             self._data["customers"][sender_id] = customer
-            self._daily(now)["new_customers"] += 1
+            self._count(now, "new_customers", sender_id)
         if name:
             customer["name"] = name
         customer["last_seen"] = now
         return customer
+
+    def _count(self, now: float, key: str, sender_id: str) -> None:
+        """Today's totals describe real customers; dashboard test customers stay out."""
+        if not is_test_customer(sender_id):
+            self._daily(now)[key] += 1
 
     def _prune(self, now: float) -> None:
         oldest_day = datetime.fromtimestamp(now, self._timezone).date() - timedelta(days=89)
@@ -153,15 +166,14 @@ class CustomerServiceState:
         """
         def change(now):
             status = self.customer_status(sender_id)
-            daily = self._daily(now)
             if status == "blocked":
-                daily["blocked_dropped"] += 1
+                self._count(now, "blocked_dropped", sender_id)
                 # Recent activity keeps a blocked customer from expiring silently.
                 self._data["customers"][sender_id]["last_seen"] = now
                 return False, None
             customer = self._customer(sender_id, name, now)
             customer["messages_in"] += 1
-            daily["in"] += 1
+            self._count(now, "in", sender_id)
             if status == "paused":
                 return False, None
             if customer["status"] == "paused":
@@ -190,7 +202,7 @@ class CustomerServiceState:
             else:
                 return True, None
             customer["limited_count"] += 1
-            daily["limited"] += 1
+            self._count(now, "limited", sender_id)
             return False, notice
 
         return self._update(change)
@@ -220,13 +232,13 @@ class CustomerServiceState:
         def change(now):
             customer = self._customer(sender_id, name, now)
             customer["messages_in"] += 1
-            self._daily(now)["in"] += 1
+            self._count(now, "in", sender_id)
         self._update(change)
 
     def record_outbound(self, sender_id: str) -> None:
         def change(now):
             self._customer(sender_id, "", now)["messages_out"] += 1
-            self._daily(now)["out"] += 1
+            self._count(now, "out", sender_id)
         self._update(change)
 
     def record_friend(self, sender_id: str, change_name: str, name: str = "") -> None:
@@ -234,7 +246,7 @@ class CustomerServiceState:
             customer = self._customer(sender_id, name, now)
             customer["last_friend_change"] = {"change": change_name, "at": now}
             if change_name == "ACCEPTED":
-                self._daily(now)["friend_accepts"] += 1
+                self._count(now, "friend_accepts", sender_id)
         self._update(change)
 
     def record_escalation(self, sender_id: str, reason: str, delivered: bool, paused_until: float) -> None:
@@ -246,7 +258,7 @@ class CustomerServiceState:
                 customer["status"] = "paused"
                 customer["paused_until"] = paused_until
             customer["escalations"].append({"at": now, "reason": reason, "delivered": delivered})
-            self._daily(now)["escalations"] += 1
+            self._count(now, "escalations", sender_id)
         self._update(change)
 
     def set_status(self, sender_id: str, status: str, *, paused_until: float | None = None) -> None:

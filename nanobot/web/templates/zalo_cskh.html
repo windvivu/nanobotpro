@@ -43,6 +43,12 @@ h1,h2,p {margin-top:0} input[type=checkbox] {accent-color:rgb(var(--c-accent))}
 /* A long knowledge list scrolls inside its card; the header row stays visible. */
 #cskh-kb .table-wrap {max-height:min(60vh,520px);overflow:auto}
 #cskh-kb thead th {position:sticky;top:0;z-index:1;background:rgb(var(--c-surface))}
+/* Test customer chat */
+.test-log {min-height:120px;max-height:360px;overflow:auto;display:flex;flex-direction:column;gap:8px;margin:12px 0;padding:10px;border:1px solid rgb(var(--c-primary) / .2);border-radius:8px}
+.test-msg {max-width:80%;padding:8px 12px;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+.test-msg.customer {align-self:flex-end;background:rgb(var(--c-accent) / .15)}
+.test-msg.bot {align-self:flex-start;background:rgb(var(--c-primary) / .08)}
+#test-form input {flex:1;min-width:0}
 </style>
 </head>
 <body>
@@ -55,6 +61,11 @@ h1,h2,p {margin-top:0} input[type=checkbox] {accent-color:rgb(var(--c-accent))}
 <section id="cskh-customers" class="ui-card"><h2>{{ tr('cskh.customers') }}</h2>
 <div class="row"><input id="customer-query" type="search" placeholder="{{ tr('cskh.search') }}" aria-label="{{ tr('cskh.search') }}"><select id="customer-status" aria-label="{{ tr('cskh.status') }}"><option value="">{{ tr('cskh.all') }}</option>{% for value in ['active','paused','blocked'] %}<option value="{{ value }}">{{ tr('cskh.' ~ value) }}</option>{% endfor %}</select></div>
 <div class="table-wrap"><table><thead><tr>{% for key in ['customer','last_seen','status','counts','actions'] %}<th>{{ tr('cskh.' ~ key) }}</th>{% endfor %}</tr></thead><tbody id="customer-rows"></tbody></table></div></section>
+<section id="cskh-test" class="ui-card"><h2>{{ tr('cskh.test_title') }}</h2><p class="muted">{{ tr('cskh.test_note') }}</p>
+<div class="row"><button id="test-new" type="button">{{ tr('cskh.test_new') }}</button><button id="test-clear" type="button">{{ tr('cskh.test_clear') }}</button><strong id="test-who"></strong></div>
+<div id="test-log" class="test-log" aria-live="polite"></div>
+<form id="test-form" class="row"><input id="test-input" maxlength="2000" autocomplete="off" disabled placeholder="{{ tr('cskh.test_input') }}" aria-label="{{ tr('cskh.test_input') }}"><button id="test-send" type="submit" disabled>{{ tr('cskh.test_send') }}</button></form>
+<p id="test-state" class="muted" role="status"></p></section>
 <section id="cskh-escalations" class="ui-card"><h2>{{ tr('cskh.escalations') }}</h2><div class="table-wrap"><table><thead><tr>{% for key in ['customer','time','reason','delivery'] %}<th>{{ tr('cskh.' ~ key) }}</th>{% endfor %}</tr></thead><tbody id="escalation-rows"></tbody></table></div></section>
 <section id="cskh-kb" class="ui-card"><h2>{{ tr('cskh.knowledge') }}</h2>
 <p class="muted">{{ tr('cskh.kb_note') }}</p><form id="upload-form" class="row"><input name="file" type="file" accept=".md,.txt,.docx,.pdf" required aria-label="{{ tr('cskh.file') }}"><input name="name" maxlength="200" placeholder="{{ tr('cskh.public_name') }}" aria-label="{{ tr('cskh.public_name') }}"><button type="submit">{{ tr('cskh.upload') }}</button></form>
@@ -137,7 +148,7 @@ h1,h2,p {margin-top:0} input[type=checkbox] {accent-color:rgb(var(--c-accent))}
                 const state=c.status==='paused' && c.paused_until ? t('waiting_until')
                     .replace('{time}', new Date(c.paused_until*1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}))
                     .replace('{m}', left) : t(c.status);
-                row(customers,[c.name+' ('+c.id+')',stamp(c.last_seen),state,c.messages_in+' / '+c.messages_out+' · '+t('limited')+': '+c.limited_count+' · '+t('escalations')+': '+c.escalations,controls]);});empty(customers,5);
+                row(customers,[(c.test ? '['+t('test_badge')+'] ' : '')+c.name+' ('+c.id+')',stamp(c.last_seen),state,c.messages_in+' / '+c.messages_out+' · '+t('limited')+': '+c.limited_count+' · '+t('escalations')+': '+c.escalations,controls]);});empty(customers,5);
             const escalations=$('escalation-rows');escalations.replaceChildren();es.escalations.forEach(e=>row(escalations,[e.name+' ('+e.customer_id+')',stamp(e.at),t(e.reason),t(e.delivered?'sent':'send_failed')]));empty(escalations,4);
             const docs=$('kb-rows');docs.replaceChildren();kb.documents.slice().reverse().forEach(d=>{  /* newest upload first */const controls=node('div');controls.className='row';
                 (d.status==='pending'?['publish','delete']:d.status==='published'||d.cleanup_pending?['revoke']:['delete']).forEach(action=>controls.append(button(action,async()=>{if(action==='publish'||await hubModal(t(action),t('confirm_'+action))){const result=await api('/kb/'+d.document_id+'/'+action,{});note(t(result.cleanup_pending?'cleanup_pending':action==='publish'?'queued':'saved'));}})));
@@ -157,6 +168,50 @@ h1,h2,p {margin-top:0} input[type=checkbox] {accent-color:rgb(var(--c-accent))}
                 row(docs,[d.name+' · '+d.original_name,d.status==='published'?progress+step:t(d.status),d.fact_count,controls]);});empty(docs,4);
         } finally { polling=false; }
     }
+    // Test customer: talk to the bot as a brand-new Zalo customer; replies stay on this page.
+    let tester = null, testSeen = 0, testTimer = null;
+    function testLine(role, text) {
+        const el = node('div', text); el.className = 'test-msg ' + role; $('test-log').append(el);
+        $('test-log').scrollTop = $('test-log').scrollHeight;
+    }
+    function testState(info) {
+        const until = info.paused_until ? new Date(info.paused_until * 1000) : null;
+        $('test-state').textContent = info.status === 'paused' && until
+            ? t('waiting_until').replace('{time}', until.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}))
+                .replace('{m}', Math.max(1, Math.ceil((until - Date.now()) / 60000))) + ' · ' + t('test_paused_note')
+            : info.status === 'paused' || info.status === 'blocked' ? t(info.status) + ' · ' + t('test_paused_note') : '';
+    }
+    async function testPoll() {
+        if (!tester) return;
+        try {
+            const data = await api('/test-customers/' + tester.id + '/messages?after=' + testSeen);
+            data.messages.forEach(m => { testSeen = Math.max(testSeen, m.seq); if (m.role === 'bot') testLine('bot', m.content); });
+            testState(data);
+        } catch (e) { /* the next poll tries again */ }
+    }
+    $('test-new').onclick = () => act($('test-new'), async () => {
+        tester = await api('/test-customers', {}); testSeen = 0;
+        $('test-log').replaceChildren(); $('test-state').textContent = '';
+        $('test-who').textContent = tester.name + ' (' + tester.id + ')';
+        $('test-input').disabled = $('test-send').disabled = false; $('test-input').focus();
+        if (!testTimer) testTimer = setInterval(testPoll, 1500);
+    });
+    $('test-form').onsubmit = async event => {
+        event.preventDefault();
+        const text = $('test-input').value.trim();
+        if (!tester || !text) return;
+        $('test-input').value = ''; testLine('customer', text);
+        try { testState(await api('/test-customers/' + tester.id + '/messages', {name: tester.name, content: text})); }
+        catch (e) { note(t('error') + ': ' + e.message); }
+    };
+    $('test-clear').onclick = () => act($('test-clear'), async () => {
+        if (!await hubModal(t('test_clear'), t('confirm_test_clear'))) return;
+        const result = await api('/test-customers/clear', {});
+        tester = null; testSeen = 0;
+        $('test-log').replaceChildren(); $('test-who').textContent = ''; $('test-state').textContent = '';
+        $('test-input').disabled = $('test-send').disabled = true;
+        note(t('test_cleared').replace('{n}', result.removed));
+    });
     $('pause-all').onclick=()=>act($('pause-all'),async()=>{if(paused||await hubModal(t('pause_all'),t('confirm_pause'))){await api('/pause-all',{paused:!paused});note(t('saved'));}});
     $('telegram-test').onclick=()=>act($('telegram-test'),async()=>{const r=await api('/telegram-test',{});note(t(r.published_to_bus?'sent':'send_failed'));});
     $('install-persona').onclick=()=>act($('install-persona'),async()=>{let r=await api('/persona',{force:false});if(r.needs_confirmation&&await hubModal(t('persona'),t('confirm_persona')))r=await api('/persona',{force:true});note(t(r.installed?'saved':'cancelled'));});

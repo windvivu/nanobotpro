@@ -21,6 +21,7 @@ from pydantic import Field
 from nanobot.bus.events import OutboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.channels.base import BaseChannel
+from nanobot.channels.zalo_cskh_state import is_test_customer
 from nanobot.config.schema import Base
 
 # Source files bundled with nanobot
@@ -244,6 +245,7 @@ class ZaloPersonalChannel(BaseChannel):
         self._stderr_task: asyncio.Task | None = None
         self._connect_watchdog_task: asyncio.Task | None = None
         self._bridge_dir: Path | None = None
+        self._test_outbox: dict[str, list[dict]] = {}  # dashboard test customers' conversations
         # One npm install at a time: start() and Connect used to run two side by side
         # into the same folder. "installing" / "failed" are shown on the setup page.
         self._setup_lock = asyncio.Lock()
@@ -409,8 +411,70 @@ class ZaloPersonalChannel(BaseChannel):
         await self.disconnect(user_initiated=False)
         logger.info("Zalo channel stopped")
 
+    def is_allowed(self, sender_id: str) -> bool:
+        # Dashboard test customers try the bot even when allowFrom lists only a few people.
+        if self._customer_service_enabled and is_test_customer(sender_id):
+            return True
+        return super().is_allowed(sender_id)
+
+    # ── Dashboard test customers (customer service only) ─────────────────
+
+    TEST_LOG_MAX = 200
+
+    def _test_log(self, customer_id: str, role: str, content: str) -> None:
+        log = self._test_outbox.setdefault(customer_id, [])
+        seq = log[-1]["seq"] + 1 if log else 1
+        log.append({"seq": seq, "role": role, "content": content, "at": time.time()})
+        del log[:-self.TEST_LOG_MAX]
+
+    async def simulate_customer_message(self, customer_id: str, name: str, content: str) -> None:
+        """Feed a test customer's message through the real customer-service inbound path:
+        quotas, pause and block, customer list, session, bot and handoff, as from Zalo."""
+        if not self._customer_service_enabled or not is_test_customer(customer_id):
+            raise ValueError("Not a dashboard test customer")
+        self._test_log(customer_id, "customer", content)
+        await self._handle_bridge_event({
+            "event": "message", "threadId": customer_id, "senderId": customer_id,
+            "senderName": name, "threadType": "User", "content": content,
+        })
+
+    def test_messages(self, customer_id: str, after: int = 0) -> list[dict]:
+        return [dict(item) for item in self._test_outbox.get(customer_id, []) if item["seq"] > after]
+
+    def _deliver_to_test_customer(self, msg: OutboundMessage) -> None:
+        """A reply to a test customer stays on the dashboard; nothing goes to Zalo."""
+        if msg.metadata.get("_progress"):
+            return
+        text = msg.content or ""
+        files = [Path(str(item)).name for item in (getattr(msg, "media", None) or [])]
+        if files:
+            text = (text + "\n" if text else "") + "[" + ", ".join(files) + "]"
+        self._test_log(msg.chat_id, "bot", text)
+        if self._customer_service_enabled:
+            try:
+                self._get_customer_state().record_outbound(msg.chat_id)
+            except Exception as exc:
+                logger.error("Zalo customerService could not record a test reply: {}", exc)
+
+    def clear_test_customers(self, sessions=None) -> int:
+        """Remove every test customer: its state, its saved conversation and the dashboard log."""
+        state = self._get_customer_state() if self._customer_service_enabled else None
+        ids = set(self._test_outbox)
+        if state is not None:
+            ids |= {key for key in state.snapshot()["customers"] if is_test_customer(key)}
+        for customer_id in ids:
+            if state is not None:
+                state.forget_customer(customer_id)
+            if sessions is not None:
+                sessions.delete_session(f"zalo:{customer_id}")
+        self._test_outbox.clear()
+        return len(ids)
+
     async def send(self, msg: OutboundMessage) -> None:
         """Send a message through Zalo."""
+        if is_test_customer(msg.chat_id):
+            self._deliver_to_test_customer(msg)
+            return
         if (
             self._status != self.STATUS_CONNECTED
             or not self._process

@@ -360,6 +360,16 @@
   "cskh.phase_retry": "chờ thử lại",
   "cskh.attempts_done": "đã thử {k}/{n}",
   "cskh.waiting_until": "Đang chờ nhân viên · đến {time} (còn {m} phút)",
+  "cskh.test_title": "Thử như khách Zalo",
+  "cskh.test_note": "Mỗi lần bấm “Tạo khách thử” là một khách mới. Tin nhắn đi đúng đường của khách Zalo thật: giới hạn tin, tạm dừng, chặn, chuyển tiếp. Câu trả lời của bot chỉ hiện ở đây, không gửi qua Zalo. Chuyển tiếp vẫn báo Telegram, có gắn [THỬ]. Khách thử không tính vào số liệu Hôm nay.",
+  "cskh.test_new": "Tạo khách thử",
+  "cskh.test_clear": "Xoá khách thử",
+  "cskh.confirm_test_clear": "Xoá mọi khách thử cùng hội thoại của họ?",
+  "cskh.test_cleared": "Đã xoá {n} khách thử",
+  "cskh.test_send": "Gửi",
+  "cskh.test_input": "Nhắn như một khách",
+  "cskh.test_paused_note": "bot không trả lời cho tới khi hết giờ chờ hoặc bạn bấm Resume",
+  "cskh.test_badge": "Thử",
   "cskh.relearn": "Học lại",
   "graph.kb_quota_exempt": "Hạn mức ngày này không áp dụng cho kiến thức xuất bản từ trang CSKH trong Public Customer Mode."
 }
