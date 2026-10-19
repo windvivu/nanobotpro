@@ -59,7 +59,7 @@ h1,h2,p {margin-top:0} input[type=checkbox] {accent-color:rgb(var(--c-accent))}
 .test-msg {max-width:80%;padding:8px 12px;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere}
 .test-msg.customer {align-self:flex-end;background:rgb(var(--c-accent) / .15)}
 .test-msg.bot {align-self:flex-start;background:rgb(var(--c-primary) / .08)}
-#test-form input {flex:1;min-width:0}
+#test-form input, #kb-ask-form input {flex:1;min-width:0}
 tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
 .test-msg.staff {align-self:flex-start;background:rgb(var(--c-accent) / .12);border:1px dashed rgb(var(--c-accent) / .6)}
 /* Sections the admin opens on demand; the choice is remembered per browser */
@@ -84,6 +84,8 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
 <p id="conv-empty" class="muted">{{ tr('cskh.no_tabs') }}</p>
 <div id="conv-panels"></div></section>
 <section id="cskh-escalations" class="ui-card collapsible collapsed"><h2>{{ tr('cskh.escalations') }}</h2><div class="table-wrap"><table><thead><tr>{% for key in ['customer','time','reason','delivery'] %}<th>{{ tr('cskh.' ~ key) }}</th>{% endfor %}</tr></thead><tbody id="escalation-rows"></tbody></table></div></section>
+<section id="cskh-groups" class="ui-card collapsible collapsed"><h2>{{ tr('cskh.groups') }}</h2><p class="muted">{{ tr('cskh.groups_note') }}</p>
+<div class="table-wrap"><table><thead><tr>{% for key in ['group','last_seen','counts','group_mode','actions'] %}<th>{{ tr('cskh.' ~ key) }}</th>{% endfor %}</tr></thead><tbody id="group-rows"></tbody></table></div></section>
 <section id="cskh-test" class="ui-card collapsible collapsed"><h2>{{ tr('cskh.test_title') }}</h2><p class="muted">{{ tr('cskh.test_note') }}</p>
 <div class="row"><button id="test-new" type="button">{{ tr('cskh.test_new') }}</button><button id="test-clear" type="button">{{ tr('cskh.test_clear') }}</button></div></section>
 <section id="cskh-kb" class="ui-card collapsible collapsed"><h2>{{ tr('cskh.knowledge') }}</h2>
@@ -265,7 +267,8 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
         try {
             pollTabs();
             const filter='?q='+encodeURIComponent($('customer-query').value)+'&status='+encodeURIComponent($('customer-status').value);
-            const [ov,cs,es,kb] = await Promise.all([api('/overview'),api('/customers'+filter),api('/escalations'),api('/kb')]);
+            const [ov,cs,es,kb,gr] = await Promise.all([api('/overview'),api('/customers'+filter),api('/escalations'),api('/kb'),api('/groups')]);
+            renderGroups(gr.groups);
             paused=ov.paused_all; $('pause-all').textContent=t(paused?'resume_all':'pause_all');
             $('bridge-status').textContent=t('bridge')+': '+(window.nanobotI18n['cskh.'+ov.bridge.status] ? t(ov.bridge.status) : ov.bridge.status)+' · '+t('public_on');
             $('telegram-target').textContent='Telegram: '+ov.escalation_target;
@@ -302,6 +305,30 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
                 }
                 row(docs,[d.name+' · '+d.original_name,d.status==='published'?progress+step:t(d.status),factsCell(d),controls]);});empty(docs,4);
         } finally { polling=false; }
+    }
+    // Groups the bot was added to: allowed one by one, each with its reply mode
+    function renderGroups(groups) {
+        const body = $('group-rows'); body.replaceChildren();
+        groups.forEach(g => {
+            const label = node('div'); label.append(node('strong', g.name || g.id));
+            const sub = text => { const el = node('div', text); el.className = 'muted'; label.append(el); };
+            if (g.name) sub(g.id);
+            if (g.last_sender) sub(t('last_sender').replace('{name}', g.last_sender));
+            const mode = node('select'); mode.setAttribute('aria-label', t('group_mode'));
+            [['mention', t('mode_mention')], ['ambient', t('mode_ambient')]].forEach(([value, text]) => { const o = node('option', text); o.value = value; mode.append(o); });
+            mode.value = g.mode; mode.disabled = !g.allowed;
+            mode.onchange = () => act(mode, async () => { await api('/groups/' + encodeURIComponent(g.id), {mode: mode.value}); await refresh(); });
+            const controls = node('div'); controls.className = 'row';
+            controls.append(button(g.allowed ? 'group_revoke' : 'group_allow', async () => {
+                await api('/groups/' + encodeURIComponent(g.id), {allowed: !g.allowed}); await refresh();
+            }), button('group_rename', async () => {
+                const name = await hubModal(t('group_rename'), t('group_rename_hint'), true); if (!name) return;
+                await api('/groups/' + encodeURIComponent(g.id), {name}); await refresh();
+            }));
+            const tr = row(body, [label, stamp(g.last_seen), g.messages_in + ' / ' + g.messages_out, mode, controls]);
+            if (g.allowed) tr.classList.add('allowed');
+        });
+        empty(body, 5);
     }
     // Teach: a note becomes knowledge; the facts it may replace are offered for retirement
     let related = [];

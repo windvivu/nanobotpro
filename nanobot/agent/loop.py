@@ -75,6 +75,8 @@ UNIFIED_SESSION_KEY = "unified:default"
 # The model's way of not answering: a group message not meant for it, or a closing "ok" in a
 # private chat. The turn is saved, nothing is delivered (custom; channels drop it too).
 SILENT_MARKER = "__SILENT__"
+# Customer service in a Zalo group: staff cannot take over there (custom)
+GROUP_HANDOFF_TEXT = "Trong nhóm em chưa thể chuyển nhân viên. Anh/chị nhắn riêng cho em để được hỗ trợ tiếp ạ."
 
 
 class _LoopHook(AgentHook):
@@ -849,6 +851,13 @@ class AgentLoop:
         Returns the text the customer received, so the conversation records that instead.
         """
         if not getattr(self, "public_customer_mode", False) or msg.channel != "zalo":
+            return None
+        if (msg.metadata or {}).get("thread_type") == "Group":
+            # No handoff in a group (review 12 #4): a promise of one, or a request for a person,
+            # is answered with the way to get one
+            from nanobot.agent.handoff_claims import asks_for_human, claims_handoff
+            if asks_for_human(msg.content) or claims_handoff(final_content):
+                return GROUP_HANDOFF_TEXT
             return None
         tool = self.tools.get("escalate")
         message_tool = self.tools.get("message")
@@ -1823,6 +1832,7 @@ class AgentLoop:
                 if entry.get("role") == "assistant":
                     entry["content"] = handoff
                     break
+            final_content = handoff  # what the customer gets, when the tool did not send it itself
 
         self._save_turn(session, all_msgs, 1 + len(history))
         self._clear_runtime_checkpoint(session)

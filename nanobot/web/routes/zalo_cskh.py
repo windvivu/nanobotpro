@@ -6,6 +6,7 @@ import secrets
 import time
 from collections import deque
 from datetime import date
+from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse
@@ -16,7 +17,7 @@ from nanobot.agent.tools.escalate import build_escalation_notice
 from nanobot.brain_memory.errors import BrainMemoryError, ConflictError, DisabledError
 from nanobot.brain_memory.paths import resolve_ref
 from nanobot.bus.events import OutboundMessage
-from nanobot.channels.zalo_cskh_state import TEST_CUSTOMER_PREFIX, is_test_customer
+from nanobot.channels.zalo_cskh_state import TEST_CUSTOMER_PREFIX, is_test_customer, valid_group_id
 from nanobot.channels.zalo_personal import ZaloCustomerServiceConfig, customer_service_target_error
 from nanobot.security.public_output import public_error
 from nanobot.session.manager import SessionManager
@@ -355,6 +356,33 @@ async def test_messages(request: Request, customer_id: str, after: int = Query(0
 
 class Pause(BaseModel):
     paused: StrictBool
+
+
+class GroupSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    allowed: StrictBool | None = None
+    mode: Literal["mention", "ambient"] | None = None
+    name: str | None = Field(default=None, max_length=100)
+
+
+@router.get("/api/groups")
+async def groups(request: Request):
+    """Groups the bot was added to; the admin allows them one by one."""
+    _, state = _state(request)
+    rows = [dict(group, id=key) for key, group in state.snapshot().get("groups", {}).items()]
+    rows.sort(key=lambda row: row["last_seen"], reverse=True)
+    return {"groups": rows}
+
+
+@router.post("/api/groups/{group_id}")
+async def group_settings(request: Request, group_id: str, body: GroupSettings):
+    _, state = _state(request)
+    if not valid_group_id(group_id):
+        raise HTTPException(400, "Invalid group id")
+    if group_id not in state.snapshot().get("groups", {}):
+        raise HTTPException(404, "Group not found")
+    state.set_group(group_id, allowed=body.allowed, mode=body.mode, name=body.name)
+    return {"group": dict(state.snapshot()["groups"][group_id], id=group_id)}
 
 
 @router.post("/api/pause-all")

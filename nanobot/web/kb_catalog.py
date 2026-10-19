@@ -333,15 +333,86 @@ NOTE_PREFIX = "note-"
 NOTE_MAX_CHARS = 2000
 
 
+_LINK = re.compile(r"https?://\S+")
+LINK_MAX_BYTES = 4 * 1024 * 1024
+
+
+def _check_link_hop(url: str) -> None:
+    """Public http(s) host only, no private or whitelisted-internal address (review 12 #1)."""
+    from nanobot.security.network import validate_url_target
+    ok, err = validate_url_target(url, allow_whitelist=False)
+    if not ok:
+        raise FormatError(f"Link refused: {err}")
+
+
+def _page_text(body: str, ctype: str) -> tuple[str, str]:
+    """(title, text) of a fetched page; HTML goes through readability."""
+    from nanobot.agent.tools.web import _normalize, _strip_tags
+    if "text/html" in ctype or body[:256].lower().lstrip().startswith(("<!doctype", "<html")):
+        try:
+            from readability import Document
+        except ImportError as exc:
+            raise FormatError("readability-lxml is not installed") from exc
+        page = Document(body)
+        return (page.title() or "").strip(), _normalize(_strip_tags(page.summary()))
+    if ctype.startswith("text/") or "json" in ctype:
+        return "", body
+    raise FormatError("Link is not a text page")
+
+
+async def fetch_link_text(url: str, *, transport=None) -> tuple[str, str, str]:
+    """(title, text, final url) of a public web page the admin wants the bot to learn.
+    Every hop of a redirect chain is checked before the request goes out (the web tool's
+    way), the body is streamed and cut at LINK_MAX_BYTES, extraction runs off the loop."""
+    import httpx
+    _check_link_hop(url)
+
+    async def before_send(request: httpx.Request) -> None:
+        _check_link_hop(str(request.url))
+
+    chunks, size = [], 0
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, max_redirects=5, timeout=30.0,
+                                     event_hooks={"request": [before_send]}, transport=transport) as client:
+            async with client.stream("GET", url, headers={"User-Agent": "nanobot-kb/1.0"}) as response:
+                response.raise_for_status()
+                final_url, ctype = str(response.url), response.headers.get("content-type", "")
+                encoding = response.encoding or "utf-8"
+                async for chunk in response.aiter_bytes():
+                    size += len(chunk)
+                    if size > LINK_MAX_BYTES:
+                        raise FormatError("Page exceeds 4 MB")
+                    chunks.append(chunk)
+    except FormatError:
+        raise
+    except httpx.HTTPError as exc:
+        raise FormatError(f"Link could not be read: {type(exc).__name__}") from exc
+    body = b"".join(chunks).decode(encoding, errors="replace")
+    title, text = await asyncio.to_thread(_page_text, body, ctype)
+    return title, text, final_url
+
+
 async def add_note(workspace, config, runtime, text):
-    """Publish one admin note and return it with the facts already in the KB on the same subject."""
+    """Publish one admin note and return it with the facts already in the KB on the same subject.
+    A note that is only a link publishes that page's text, under the page's title."""
     if not isinstance(text, str) or not text.strip() or len(text) > NOTE_MAX_CHARS:
         raise FormatError(f"Note must contain 1–{NOTE_MAX_CHARS} characters")
     text = text.strip()
-    first = " ".join(text.split())
-    name = first if len(first) <= 120 else first[:117].rstrip() + "..."
-    doc = add_document(workspace, f"{NOTE_PREFIX}{secrets.token_hex(4)}.md", text.encode("utf-8"), name=name, config=config)
-    if doc["status"] == "pending" and not doc["batch_id"]:
+    if _LINK.fullmatch(text):
+        title, page_text, final_url = await fetch_link_text(text)
+        if not page_text.strip():
+            raise FormatError("Page has no readable text")
+        name = " ".join((title or final_url).split())
+        name = name if len(name) <= 120 else name[:117].rstrip() + "..."
+        data = f"Nguồn: {final_url}\n\n{page_text}".encode("utf-8")
+        doc = add_document(workspace, f"{NOTE_PREFIX}link-{secrets.token_hex(4)}.md", data, name=name, config=config)
+        text = page_text[:NOTE_MAX_CHARS]
+    else:
+        first = " ".join(text.split())
+        name = first if len(first) <= 120 else first[:117].rstrip() + "..."
+        doc = add_document(workspace, f"{NOTE_PREFIX}{secrets.token_hex(4)}.md", text.encode("utf-8"), name=name, config=config)
+    if doc["status"] == "pending":
+        # New, or an earlier publish that failed before its jobs were queued (review 12 #8)
         doc = await publish_document(workspace, config, runtime, doc["document_id"])
     elif doc["status"] == "revoked":
         raise ConflictError("This note was revoked before; delete it in the table, then teach it again")
@@ -372,7 +443,17 @@ def related_facts(workspace, config, text, *, exclude_file=None, limit=8):
 
 
 def retire_kb_facts(workspace, config, fact_ids):
-    """Retire chosen facts and forget the cached counts of the documents they came from."""
+    """Retire chosen facts of published documents and forget those documents' cached counts.
+    A fact from anywhere else (the internal bot's memory) is outside this page (review 12 #7)."""
+    store = BrainStore(Path(workspace), config)
+    allowed = published_paths(workspace)
+    for fact_id in dict.fromkeys(fact_ids):
+        try:
+            fact = store.read_fact(fact_id)
+        except (BrainMemoryError, ValueError, OSError):
+            continue  # unknown or already gone: retire_facts reports it
+        if (store.workspace / fact.source.source_ref).resolve() not in allowed:
+            raise FormatError("Fact is not from a published document")
     result = retire_facts(Path(workspace), config, list(fact_ids))
     with _catalog(workspace) as (_root_dir, catalog):
         for doc in catalog["documents"].values():

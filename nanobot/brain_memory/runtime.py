@@ -5,7 +5,7 @@ import json
 import unicodedata
 
 from loguru import logger
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from nanobot.brain_memory.config import is_public_kb_source
 from nanobot.brain_memory.errors import BrainMemoryError, DisabledError, FormatError
@@ -80,7 +80,7 @@ def _names_offer(topics: tuple[str, ...], entities: tuple[str, ...]) -> str:
 
 
 class _Claim(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")  # a stray key must not cost the fact
     title: str = Field(min_length=1, max_length=200)
     body: str = Field(min_length=1, max_length=8000)
     topic: str = Field(default="general", min_length=1, max_length=200)
@@ -99,9 +99,48 @@ class _Claim(BaseModel):
         return list(names.values())[:_MAX_ENTITIES]
 
 
+def _parse_claims(content: str) -> list[_Claim]:
+    """The facts in the model's answer. Code fences are stripped, a malformed fact is dropped
+    (and counted in the log) rather than failing the job, the list is cut at 32 (custom)."""
+    text = content.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1] if "\n" in text else ""
+        text = text.rsplit("```", 1)[0]
+    try:
+        payload = json.loads(text)
+    except ValueError as exc:
+        raise FormatError("Learning response is not JSON") from exc
+    raw = payload.get("facts") if isinstance(payload, dict) else None
+    if not isinstance(raw, list):
+        raise FormatError("Learning response has no facts list")
+    claims, dropped = [], 0
+    for item in raw[:32]:
+        if isinstance(item, dict):
+            item = {key: (" ".join(value.split()) if isinstance(value, str) else value)
+                    for key, value in item.items()}  # FactDraft strips too; blank is not a fact
+            if not item.get("topic"):
+                item.pop("topic", None)  # a blank topic is the default one, not a lost fact
+        try:
+            claims.append(_Claim.model_validate(item))
+        except ValidationError:
+            dropped += 1
+    if dropped:
+        logger.warning("Brain learning: {} of {} facts dropped as malformed", dropped, len(raw))
+    if raw and not claims:
+        raise FormatError("Learning response had facts but none was usable")
+    return claims
+
+
 class _Claims(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    facts: list[_Claim] = Field(max_length=16)
+    # The manifest takes 32 facts and a published document is asked for up to 32; a longer list
+    # keeps its first 32 rather than failing the whole job (custom, customer service KB)
+    facts: list[_Claim] = Field(max_length=32)
+
+    @field_validator("facts", mode="before")
+    @classmethod
+    def first_32(cls, value: object) -> object:
+        return value[:32] if isinstance(value, list) else value
 
 
 class BrainRuntime:
@@ -168,7 +207,7 @@ class BrainRuntime:
         content = response.content or ""
         if len(content) > 64000:
             raise FormatError("Learning response too large")
-        claims = _Claims.model_validate_json(content)
+        claims = _Claims(facts=_parse_claims(content))
         # A name the facts in use already have is spelled their way, so the new fact joins them
         topic_as = {_key(name): name for name in topics}
         entity_as = {_key(name): name for name in entities}

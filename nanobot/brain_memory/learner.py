@@ -515,6 +515,6 @@ class LearningWorker:
                 started_at=started_at, last_finished_at=self._now(),
                 last_duration_ms=last_duration_ms, total_duration_ms=total_duration_ms,
             ))
-            logger.warning("Brain Memory learning job failed: {}", error_type)
+            logger.warning("Brain Memory learning job failed: {}: {}", error_type, str(exc)[:300])
             return LearningResult(job_id, "failed", attempts, error_type=error_type,
                                   duration_ms=last_duration_ms)

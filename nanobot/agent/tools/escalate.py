@@ -87,6 +87,9 @@ class EscalateTool(Tool):
         channel, chat_id, sender_id, sender_name, session_key = self._context
         if not self._enabled or channel != "zalo" or not chat_id or not sender_id or not self._target:
             return "escalation is not available here"
+        if chat_id != sender_id:
+            # A group: the pause and the alert belong to one customer in a private chat (custom)
+            return "escalation is not available in a group; ask the customer to message you privately"
         if reason not in REASONS or not isinstance(summary, str) or len(summary) > 500:
             return "invalid escalation reason or summary"
         try:

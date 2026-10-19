@@ -21,7 +21,7 @@ from pydantic import Field
 from nanobot.bus.events import OutboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.channels.base import BaseChannel
-from nanobot.channels.zalo_cskh_state import is_test_customer
+from nanobot.channels.zalo_cskh_state import is_test_customer, valid_group_id
 from nanobot.config.schema import Base
 
 # Source files bundled with nanobot
@@ -72,6 +72,12 @@ GROUP_FILTER_MAX_SHORT_WORDS = 2    # up to this many words without a question i
 GROUP_FILTER_REPEAT = {False: (600.0, 1), True: (300.0, 2)}  # mentioned -> (window s, earlier copies allowed)
 GROUP_FILTER_FLOOD = {False: (30.0, 6), True: (60.0, 10)}    # mentioned -> (window s, earlier messages allowed)
 GROUP_FILTER_MEMORY = 80            # recent messages remembered per group
+# Customer service in an allowed group (custom): the group's daily cap is a multiple of a
+# customer's, and the model is told a handoff needs a private chat.
+GROUP_DAY_FACTOR = 5
+CSKH_GROUP_NOTE = ("[GROUP — this is a Zalo group, not a private chat. Handoff to staff is not "
+                   "available here: if someone needs a person, ask them to message you privately. "
+                   "Keep answers short; do not address other members' private matters.]")
 
 # Lists are in "plain" form: lowercase, accents and đ removed (see _plain), so "cảm ơn" and "cam on" match
 _ASK_WORDS = (
@@ -542,6 +548,22 @@ class ZaloPersonalChannel(BaseChannel):
         thread_type = msg.metadata.get("thread_type") or self._known_thread_types.get(chat_id, "User")
         if not msg.metadata.get("thread_type") and thread_type != "User":
             logger.debug("[Zalo] thread_type resolved from registry for {}: {}", chat_id, thread_type)
+        def group_blocked() -> bool:
+            # Revoked while a reply was on its way (model, queue, between text and media): the
+            # rest of the reply is dropped (review 12 #3)
+            if thread_type != "Group" or not self._customer_service_enabled:
+                return False
+            try:
+                allowed, _mode = self._get_customer_state().group_access(chat_id)
+            except Exception as exc:
+                logger.error("Zalo customerService could not read group access: {}", exc)
+                allowed = False
+            if not allowed:
+                logger.info("[Zalo] customerService: reply to group {} dropped, group not allowed", chat_id)
+            return not allowed
+
+        if group_blocked():
+            return
         if thread_type == "Group":
             # The bot is talking in this group: the small-talk rules stand down for a while (custom)
             self._group_bot_spoke[chat_id] = now
@@ -569,6 +591,8 @@ class ZaloPersonalChannel(BaseChannel):
         # ── Send media files if any ──
         if msg.media:
             for media_path in msg.media:
+                if group_blocked():
+                    break
                 media_type = self._detect_media_type(media_path)
                 try:
                     await self._send_command({
@@ -588,6 +612,11 @@ class ZaloPersonalChannel(BaseChannel):
                     logger.warning("[Zalo] Failed to queue media {}: {}", media_path, e)
                     raise
 
+        if delivered and self._customer_service_enabled and thread_type == "Group":
+            try:
+                self._get_customer_state().record_group_outbound(chat_id)
+            except Exception as exc:
+                logger.error("Zalo customerService could not record a group reply: {}", exc)
         if delivered and self._customer_service_enabled and thread_type == "User":
             try:
                 self._get_customer_state().record_outbound(chat_id)
@@ -1298,10 +1327,34 @@ class ZaloPersonalChannel(BaseChannel):
             if not content and not media_url:
                 return
 
-            if self._customer_service_enabled:
-                if thread_type == "Group":
+            cskh_group_mode = ""  # customer service in an allowed group: that group's reply mode
+            if self._customer_service_enabled and thread_type == "Group":
+                # A group is served only once the admin allows it on the dashboard; until then
+                # it is only recorded so it can be allowed. Members still count as customers
+                # (own quotas, block), the group has a daily cap, nothing is held for staff.
+                state = self._get_customer_state()
+                if not valid_group_id(thread_id):
+                    logger.warning("[Zalo] customerService: group id rejected ({} chars)", len(str(thread_id)))
+                    return
+                state.record_group_seen(thread_id, sender_name)
+                allowed, cskh_group_mode = state.group_access(thread_id)
+                if not allowed:
                     logger.debug("Zalo customerService: group message ignored")
                     return
+                if not self.is_allowed(sender_id) or sender_id == thread_id:
+                    return
+                accepted, _notice = state.admit_inbound(
+                    sender_id, sender_name,
+                    per_minute=self.customer_service.inbound_per_minute,
+                    per_day=self.customer_service.inbound_per_day,
+                )
+                if not accepted:
+                    return
+                if not state.admit_group_inbound(thread_id, sender_name,
+                                                 per_day=self.customer_service.inbound_per_day * GROUP_DAY_FACTOR):
+                    logger.info("[Zalo] customerService: group {} over its daily cap", thread_id)
+                    return
+            elif self._customer_service_enabled:
                 if not self.is_allowed(sender_id):
                     return
                 state = self._get_customer_state()
@@ -1337,13 +1390,14 @@ class ZaloPersonalChannel(BaseChannel):
                     content, self._user_id, self._user_name,
                     mentioned_ids, quoted_sender_id,
                 )
-                if not mentioned and self.config.group_reply_mode == "mention":
+                reply_mode = cskh_group_mode or self.config.group_reply_mode
+                if not mentioned and reply_mode == "mention":
                     logger.debug(
                         "[Zalo] Group message from {} ignored by group_reply_mode=mention",
                         sender_name or sender_id,
                     )
                     return
-                if not mentioned and self.config.group_reply_mode == "open":
+                if not mentioned and reply_mode == "open":
                     # Explicit branch for readability: open mode intentionally treats
                     # unmentioned group messages like normal messages.
                     logger.debug(
@@ -1432,6 +1486,10 @@ class ZaloPersonalChannel(BaseChannel):
                     f"{quote}{sender_name or sender_id}: {content if content else '[sent a media]'}"
                 )
                 deliver_content = ambient_note
+
+            if cskh_group_mode:
+                # The bot cannot hand a group member to staff: that needs a private chat
+                deliver_content = CSKH_GROUP_NOTE + "\n\n" + deliver_content
 
             # Record thread_type so outbound can resolve it for cross-chat sends
             self._known_thread_types[thread_id] = thread_type

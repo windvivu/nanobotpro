@@ -6,6 +6,8 @@ import asyncio
 import os
 import sys
 
+from loguru import logger
+
 from nanobot import __version__
 from nanobot.bus.events import OutboundMessage
 from nanobot.command.router import CommandContext, CommandRouter
@@ -27,17 +29,30 @@ _ADMIN_CHANNELS = frozenset({"cli", "webchat", "fleet", "system"})
 _TEACH_COMMANDS = ("/teach", "/replace")
 
 
+def _teacher_of(zalo) -> str:
+    from nanobot.config.public_mode import _field
+    service = _field(zalo, "customer_service", "customerService", None)
+    if not service or not _field(service, "enabled", "enabled", False):
+        return ""
+    channel, _, target = str(_field(service, "escalation_target", "escalationTarget", "")).strip().partition(":")
+    return target.strip() if channel == "telegram" else ""
+
+
 def teacher_chat(loop) -> str:
-    """The Telegram chat_id allowed to teach, "" when customer service is off."""
+    """The Telegram chat_id allowed to teach, "" when customer service is off.
+
+    The saved config decides, as the dashboard changes it while the loop keeps its startup copy
+    (review 12 #5): switching the service off or clearing the target revokes the right at once,
+    and a config that cannot be read grants nothing. The loop's copy serves only a process that
+    runs without a config file.
+    """
     try:
-        from nanobot.config.public_mode import _field
-        zalo = getattr(getattr(loop, "channels_config", None), "zalo", None)
-        service = _field(zalo, "customer_service", "customerService", None)
-        if not service or not _field(service, "enabled", "enabled", False):
-            return ""
-        channel, _, target = str(_field(service, "escalation_target", "escalationTarget", "")).strip().partition(":")
-        return target.strip() if channel == "telegram" else ""
-    except Exception:
+        from nanobot.config.loader import get_config_path, load_config
+        if not get_config_path().exists():
+            return _teacher_of(getattr(getattr(loop, "channels_config", None), "zalo", None))
+        return _teacher_of(load_config().channels.zalo)
+    except Exception as exc:
+        logger.warning("Teaching refused: the saved config could not be read ({})", type(exc).__name__)
         return ""
 
 

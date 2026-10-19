@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import re
 import tempfile
 import threading
 import time
@@ -20,6 +21,14 @@ from pydantic import BaseModel, ConfigDict, Field
 # Customers simulated from the dashboard to try the bot. Real Zalo ids are numeric, so a
 # message from Zalo can never carry this prefix.
 TEST_CUSTOMER_PREFIX = "test-"
+
+
+_GROUP_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def valid_group_id(group_id) -> bool:
+    """Zalo group ids are digit strings; anything else is refused at the door (review 12 #9)."""
+    return isinstance(group_id, str) and bool(_GROUP_ID.match(group_id))
 
 
 def is_test_customer(customer_id) -> bool:
@@ -44,6 +53,21 @@ class _Customer(BaseModel):
     day_notice_sent: bool = False
 
 
+class _Group(BaseModel):
+    """A Zalo group the bot was added to. Ignored until the admin allows it (custom)."""
+    model_config = ConfigDict(extra="allow")
+    name: str = ""
+    last_sender: str = ""
+    first_seen: float
+    last_seen: float
+    messages_in: int = Field(default=0, ge=0)
+    messages_out: int = Field(default=0, ge=0)
+    allowed: bool = False
+    mode: Literal["mention", "ambient"] = "mention"
+    inbound_day: str = ""
+    inbound_today: int = Field(default=0, ge=0)
+
+
 class _Daily(BaseModel):
     new_customers: int = Field(default=0, ge=0)
     inbound: int = Field(default=0, ge=0, alias="in")
@@ -56,6 +80,7 @@ class _Daily(BaseModel):
 
 class _State(BaseModel):
     customers: dict[str, _Customer] = Field(default_factory=dict)
+    groups: dict[str, _Group] = Field(default_factory=dict)
     daily: dict[str, _Daily] = Field(default_factory=dict)
     paused_all: bool = False
 
@@ -119,6 +144,8 @@ class CustomerServiceState:
                                if date.fromisoformat(key) >= oldest_day}
         self._data["customers"] = {key: value for key, value in self._data["customers"].items()
                                    if value["last_seen"] >= now - 180 * 86400}
+        self._data["groups"] = {key: value for key, value in self._data.get("groups", {}).items()
+                                if value["last_seen"] >= now - 180 * 86400 or value["allowed"]}
         tick = self._monotonic()
         self._minute_timestamps = {key: value for key, value in self._minute_timestamps.items()
                                    if value and value[-1] > tick - 60}
@@ -206,6 +233,65 @@ class CustomerServiceState:
             return False, notice
 
         return self._update(change)
+
+    # ── Groups (custom): seen while ignored, served once allowed ──
+    def _group(self, group_id: str, now: float) -> dict:
+        if not valid_group_id(group_id):
+            raise ValueError("Invalid group id")
+        group = self._data.setdefault("groups", {}).get(group_id)
+        if group is None:
+            group = _Group(first_seen=now, last_seen=now).model_dump()
+            self._data["groups"][group_id] = group
+        group["last_seen"] = now
+        return group
+
+    def record_group_seen(self, group_id: str, sender_name: str = "") -> None:
+        """A message arrived in a group: the admin can see the group and decide to allow it."""
+        def change(now):
+            group = self._group(group_id, now)
+            if sender_name:
+                group["last_sender"] = sender_name
+        self._update(change)
+
+    def group_access(self, group_id: str) -> tuple[bool, str]:
+        """(allowed, mode) for a group; a group never seen is not allowed."""
+        group = self._data.get("groups", {}).get(group_id)
+        if group is None:
+            return False, "mention"
+        return bool(group["allowed"]), group["mode"]
+
+    def set_group(self, group_id: str, *, allowed: bool | None = None, mode: str | None = None,
+                  name: str | None = None) -> None:
+        if mode is not None and mode not in {"mention", "ambient"}:
+            raise ValueError("Invalid group mode")
+        def change(now):
+            group = self._group(group_id, now)
+            if allowed is not None:
+                group["allowed"] = bool(allowed)
+            if mode is not None:
+                group["mode"] = mode
+            if name is not None:
+                group["name"] = name.strip()[:100]
+        self._update(change)
+
+    def admit_group_inbound(self, group_id: str, sender_name: str, *, per_day: int) -> bool:
+        """Count one group message; False once the group's daily cap is reached."""
+        def change(now):
+            group = self._group(group_id, now)
+            if sender_name:
+                group["last_sender"] = sender_name
+            group["messages_in"] += 1
+            today = self._day(now)
+            if group["inbound_day"] != today:
+                group.update(inbound_day=today, inbound_today=0)
+            group["inbound_today"] += 1
+            return group["inbound_today"] <= per_day
+        return self._update(change)
+
+    def record_group_outbound(self, group_id: str) -> None:
+        def change(now):
+            self._group(group_id, now)["messages_out"] += 1
+        self._update(change)
 
     def customer_status(self, sender_id: str) -> str:
         with self._lock:
