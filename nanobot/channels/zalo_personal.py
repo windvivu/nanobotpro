@@ -1311,21 +1311,22 @@ class ZaloPersonalChannel(BaseChannel):
                     per_day=self.customer_service.inbound_per_day,
                 )
                 if not allowed:
-                    if notice:
+                    if notice == "paused":
+                        if content:
+                            # Waiting for staff: the bot stays quiet, but what the customer writes
+                            # must reach the conversation the staff member reads on the dashboard.
+                            await self._handle_message(
+                                sender_id=sender_id, chat_id=thread_id, content=content,
+                                metadata={"thread_type": "User", "sender_name": sender_name, "_held": True},
+                                session_key=f"zalo:{thread_id}",
+                            )
+                    elif notice:
                         reminder = OutboundMessage(
                             channel="zalo", chat_id=thread_id,
                             content=CSKH_MINUTE_NOTICE if notice == "minute" else CSKH_DAY_NOTICE,
                             metadata={"thread_type": "User"},
                         )
                         self._schedule_customer_task(lambda: self.send(reminder))
-                    elif content and state.customer_status(sender_id) == "paused":
-                        # Waiting for staff: the bot stays quiet, but what the customer writes
-                        # must reach the conversation the staff member reads on the dashboard.
-                        await self._handle_message(
-                            sender_id=sender_id, chat_id=thread_id, content=content,
-                            metadata={"thread_type": "User", "sender_name": sender_name, "_held": True},
-                            session_key=f"zalo:{thread_id}",
-                        )
                     return
 
             # ── Group chat filter (Option C) ───────────────────────────

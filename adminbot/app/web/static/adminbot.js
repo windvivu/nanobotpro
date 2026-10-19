@@ -369,7 +369,16 @@
         const filtered = term
             ? lines.filter((line) => line.toLowerCase().includes(term))
             : lines;
-        logBlock.textContent = filtered.length ? filtered.join("\n") : "(no matching log lines)";
+        const text = filtered.length ? filtered.join("\n") : "(no matching log lines)";
+        if (logBlock.textContent !== text) logBlock.textContent = text;
+    };
+
+    // A refresh replaces the text and drops the selection the operator is copying;
+    // the next tick redraws once the selection is gone.
+    const selectingLog = () => {
+        const selection = window.getSelection();
+        return Boolean(selection && !selection.isCollapsed && selection.rangeCount
+            && logBlock.contains(selection.getRangeAt(0).commonAncestorContainer));
     };
 
     const loadLines = async () => {
@@ -391,7 +400,7 @@
             timer = null;
         }
         if (autoRefreshInput.checked) {
-            timer = setInterval(loadLines, 3000);
+            timer = setInterval(() => { if (!selectingLog()) loadLines(); }, 3000);
         }
     };
 

@@ -31,11 +31,29 @@ def _tokens(text: str) -> list[str]:
     return [token.casefold() for token in _TOKEN_RE.findall(text) if len(token) <= 80]
 
 
+# Function words say nothing about what a question is about, yet each one matched is a point
+# for every fact that happens to contain it: "bạn có thông tin về giá của phần mềm không?" used
+# to rank facts by "có", "của" and "không" ahead of the one holding the prices (custom).
+_STOPWORDS = frozenset("""
+    bạn mình tôi em anh chị ạ ơi nhé nha dạ vâng ok xin ơn giúp hỏi cho có không chưa về của và với
+    các những là thì mà được này đó kia nào sao ra bao nhiêu gì đâu khi nếu để từ đến tới trong
+    ngoài trên dưới như cũng đã sẽ đang rồi vẫn lại nữa hay hoặc hả hử vậy thế ư à ừ cả làm
+    a an the of to is are do does did you i we it my your what how can could would please
+""".split())
+# Vietnamese is written in short syllables: "tin"* would also match "tính" and "tiền", so only
+# a token this long is matched by prefix (partial words, plural forms).
+_PREFIX_MIN = 4
+
+
 def _fts_query(query: str) -> str:
     # Treat user input as terms, never as raw FTS5 syntax. Prefix matching keeps
     # Vietnamese and partial words useful while bounded token count limits work.
-    terms = list(dict.fromkeys(_tokens(query)))[:32]
-    return " OR ".join(f'"{term.replace(chr(34), "")}"*' for term in terms)
+    terms = list(dict.fromkeys(_tokens(query)))
+    terms = [term for term in terms if term not in _STOPWORDS] or terms
+    return " OR ".join(
+        f'"{term.replace(chr(34), "")}"' + ("*" if len(term) >= _PREFIX_MIN else "")
+        for term in terms[:32]
+    )
 
 
 def _chunk_lines(body: str) -> Iterable[tuple[int, int, str]]:

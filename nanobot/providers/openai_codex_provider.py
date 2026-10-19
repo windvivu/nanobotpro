@@ -313,7 +313,11 @@ async def _consume_sse(
             finish_reason = _map_finish_reason(resp.get("status"))
             usage = _extract_usage(resp.get("usage"))
         elif event_type in {"error", "response.failed"}:
-            raise RuntimeError("Codex response failed")
+            # The event carries the backend's reason (usage limit, refused input, server error);
+            # without it the log says only "failed" and the operator cannot tell which (custom)
+            error = event.get("error") or (event.get("response") or {}).get("error") or {}
+            detail = ", ".join(str(error[k]) for k in ("code", "message") if isinstance(error, dict) and error.get(k))
+            raise RuntimeError("Codex response failed" + (f": {detail}" if detail else ""))
 
     return content, tool_calls, finish_reason, usage
 

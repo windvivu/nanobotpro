@@ -248,16 +248,21 @@ async def staff_reply(request: Request, customer_id: str, body: StaffReply):
         raise HTTPException(400, "Reply is empty")
     if not is_test_customer(customer_id) and channel.get_status().get("status") != "connected":
         raise HTTPException(409, "Zalo is not connected; the reply was not sent")
+    # Hold first, so a message the customer sends while the reply is on its way is kept for
+    # staff rather than answered by the bot; undo the hold if Zalo did not take the reply.
+    before = state.snapshot()["customers"].get(customer_id, {})
+    pause = service_config(request.app.state.config).pause_after_escalation_minutes * 60
+    state.hold_for_staff(customer_id, time.time() + pause)
     try:
         # _confirm: no ack from Zalo in time, or not connected, raises; nothing is recorded then.
         await channel.send(OutboundMessage(channel="zalo", chat_id=customer_id, content=text,
                                            metadata={"thread_type": "User", "_staff_reply": True,
                                                      "_confirm": True}))
     except Exception as exc:
+        if before.get("status", "active") != "blocked":
+            state.set_status(customer_id, before.get("status", "active"), paused_until=before.get("paused_until"))
         public_error(exc)
         raise HTTPException(502, "Zalo did not confirm delivery; the reply was not recorded") from exc
-    pause = service_config(request.app.state.config).pause_after_escalation_minutes * 60
-    state.hold_for_staff(customer_id, time.time() + pause)
     sessions = getattr(request.app.state, "session_manager", None)
     if sessions is not None:
         session = sessions.get_or_create(f"zalo:{customer_id}")
@@ -402,6 +407,17 @@ async def upload(request: Request, file: UploadFile = File(...), name: str | Non
         raise _kb_error(exc) from exc
     finally:
         await file.close()
+
+
+@router.get("/api/kb/{document_id}/facts")
+async def kb_facts(request: Request, document_id: str):
+    _state(request)
+    try:
+        return {"facts": await run_in_threadpool(
+            kb_catalog.document_facts, request.app.state.config.workspace_path, _brain_config(request), document_id,
+        )}
+    except (BrainMemoryError, KeyError, ValueError, OSError) as exc:
+        raise _kb_error(exc) from exc
 
 
 @router.post("/api/kb/{document_id}/{action}")

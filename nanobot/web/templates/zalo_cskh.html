@@ -177,11 +177,15 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
         if (tab.busy) return; tab.busy = true;
         try {
             let data;
-            try { data = await api('/customers/' + enc(tab.id) + '/transcript'); }
+            try { data = await api('/customers/' + enc(tab.id) + '/transcript?limit=200'); }
             catch (e) { data = {messages: []}; }  // a test customer who has not written yet
-            if (force || data.messages.length !== tab.count) {
-                if (tab.count >= 0 && data.messages.length > tab.count && tab.id !== activeTab) tab.el.classList.add('unread');
-                tab.count = data.messages.length; renderLines(tab, data.messages);
+            // The transcript is the last 200 lines: once full its length no longer changes, so
+            // the last line's time and text tell a new message apart.
+            const last = data.messages[data.messages.length - 1];
+            const mark = data.messages.length + '|' + (last ? last.timestamp + '|' + String(last.content).length : '');
+            if (force || mark !== tab.mark) {
+                if (tab.mark !== null && tab.id !== activeTab) tab.el.classList.add('unread');
+                tab.mark = mark; renderLines(tab, data.messages);
             }
             const rows = (await api('/customers?q=' + enc(tab.id))).customers;
             const row = rows.find(r => r.id === tab.id);
@@ -217,9 +221,9 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
         const actions = node('div'); actions.className = 'conv-actions';
         const send = async asStaff => {
             const content = box.value.trim(); if (!content) return;
-            box.value = '';
             if (asStaff) { await api('/customers/' + enc(id) + '/reply', {content}); note(t('staff_sent')); }
             else await api('/test-customers/' + enc(id) + '/messages', {name: name, content});
+            box.value = '';  // kept when the send failed, so it can be sent again
             await pollTab(tab, true); await refresh();
         };
         const staffBtn = button(test ? 'staff_reply_short' : 'staff_send', () => send(true));
@@ -232,7 +236,7 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
             else if (!event.shiftKey && !event.isComposing) { event.preventDefault(); form.requestSubmit(); }
         });
         form.append(box, actions); panel.append(head, log, state, form); $('conv-panels').append(panel);
-        const tab = {id, name, test: !!test, count: -1, busy: false, el, panel, log, state, box};
+        const tab = {id, name, test: !!test, mark: null, busy: false, el, panel, log, state, box};
         tabs.set(id, tab); $('conv-empty').hidden = true;
         activate(id);
         if (!tabTimer) tabTimer = setInterval(() => { const tab = tabs.get(activeTab); if (tab && !document.hidden) pollTab(tab).catch(() => {}); }, 2000);
@@ -290,8 +294,22 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
                     step=(learning.failed ? '' : ' · '+phase)+' · '+t('attempts_done').replace('{k}',detail.attempts).replace('{n}',detail.max_attempts)
                         +(detail.last_error ? ' · '+detail.last_error : '');
                 }
-                row(docs,[d.name+' · '+d.original_name,d.status==='published'?progress+step:t(d.status),d.fact_count,controls]);});empty(docs,4);
+                row(docs,[d.name+' · '+d.original_name,d.status==='published'?progress+step:t(d.status),factsCell(d),controls]);});empty(docs,4);
         } finally { polling=false; }
+    }
+    // The Facts count opens what the bot learned from that document
+    function factsCell(d) {
+        if (!d.fact_count) return String(d.fact_count);
+        const el = node('button', String(d.fact_count)); el.type = 'button'; el.title = t('facts_view');
+        el.onclick = () => act(el, () => showFacts(d)); return el;
+    }
+    async function showFacts(d) {
+        const data = await api('/kb/' + encodeURIComponent(d.document_id) + '/facts');
+        $('modal-title').textContent = t('facts_of').replace('{name}', d.name).replace('{n}', data.facts.length);
+        const body = $('modal-body'); body.replaceChildren();
+        data.facts.forEach((f, i) => body.append(node('strong', (i + 1) + '. ' + f.title), node('p', f.body)));
+        if (!data.facts.length) body.append(node('p', t('empty')));
+        $('modal-confirm').hidden = true; modal.showModal();
     }
     // Test customers: a new simulated Zalo customer opens as a conversation tab
     $('test-new').onclick = () => act($('test-new'), async () => {
@@ -336,7 +354,7 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
     async function loadSettings(){const data=await api('/settings');Object.entries(data).forEach(([key,value])=>{const el=$('settings-form').elements[key];if(el){if(el.type==='checkbox')el.checked=value;else el.value=value;}});}
     $('customer-status').onchange=()=>refresh().catch(e=>note(e.message));
     let debounce; $('customer-query').oninput=()=>{clearTimeout(debounce);debounce=setTimeout(()=>refresh().catch(e=>note(e.message)),250);};
-    Promise.all([refresh(),loadSettings()]).then(()=>{const customer=new URLSearchParams(location.search).get('customer');if(customer)openTab(customer,'',false);}).catch(e=>note(t('error')+': '+e.message));
+    Promise.all([refresh(),loadSettings()]).then(()=>{const customer=new URLSearchParams(location.search).get('customer');if(customer)openTab(customer,'',customer.startsWith('test-'));}).catch(e=>note(t('error')+': '+e.message));
     const timer=setInterval(()=>{if(!document.hidden&&!busy)refresh().catch(e=>note(t('error')+': '+e.message));},5000);
     window.addEventListener('pagehide',()=>clearInterval(timer));
 })();

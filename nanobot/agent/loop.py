@@ -1344,7 +1344,10 @@ class AgentLoop:
                 # Same session: batch together, reset timer. A sub-agent's result ("system") has the
                 # session key of the chat it came from, but never merges into a person's message (custom)
                 same_kind = (next_msg.channel == "system") == (msg.channel == "system")
-                if next_msg.session_key == msg.session_key and same_kind:
+                # A message kept for staff (_held, customer service) never merges with one the
+                # bot answers: the batch takes the first message's metadata (custom)
+                same_hold = bool((next_msg.metadata or {}).get("_held")) == bool((msg.metadata or {}).get("_held"))
+                if next_msg.session_key == msg.session_key and same_kind and same_hold:
                     batched.append(next_msg)
                     deadline = time.monotonic() + debounce_s
                 else:

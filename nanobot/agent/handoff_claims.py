@@ -69,12 +69,23 @@ _NOT_A_CLAIM = re.compile(
 _SENTENCES = re.compile(r"[^.!?\n]+[.!?]*")
 
 
-_ASKS_FOR_HUMAN = re.compile(
-    r"(?:gặp|nói\s+chuyện\s+với|cho\s+(?:tôi|em|mình)\s+gặp|kết\s+nối\s+(?:với|tới)|chuyển\s+(?:cho|tới|đến|sang))"
-    r"\s+(?:nhân\s+viên|người\s+thật|người\s+hỗ\s+trợ|tư\s+vấn\s+viên|chuyên\s+viên|bộ\s+phận|quản\s+lý|sếp|admin)"
-    r"|\bescalate\b|\b(?:talk|speak)\s+to\s+(?:a\s+)?(?:human|person|agent|staff)\b|\breal\s+person\b"
+# The customer wants to deal with a person: "cho tôi gặp nhân viên", "tôi muốn nói chuyện với người thật".
+# "chuyển cho nhân viên kho" (assigning something to staff in the software) is a help question, not a request.
+_PERSON = (
+    r"(?:nhân\s+viên(?:\s+(?:hỗ\s+trợ|tư\s+vấn|chăm\s+sóc|thật))?|người\s+thật|người\s+hỗ\s+trợ|tư\s+vấn\s+viên"
+    r"|chuyên\s+viên|quản\s+lý|sếp|admin)"
 )
-_NOT_A_REQUEST = re.compile(r"\bkhông\s+(?:cần|muốn)\b|\bđừng\b|\bchưa\s+cần\b|\bdon't\b|\bno\s+need\b")
+_ASKS_FOR_HUMAN = re.compile(
+    r"(?:^|\b)(?:(?:tôi|em|mình|anh|chị)\s+)?(?:muốn|cần|xin|làm\s+ơn|hãy|cho\s+(?:tôi|em|mình))\s+(?:được\s+)?"
+    r"(?:gặp|nói\s+chuyện\s+với|trao\s+đổi\s+với|kết\s+nối\s+(?:với|tới))\s+(?:trực\s+tiếp\s+)?" + _PERSON
+    + r"|^(?:gặp|nói\s+chuyện\s+với)\s+" + _PERSON + r"\b"
+    + r"|\bescalate\b|\b(?:talk|speak)\s+to\s+(?:a\s+)?(?:human|real\s+person|person|agent|staff)\b"
+)
+_NOT_A_REQUEST = re.compile(
+    r"\bkhông\s+(?:cần|muốn)\b|\bđừng\b|\bchưa\s+cần\b|\bdon't\b|\bno\s+need\b"
+    r"|\bphần\s+mềm\b|\bứng\s+dụng\b|\bphiếu\b|\bđơn\s+hàng\b|\bkho\b|\bquyền\b|\btài\s+khoản\b|\bđăng\s+nhập\b"
+    r"|\bchi\s+nhánh\b|\btrang\b|\bmenu\b|\bnút\b|\bbấm\b|\bthiết\s+lập\b|\bcách\b|\blàm\s+sao\b|\bthế\s+nào\b|\bhow\s+(?:do|to)\b"
+)
 
 
 def asks_for_human(text: str | None) -> bool:

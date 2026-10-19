@@ -38,7 +38,8 @@ class EscalateTool(Tool):
     description = (
         "Hand the current Zalo customer over to a human staff member. This is the ONLY way to reach "
         "staff: it alerts them and sends the customer the handoff message itself. Call it when the "
-        "customer asks about prices, plans or packages, renewal, payment or refunds (reason payment); "
+        "customer asks about payment, invoices, renewal or refunds, or about prices or plans that the "
+        "provided knowledge does not answer (reason payment); "
         "complains (complaint); asks for a person (human_requested); asks again about something the "
         "provided knowledge does not cover (out_of_scope); or needs someone with authority (other). "
         "Never tell the customer that their request was forwarded or that staff will contact them "

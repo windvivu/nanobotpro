@@ -367,6 +367,24 @@ def _learning_detail(jobs, max_attempts):
     }
 
 
+def document_facts(workspace, config, document_id):
+    """What the bot learned from one document, in learning order: the admin checks the facts
+    behind a count, and sees what a customer can be told."""
+    store = BrainStore(Path(workspace), config)
+    with _catalog(workspace) as (_root_dir, catalog):
+        doc = dict(catalog["documents"][document_id])
+    facts = []
+    for job in _batch_jobs(store, doc):
+        for fact_id in job.get("created_fact_ids", []):
+            try:
+                fact = store.read_fact(fact_id)
+            except (BrainMemoryError, ValueError):
+                continue  # retired with its document, or never written
+            if fact.status == "active" and fact.source.source_ref == doc["file"]:
+                facts.append({"id": fact.id, "title": fact.title, "body": fact.body, "topic": fact.topic})
+    return facts
+
+
 def refresh_fact_counts(workspace, config, worker=None, *, tolerate_errors=False):
     """Read each document's batch, including partial completion and failure.
 

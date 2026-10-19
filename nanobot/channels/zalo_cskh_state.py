@@ -160,7 +160,9 @@ class CustomerServiceState:
     def admit_inbound(self, sender_id: str, name: str, *, per_minute: int, per_day: int) -> tuple[bool, str | None]:
         """Persist one receive decision before publishing to the bus.
 
-        Returns (allowed, notice_kind). Groups must be dropped by the caller.
+        Returns (allowed, notice_kind). notice_kind "paused": the customer waits for staff and
+        the message is within quota, so the caller keeps it for staff without a bot turn.
+        Groups must be dropped by the caller.
         All non-paused/non-blocked attempts count toward quotas, including spam.
         Notice flags reserve one attempt; a failed send must not trigger a flood.
         """
@@ -174,9 +176,7 @@ class CustomerServiceState:
             customer = self._customer(sender_id, name, now)
             customer["messages_in"] += 1
             self._count(now, "in", sender_id)
-            if status == "paused":
-                return False, None
-            if customer["status"] == "paused":
+            if status != "paused" and customer["status"] == "paused":
                 customer["status"] = "active"
                 customer["paused_until"] = None
 
@@ -200,7 +200,7 @@ class CustomerServiceState:
                     customer["day_notice_sent"] = True
                     notice = "day"
             else:
-                return True, None
+                return (False, "paused") if status == "paused" else (True, None)
             customer["limited_count"] += 1
             self._count(now, "limited", sender_id)
             return False, notice
