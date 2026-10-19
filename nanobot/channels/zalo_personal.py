@@ -483,10 +483,12 @@ class ZaloPersonalChannel(BaseChannel):
     _media_transport = None  # tests hand in an httpx transport
 
     async def _fetch_media(self, media_url: str, *, max_bytes: int | None) -> bytes:
-        """Download a customer's attachment; over max_bytes the download stops (custom)."""
+        """Download a customer's attachment; over max_bytes the download stops (custom).
+        Group pictures come through a 301 (zdn.vn → zadn.vn), so redirects are followed."""
         import httpx
         chunks, size = [], 0
-        async with httpx.AsyncClient(timeout=30.0, transport=self._media_transport) as client:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True, max_redirects=5,
+                                     transport=self._media_transport) as client:
             async with client.stream("GET", media_url) as resp:
                 resp.raise_for_status()
                 async for chunk in resp.aiter_bytes():
