@@ -836,16 +836,19 @@ class AgentLoop:
         message_tool = self.tools.get("message")
         if tool is None or "escalate" in (tools_used or []) or getattr(message_tool, "_sent_in_turn", False):
             return None
-        from nanobot.agent.handoff_claims import claims_handoff
-        if not claims_handoff(final_content):
-            return None
-        logger.warning("Public Customer Mode: reply claimed a handoff without escalate; escalating {}",
-                       msg.chat_id)
+        from nanobot.agent.handoff_claims import asks_for_human, claims_handoff
         asked = " ".join(str(msg.content or "").split())[:300]
-        summary = ("Bot nói đã chuyển nhân viên nhưng không gọi công cụ chuyển tiếp; hệ thống tự chuyển. "
-                   "Khách hỏi: " + asked)[:500]
+        if asks_for_human(msg.content):
+            # The customer plainly asked for a person and the model did not pass it on.
+            reason, why = "human_requested", "Khách yêu cầu gặp người nhưng bot không gọi công cụ chuyển tiếp; hệ thống tự chuyển. "
+        elif claims_handoff(final_content):
+            reason, why = "other", "Bot nói đã chuyển nhân viên nhưng không gọi công cụ chuyển tiếp; hệ thống tự chuyển. "
+        else:
+            return None
+        logger.warning("Public Customer Mode: handoff needed without escalate ({}); escalating {}", reason, msg.chat_id)
+        summary = (why + "Khách hỏi: " + asked)[:500]
         try:
-            result = await tool.execute(reason="other", summary=summary)
+            result = await tool.execute(reason=reason, summary=summary)
         except Exception as exc:
             logger.warning("Claimed-handoff escalation failed: {}", type(exc).__name__)
             return None

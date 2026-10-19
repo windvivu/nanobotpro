@@ -51,6 +51,9 @@ h1,h2,p {margin-top:0} input[type=checkbox] {accent-color:rgb(var(--c-accent))}
 #test-form input {flex:1;min-width:0}
 tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
 .test-msg.staff {align-self:flex-start;background:rgb(var(--c-accent) / .12);border:1px dashed rgb(var(--c-accent) / .6)}
+/* Sections the admin opens on demand; the choice is remembered per browser */
+.collapsible > h2 {cursor:pointer;user-select:none} .collapsible > h2::before {content:'▾ ';opacity:.7}
+.collapsible.collapsed > h2::before {content:'▸ '} .collapsible.collapsed > :not(h2) {display:none}
 .staff-reply {display:flex;flex-direction:column;gap:8px;margin-top:16px;padding-top:12px;border-top:1px solid rgb(var(--c-primary) / .2)}
 .staff-reply textarea {width:100%;min-height:72px} .staff-reply button {align-self:flex-end}
 </style>
@@ -65,17 +68,17 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
 <section id="cskh-customers" class="ui-card"><h2>{{ tr('cskh.customers') }}</h2>
 <div class="row"><input id="customer-query" type="search" placeholder="{{ tr('cskh.search') }}" aria-label="{{ tr('cskh.search') }}"><select id="customer-status" aria-label="{{ tr('cskh.status') }}"><option value="">{{ tr('cskh.all') }}</option>{% for value in ['active','paused','blocked'] %}<option value="{{ value }}">{{ tr('cskh.' ~ value) }}</option>{% endfor %}</select></div>
 <div class="table-wrap"><table><thead><tr>{% for key in ['customer','last_seen','status','counts','actions'] %}<th>{{ tr('cskh.' ~ key) }}</th>{% endfor %}</tr></thead><tbody id="customer-rows"></tbody></table></div></section>
-<section id="cskh-test" class="ui-card"><h2>{{ tr('cskh.test_title') }}</h2><p class="muted">{{ tr('cskh.test_note') }}</p>
+<section id="cskh-escalations" class="ui-card collapsible collapsed"><h2>{{ tr('cskh.escalations') }}</h2><div class="table-wrap"><table><thead><tr>{% for key in ['customer','time','reason','delivery'] %}<th>{{ tr('cskh.' ~ key) }}</th>{% endfor %}</tr></thead><tbody id="escalation-rows"></tbody></table></div></section>
+<section id="cskh-test" class="ui-card collapsible collapsed"><h2>{{ tr('cskh.test_title') }}</h2><p class="muted">{{ tr('cskh.test_note') }}</p>
 <div class="row"><button id="test-new" type="button">{{ tr('cskh.test_new') }}</button><button id="test-clear" type="button">{{ tr('cskh.test_clear') }}</button><strong id="test-who"></strong></div>
 <div id="test-log" class="test-log" aria-live="polite"></div>
 <form id="test-form" class="row"><input id="test-input" maxlength="2000" autocomplete="off" disabled placeholder="{{ tr('cskh.test_input') }}" aria-label="{{ tr('cskh.test_input') }}"><button id="test-send" type="submit" disabled>{{ tr('cskh.test_send') }}</button></form>
 <p id="test-state" class="muted" role="status"></p></section>
-<section id="cskh-escalations" class="ui-card"><h2>{{ tr('cskh.escalations') }}</h2><div class="table-wrap"><table><thead><tr>{% for key in ['customer','time','reason','delivery'] %}<th>{{ tr('cskh.' ~ key) }}</th>{% endfor %}</tr></thead><tbody id="escalation-rows"></tbody></table></div></section>
-<section id="cskh-kb" class="ui-card"><h2>{{ tr('cskh.knowledge') }}</h2>
+<section id="cskh-kb" class="ui-card collapsible collapsed"><h2>{{ tr('cskh.knowledge') }}</h2>
 <p class="muted">{{ tr('cskh.kb_note') }}</p><form id="upload-form" class="row"><input name="file" type="file" accept=".md,.txt,.docx,.pdf" required aria-label="{{ tr('cskh.file') }}"><input name="name" maxlength="200" placeholder="{{ tr('cskh.public_name') }}" aria-label="{{ tr('cskh.public_name') }}"><button type="submit">{{ tr('cskh.upload') }}</button></form>
 <div class="table-wrap"><table><thead><tr>{% for key in ['document','status','facts','actions'] %}<th>{{ tr('cskh.' ~ key) }}</th>{% endfor %}</tr></thead><tbody id="kb-rows"></tbody></table></div>
 <div class="row" style="margin-top:16px"><a href="/memory/graph" target="_blank" rel="noopener noreferrer">{{ tr('cskh.graph') }}</a><button id="install-persona">{{ tr('cskh.persona') }}</button></div></section>
-<section id="cskh-settings" class="ui-card"><h2>{{ tr('cskh.settings') }}</h2><form id="settings-form"><div class="grid">
+<section id="cskh-settings" class="ui-card collapsible collapsed"><h2>{{ tr('cskh.settings') }}</h2><form id="settings-form"><div class="grid">
 {% for field,key in [('welcomeMessage','welcome'),('handoffMessage','handoff')] %}<label>{{ tr('cskh.' ~ key) }}<textarea name="{{ field }}" maxlength="4000"></textarea></label>{% endfor %}
 {% for field,key in [('inboundPerMinute','per_minute'),('inboundPerDay','per_day'),('pauseAfterEscalationMinutes','pause_minutes')] %}<label>{{ tr('cskh.' ~ key) }}<input name="{{ field }}" type="number" min="1" max="1000000" required></label>{% endfor %}
 <label class="check"><input name="autoAcceptFriend" type="checkbox">{{ tr('cskh.auto_accept') }}</label></div><p class="muted">{{ tr('cskh.settings_note') }}</p><button type="submit">{{ tr('cskh.save') }}</button></form></section>
@@ -94,6 +97,7 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
     modal.addEventListener('cancel', e => { e.preventDefault(); closeModal(false); });
     function hubModal(title, message, input = false) {
         $('modal-title').textContent = title; $('modal-body').replaceChildren(node('p', message));
+        $('modal-confirm').textContent = t('confirm');
         let field;
         if (input) { field = node('textarea'); field.maxLength = 500; field.setAttribute('aria-label', t('summary')); $('modal-body').append(field); }
         $('modal-confirm').hidden = false;
@@ -143,9 +147,18 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
         const form = node('form'); form.className = 'staff-reply';
         const box = node('textarea'); box.maxLength = 2000; box.rows = 3;
         box.placeholder = t('staff_reply_hint'); box.setAttribute('aria-label', t('staff_reply'));
-        const send = node('button', t('staff_send')); send.type = 'submit';
+        // Send sits in the dialog footer next to Close; Enter sends, Ctrl+Enter breaks the line
+        const send = $('modal-confirm'); send.textContent = t('staff_send'); send.hidden = false;
+        send.onclick = () => form.requestSubmit();
+        box.addEventListener('keydown', event => {
+            if (event.key !== 'Enter') return;
+            if (event.ctrlKey || event.metaKey) {
+                event.preventDefault();
+                const at = box.selectionStart; box.setRangeText('\n', at, box.selectionEnd, 'end');
+            } else if (!event.shiftKey && !event.isComposing) { event.preventDefault(); form.requestSubmit(); }
+        });
         const status = node('p'); status.className = 'muted'; status.setAttribute('role', 'status');
-        form.append(node('strong', t('staff_reply')), box, send, status);
+        form.append(node('strong', t('staff_reply')), box, status);
         form.onsubmit = async event => {
             event.preventDefault();
             const text = box.value.trim(); if (!text) return;
@@ -158,8 +171,8 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
             finally { send.disabled = false; }
         };
         $('modal-body').append(form);
-        $('modal-confirm').hidden=true; if (!modal.open) modal.showModal();
-        await loadTranscript(id);
+        if (!modal.open) modal.showModal();
+        await loadTranscript(id); box.focus();
     }
     modal.addEventListener('close', () => { transcriptId = null; });
     let refreshing = null;
@@ -275,6 +288,17 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
         $('test-log').replaceChildren(); $('test-who').textContent = ''; $('test-state').textContent = '';
         $('test-input').disabled = $('test-send').disabled = true;
         note(t('test_cleared').replace('{n}', result.removed));
+    });
+    // Collapsible sections: click the heading; the state is kept per browser
+    document.querySelectorAll('.collapsible').forEach(section => {
+        const key = 'cskh-open-' + section.id;
+        try { if (localStorage.getItem(key) === '1') section.classList.remove('collapsed'); } catch (e) { /* optional */ }
+        const h2 = section.querySelector('h2'); h2.tabIndex = 0; h2.setAttribute('role', 'button');
+        const toggle = () => { const open = section.classList.toggle('collapsed') === false;
+            h2.setAttribute('aria-expanded', String(open));
+            try { localStorage.setItem(key, open ? '1' : '0'); } catch (e) { /* optional */ } };
+        h2.setAttribute('aria-expanded', String(!section.classList.contains('collapsed')));
+        h2.onclick = toggle; h2.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } };
     });
     $('pause-all').onclick=()=>act($('pause-all'),async()=>{if(paused||await hubModal(t('pause_all'),t('confirm_pause'))){await api('/pause-all',{paused:!paused});note(t('saved'));}});
     $('telegram-test').onclick=()=>act($('telegram-test'),async()=>{const r=await api('/telegram-test',{});note(t(r.published_to_bus?'sent':'send_failed'));});

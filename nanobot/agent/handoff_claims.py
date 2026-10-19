@@ -42,6 +42,10 @@ _CLAIMS = [
                r"|phụ\s+trách|bên\s+em|của\s+\w+))?\s+sẽ\s+(?:sớm\s+)?(?:liên\s+hệ|liên\s+lạc|phản\s+hồi"
                r"|gọi\s+lại|nhắn\s+lại|trả\s+lời)(?:\s+lại)?\s+(?:cho\s+|với\s+)?anh"),
     re.compile(r"sẽ\s+có\s+(?:" + _STAFF + r"|người)\b[^.!?\n]{0,30}\b(?:liên\s+hệ|liên\s+lạc|phản\s+hồi|hỗ\s+trợ)"),
+    # "yêu cầu của anh/chị đã được chuyển trước đó và đang chờ nhân viên", "em không chuyển lại nữa"
+    re.compile(_REQUEST + r"\s+(?:đã|vừa)\s+được\s+" + _PASS + r"\s+(?:trước\s+đó|rồi|từ\s+trước)"),
+    re.compile(r"đang\s+chờ\s+" + _STAFF),
+    re.compile(_BOT + r"\s+(?:không|chưa)\s+(?:cần\s+)?" + _PASS + r"(?:\s+tiếp)?\s+lại"),
     # English
     re.compile(
         r"\b(?:i|we)(?:'ve|'ll| have| will)?\s+(?:forwarded|transferred|escalated|passed|handed|sent|reported)"
@@ -63,6 +67,22 @@ _NOT_A_CLAIM = re.compile(
     r"|\bwould\s+you\b|\bdo\s+you\s+want\b|\bif\s+you\b|\bcannot\b|\bcan't\b|\bclick\b|\bbutton\b|\bthe\s+app\b"
 )
 _SENTENCES = re.compile(r"[^.!?\n]+[.!?]*")
+
+
+_ASKS_FOR_HUMAN = re.compile(
+    r"(?:gặp|nói\s+chuyện\s+với|cho\s+(?:tôi|em|mình)\s+gặp|kết\s+nối\s+(?:với|tới)|chuyển\s+(?:cho|tới|đến|sang))"
+    r"\s+(?:nhân\s+viên|người\s+thật|người\s+hỗ\s+trợ|tư\s+vấn\s+viên|chuyên\s+viên|bộ\s+phận|quản\s+lý|sếp|admin)"
+    r"|\bescalate\b|\b(?:talk|speak)\s+to\s+(?:a\s+)?(?:human|person|agent|staff)\b|\breal\s+person\b"
+)
+_NOT_A_REQUEST = re.compile(r"\bkhông\s+(?:cần|muốn)\b|\bđừng\b|\bchưa\s+cần\b|\bdon't\b|\bno\s+need\b")
+
+
+def asks_for_human(text: str | None) -> bool:
+    """True when the customer plainly asks for a person (or to escalate)."""
+    if not text:
+        return False
+    normalized = " ".join(unicodedata.normalize("NFC", text).lower().split())
+    return bool(_ASKS_FOR_HUMAN.search(normalized)) and not _NOT_A_REQUEST.search(normalized)
 
 
 def claims_handoff(text: str | None) -> bool:

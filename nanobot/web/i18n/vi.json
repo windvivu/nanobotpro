@@ -363,7 +363,7 @@
   "cskh.attention": "Khách đang chờ nhân viên",
   "cskh.staff": "Nhân viên",
   "cskh.staff_reply": "Trả lời khách với tư cách nhân viên",
-  "cskh.staff_reply_hint": "Tin này gửi từ tài khoản Zalo của bot. Bot sẽ im với khách này cho tới khi bạn bấm Resume hoặc hết giờ chờ.",
+  "cskh.staff_reply_hint": "Tin này gửi từ tài khoản Zalo của bot. Bot sẽ im với khách này cho tới khi bạn bấm Resume hoặc hết giờ chờ. Enter để gửi, Ctrl+Enter để xuống dòng.",
   "cskh.staff_send": "Gửi cho khách",
   "cskh.staff_sent": "Đã gửi cho khách. Bấm Resume khi muốn giao lại cho bot.",
   "cskh.test_title": "Thử như khách Zalo",

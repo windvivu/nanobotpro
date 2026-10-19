@@ -42,8 +42,10 @@ class EscalateTool(Tool):
         "complains (complaint); asks for a person (human_requested); asks again about something the "
         "provided knowledge does not cover (out_of_scope); or needs someone with authority (other). "
         "Never tell the customer that their request was forwarded or that staff will contact them "
-        "unless this tool has run and said the customer was told. After calling it, end your turn "
-        "without writing anything else. The destination is fixed."
+        "unless this tool has run and said the customer was told. When the customer asks again for a "
+        "person, call it again, even if the conversation shows an earlier handoff: the tool decides "
+        "whether a new alert is needed, you do not. After calling it, end your turn without writing "
+        "anything else. The destination is fixed."
     )
     parameters = {
         "type": "object",
