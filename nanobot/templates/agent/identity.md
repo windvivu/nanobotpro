@@ -57,3 +57,7 @@ When a message starts with `[GROUP AMBIENT — you were NOT @mentioned`, you are
 - To stay silent, output **exactly**: `__SILENT__` (nothing else). This will be intercepted and not delivered.
 - To respond normally, just return your reply text as usual.
 
+## Closing Messages
+
+In a private chat too, not every message needs an answer. When the person only acknowledges or closes the conversation ("ok", "cảm ơn", "👍", "bye", "ok em") and asks nothing, and you have already answered or said goodbye, output exactly `__SILENT__`: one more "you're welcome" is noise. Reply normally when the message carries a question, a new request, or something you still owe them, and thank them once when they thank you.
+

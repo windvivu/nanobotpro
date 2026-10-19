@@ -87,6 +87,8 @@ def _transcript(request, customer_id, limit):
                 raise ValueError("Session principal mismatch")
             for line in stream:
                 item = json.loads(line)
+                if item.get("role") == "assistant" and str(item.get("content", "")).strip() == "__SILENT__":
+                    continue  # the bot chose not to answer a closing message
                 if item.get("role") in {"user", "assistant"}:
                     rows.append({k: item.get(k, "") for k in ("role", "content", "timestamp")})
     except (ValueError, TypeError, AttributeError) as exc:

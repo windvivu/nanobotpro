@@ -72,6 +72,11 @@ if TYPE_CHECKING:
 
 UNIFIED_SESSION_KEY = "unified:default"
 
+# The model's way of not answering: a group message not meant for it, or a closing "ok" in a
+# private chat. The turn is saved, nothing is delivered (custom; channels drop it too).
+SILENT_MARKER = "__SILENT__"
+
+
 class _LoopHook(AgentHook):
     """Core hook for the main agent loop — preserves all project-specific behaviours."""
 
@@ -99,6 +104,7 @@ class _LoopHook(AgentHook):
         self._message_metadata = message_metadata
         self._session_key = session_key
         self._stream_buf = ""
+        self._held = ""  # streamed text not yet forwarded: it may still turn out to be the silent marker
 
     def wants_streaming(self) -> bool:
         return self._on_stream is not None and not getattr(self._loop, "public_customer_mode", False)
@@ -113,11 +119,23 @@ class _LoopHook(AgentHook):
         self._stream_buf += delta
         new_clean = strip_think(self._stream_buf)
         incremental = new_clean[len(prev_clean):]
-        if incremental and self._on_stream:
-            await self._on_stream(incremental)
+        if not incremental or not self._on_stream:
+            return
+        # __SILENT__ must not reach the reader letter by letter: hold the text back while it can
+        # still become the marker, forward it once it cannot (custom)
+        pending = self._held + incremental
+        if SILENT_MARKER.startswith(pending.strip()) and pending.strip():
+            self._held = pending
+            return
+        self._held = ""
+        await self._on_stream(pending)
 
     async def on_stream_end(self, context: AgentHookContext, *, resuming: bool) -> None:
-        if self._on_stream_end:
+        silent = self._held.strip() == SILENT_MARKER
+        if self._held and not silent and self._on_stream:
+            await self._on_stream(self._held)  # the stream ended on a prefix of the marker: real text
+        self._held = ""
+        if self._on_stream_end and not silent:
             await self._on_stream_end(resuming=resuming)
         self._stream_buf = ""
 
@@ -1790,6 +1808,7 @@ class AgentLoop:
             message_metadata=msg.metadata,
         )
 
+        silent = bool(final_content) and final_content.strip() == SILENT_MARKER
         if not final_content or not final_content.strip():
             if tools_used:
                 tools_str = ", ".join(sorted(set(tools_used)))
@@ -1821,6 +1840,9 @@ class AgentLoop:
         if runtime is not None:
             self._schedule_background(runtime.sync_migration_sources())
 
+        if silent:
+            logger.info("[Loop] The model chose not to answer: channel={} chat_id={}", msg.channel, msg.chat_id)
+            return None
         # Custom: bypass _sent_in_turn suppression for direct_return callers (fleet, cron)
         if (mt := self.tools.get("message")) and isinstance(mt, MessageTool) and mt._sent_in_turn and not direct_return:
             logger.info(

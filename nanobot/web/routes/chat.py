@@ -102,6 +102,8 @@ def _load_session_history(workspace: Path, session_key: str, limit: int = 50) ->
                 if role not in ("user", "assistant"):
                     continue
                 content = msg.get("content", "")
+                if role == "assistant" and isinstance(content, str) and content.strip() == "__SILENT__":
+                    continue  # the bot chose not to answer a closing message
                 if role == "user" and isinstance(content, str) and content.startswith("[Subagent '"):
                     continue  # a sub-agent's report to the bot, kept as context; the bot's reply follows
                 text, media = _display_content(content)
