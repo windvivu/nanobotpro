@@ -469,15 +469,16 @@ async def kb(request: Request):
     agent = getattr(request.app.state, "agent", None)
     runtime = getattr(agent, "brain_runtime", None)
     try:
-        return {
-            "documents": await run_in_threadpool(
-                kb_catalog.refresh_fact_counts,
-                request.app.state.config.workspace_path,
-                _brain_config(request),
-                getattr(runtime, "worker", None),
-                tolerate_errors=True,
-            )
-        }
+        documents = await run_in_threadpool(
+            kb_catalog.refresh_fact_counts,
+            request.app.state.config.workspace_path,
+            _brain_config(request),
+            getattr(runtime, "worker", None),
+            tolerate_errors=True,
+        )
+        for doc in documents:  # taught notes are listed apart from documents (custom)
+            doc["kind"] = kb_catalog.document_kind(doc)
+        return {"documents": documents}
     except (BrainMemoryError, ValueError, OSError) as exc:
         raise _kb_error(exc) from exc
 
@@ -504,6 +505,7 @@ async def upload(request: Request, file: UploadFile = File(...), name: str | Non
 class Note(BaseModel):
     model_config = ConfigDict(extra="forbid")
     text: str = Field(min_length=1, max_length=kb_catalog.NOTE_MAX_CHARS)
+    origin: Literal["page", "unanswered", "conversation"] = "page"  # where on the page it was taught
 
 
 class FactIds(BaseModel):
@@ -527,7 +529,7 @@ async def kb_teach(request: Request, note: Note):
     try:
         return await kb_catalog.add_note(
             request.app.state.config.workspace_path, _brain_config(request),
-            getattr(agent, "brain_runtime", None), note.text,
+            getattr(agent, "brain_runtime", None), note.text, origin=note.origin,
         )
     except (BrainMemoryError, KeyError, ValueError, OSError) as exc:
         raise _kb_error(exc) from exc
@@ -558,7 +560,16 @@ async def kb_ask(request: Request, question: Question):
         )
     except Exception as exc:
         raise HTTPException(502, public_error(exc)) from exc
-    return {"reply": (reply.content or "") if reply is not None else "", "silent": reply is None}
+    # How long the answer took and how often the bot searched, as the conversations show (custom)
+    sessions = getattr(agent, "sessions", None) or request.app.state.session_manager
+    last = next((m for m in reversed(sessions.get_or_create(KB_TRY_SESSION).messages)
+                 if m.get("role") == "assistant"), {}) if reply is not None else {}
+    return {"reply": (reply.content or "") if reply is not None else "", "silent": reply is None, **_timing(last)}
+
+
+def _timing(message: dict) -> dict:
+    return {key: message[key] for key in ("reply_ms", "searches")
+            if isinstance(message.get(key), int) and not isinstance(message.get(key), bool) and message[key] >= 0}
 
 
 @router.get("/api/kb/ask")
@@ -566,9 +577,9 @@ async def kb_ask_history(request: Request):
     _state(request)
     session = request.app.state.session_manager.get_or_create(KB_TRY_SESSION)
     return {"messages": [
-        {"role": m["role"], "content": m["content"]} for m in session.messages
+        {"role": m["role"], "content": m["content"], **_timing(m)} for m in session.messages
         if m.get("role") in {"user", "assistant"} and isinstance(m.get("content"), str)
-        and m["content"].strip() != "__SILENT__"
+        and m["content"].strip() not in {"__SILENT__", ""}  # empty: the bot only called a tool
     ]}
 
 

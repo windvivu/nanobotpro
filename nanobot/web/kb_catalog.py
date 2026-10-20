@@ -331,6 +331,24 @@ def revoke_document(workspace, config, document_id):
 # revoked and deleted like any other, and the facts it replaces are retired by ID (custom).
 NOTE_PREFIX = "note-"
 NOTE_MAX_CHARS = 2000
+# Where a note was taught (custom): the CSKH page lists notes apart from documents, with this
+NOTE_ORIGINS = frozenset({"page", "telegram", "unanswered", "conversation"})
+
+
+def document_kind(doc: dict) -> str:
+    """'note' for what the admin taught in a few lines; 'document' for an upload or a learned link."""
+    name = str(doc.get("original_name", ""))
+    return "note" if name.startswith(NOTE_PREFIX) and not name.startswith(NOTE_PREFIX + "link-") else "document"
+
+
+def _set_origin(workspace, document_id, origin):
+    """Record where a note was taught; the first teaching of a text keeps its origin."""
+    with _catalog(workspace) as (root, catalog):
+        doc = catalog["documents"].get(document_id)
+        if doc is not None and not doc.get("origin"):
+            doc["origin"] = origin
+            _save(root, catalog)
+        return dict(doc or {}, document_id=document_id)
 
 
 _LINK = re.compile(r"https?://\S+")
@@ -392,9 +410,10 @@ async def fetch_link_text(url: str, *, transport=None) -> tuple[str, str, str]:
     return title, text, final_url
 
 
-async def add_note(workspace, config, runtime, text):
+async def add_note(workspace, config, runtime, text, *, origin=None):
     """Publish one admin note and return it with the facts already in the KB on the same subject.
-    A note that is only a link publishes that page's text, under the page's title."""
+    A note that is only a link publishes that page's text, under the page's title. origin: where it
+    was taught (NOTE_ORIGINS), shown next to the note on the CSKH page."""
     if not isinstance(text, str) or not text.strip() or len(text) > NOTE_MAX_CHARS:
         raise FormatError(f"Note must contain 1–{NOTE_MAX_CHARS} characters")
     text = text.strip()
@@ -411,6 +430,8 @@ async def add_note(workspace, config, runtime, text):
         first = " ".join(text.split())
         name = first if len(first) <= 120 else first[:117].rstrip() + "..."
         doc = add_document(workspace, f"{NOTE_PREFIX}{secrets.token_hex(4)}.md", text.encode("utf-8"), name=name, config=config)
+    if origin in NOTE_ORIGINS and not doc.get("origin"):
+        doc = _set_origin(workspace, doc["document_id"], origin)
     if doc["status"] == "pending":
         # New, or an earlier publish that failed before its jobs were queued (review 12 #8)
         doc = await publish_document(workspace, config, runtime, doc["document_id"])

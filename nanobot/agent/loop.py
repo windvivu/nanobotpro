@@ -970,8 +970,9 @@ class AgentLoop:
         """How long the customer waited for this reply, and how often the model searched the
         knowledge (custom, CSKH page): kept on the reply line of the session, which the model never
         reads back (get_history copies a fixed set of keys), and in today's average. Counted from
-        the message reaching the bot, so waiting for more messages to merge is not included."""
-        if silent or not getattr(self, "public_customer_mode", False) or msg.channel != "zalo":
+        the message reaching the bot, so waiting for more messages to merge is not included.
+        Try the knowledge (channel kbtest) is timed too, but is not a customer: not in the average."""
+        if silent or not getattr(self, "public_customer_mode", False) or msg.channel not in {"zalo", "kbtest"}:
             return
         reply = next((entry for entry in reversed(messages[skip:]) if entry.get("role") == "assistant"
                       and not entry.get("tool_calls") and str(entry.get("content") or "").strip()), None)
@@ -982,6 +983,8 @@ class AgentLoop:
         reply["reply_ms"] = waited
         if searches := (tools_used or []).count("search_knowledge"):
             reply["searches"] = searches
+        if msg.channel != "zalo":
+            return
         retention = getattr(self, "customer_retention", None)
         getter = getattr(retention, "get_customer_state", None)
         try:

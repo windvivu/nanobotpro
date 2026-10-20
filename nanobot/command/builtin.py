@@ -466,7 +466,7 @@ async def cmd_teach(ctx: CommandContext) -> OutboundMessage:
     loop = ctx.loop
     try:
         result = await kb_catalog.add_note(loop.workspace, loop.brain_memory_config,
-                                           getattr(loop, "brain_runtime", None), text[1])
+                                           getattr(loop, "brain_runtime", None), text[1], origin="telegram")
     except (BrainMemoryError, ValueError, OSError) as exc:
         return _reply(ctx, "Chưa dạy được: " + (str(exc) if isinstance(exc, BrainMemoryError) else public_error(exc)))
     related = result["related"]

@@ -363,6 +363,7 @@
         return `rgba(${rgb.join(',')},${alpha})`;
     };
     const graphPanel = container.parentElement;
+    const escapeHtml = value => String(value).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
     const nebulaSurface = 'radial-gradient(circle at 18% 22%, rgba(63, 147, 255, .22), transparent 34%), radial-gradient(circle at 78% 68%, rgba(190, 92, 255, .2), transparent 38%), radial-gradient(circle at 55% 38%, rgba(28, 221, 206, .12), transparent 46%), #080b1c';
     let fitPending = false, fitTicks = 0;
     const graph = ForceGraph()(container)
@@ -376,7 +377,8 @@
         .linkWidth(link => graphDisplayMode === 'nebula'
             ? (link.kind === 'wikilink' ? 1.2 : .7)
             : (link.kind === 'wikilink' ? 1.5 : 1))
-        .nodeLabel(() => '')
+        // Nebula names a node on hover (titles come from documents: escaped, the tooltip is HTML)
+        .nodeLabel(node => graphDisplayMode === 'nebula' ? escapeHtml(node.label || '') : '')
         .nodeCanvasObjectMode(() => graphDisplayMode === 'nebula' ? 'replace' : 'after')
         .nodeCanvasObject((node, context, globalScale) => {
             if (graphDisplayMode === 'nebula') {
@@ -395,7 +397,18 @@
                 context.beginPath();
                 context.arc(node.x, node.y, radius, 0, 2 * Math.PI, false);
                 context.fill();
-                if (node.kind === 'fact' && globalScale > .72) {
+                if (node.kind === 'topic') {
+                    // Topic names at any zoom: the overview of what each region is about (custom)
+                    const label = String(node.label || '').slice(0, 40);
+                    context.font = `bold ${12 / globalScale}px monospace`;
+                    context.textAlign = 'center';
+                    context.textBaseline = 'bottom';
+                    context.lineWidth = 3 / globalScale;
+                    context.strokeStyle = 'rgba(8, 11, 28, .85)';
+                    context.strokeText(label, node.x, node.y - radius - 3 / globalScale);
+                    context.fillStyle = nebulaColour('topic', .98);
+                    context.fillText(label, node.x, node.y - radius - 3 / globalScale);
+                } else if (node.kind === 'fact' && globalScale > .72) {
                     const label = String(node.label || '').slice(0, 48);
                     context.font = `${10 / globalScale}px monospace`;
                     context.fillStyle = nebulaColour(node.kind, .82);

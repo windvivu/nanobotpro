@@ -70,6 +70,10 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
 .reply-meta {align-self:flex-start;margin-top:-5px;padding:0 4px;font-size:11px;opacity:.7;font-variant-numeric:tabular-nums}
 .reply-meta.warn {color:rgb(var(--c-warning));opacity:1}
 .reply-meta.slow {color:rgb(var(--c-danger));opacity:1}
+/* Teach the bot what staff answered */
+.teach-from {align-self:flex-start;margin-top:-4px;padding:2px 8px;font-size:11px;border-style:dashed}
+#notes-query {width:100%;max-width:420px;margin-bottom:10px}
+#notes-more {margin-top:10px}
 .test-msg.typing {opacity:.75;font-style:italic;animation:cskh-typing 1.2s ease-in-out infinite}
 @keyframes cskh-typing {50% {opacity:.35}}
 @media (prefers-reduced-motion: reduce) { .test-msg.typing {animation:none} }
@@ -149,6 +153,11 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
 <div id="kb-ask-log" class="test-log" aria-live="polite"></div>
 <form id="kb-ask-form" class="row"><input id="kb-ask-input" maxlength="2000" autocomplete="off" placeholder="{{ tr('cskh.ask_input') }}" aria-label="{{ tr('cskh.ask_title') }}"><button type="submit">{{ tr('cskh.ask_send') }}</button><button id="kb-ask-clear" type="button">{{ tr('cskh.ask_clear') }}</button></form></section>
 </div>
+<section id="cskh-notes" class="ui-card"><h2>{{ tr('cskh.notes') }} <span id="notes-count" class="muted"></span></h2>
+<p class="muted">{{ tr('cskh.notes_note') }}</p>
+<input id="notes-query" type="search" maxlength="100" autocomplete="off" placeholder="{{ tr('cskh.notes_search') }}" aria-label="{{ tr('cskh.notes_search') }}">
+<div class="table-wrap"><table><thead><tr>{% for key in ['note','status','facts','actions'] %}<th>{{ tr('cskh.' ~ key) }}</th>{% endfor %}</tr></thead><tbody id="note-rows"></tbody></table></div>
+<button id="notes-more" type="button" hidden>{{ tr('cskh.notes_more') }}</button></section>
 <section id="cskh-kb" class="ui-card"><h2>{{ tr('cskh.documents') }}</h2>
 <p class="muted">{{ tr('cskh.kb_note') }}</p><form id="upload-form" class="row"><input name="file" type="file" accept=".md,.txt,.docx,.pdf" multiple required aria-label="{{ tr('cskh.file') }}"><input name="name" maxlength="200" placeholder="{{ tr('cskh.public_name') }}" aria-label="{{ tr('cskh.public_name') }}"><button type="submit">{{ tr('cskh.upload') }}</button></form>
 <div class="table-wrap"><table><thead><tr>{% for key in ['document','status','facts','actions'] %}<th>{{ tr('cskh.' ~ key) }}</th>{% endfor %}</tr></thead><tbody id="kb-rows"></tbody></table></div>
@@ -243,10 +252,17 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
         if (pending && (Date.now() - pending.at > 180000 || (tab.mark !== pending.mark
                 && messages.slice(-6).some(m => String(lineOf(m).content).includes(pending.content))))) tab.pending = null;
         tab.log.replaceChildren();
-        messages.map(lineOf).forEach(line => {
+        const lines = messages.map(lineOf);
+        lines.forEach((line, i) => {
             const el = node('div', line.role === 'staff' ? t('staff') + ': ' + line.content : line.content);
             el.className = 'test-msg ' + line.role; el.title = stamp(line.timestamp); tab.log.append(el);
             if (line.role === 'bot' && Number.isFinite(line.ms)) tab.log.append(replyMeta(line));
+            if (line.role === 'staff') {
+                // What staff had to answer is what the bot lacked: teach it, after the admin reads it
+                const asked = lines.slice(0, i).reverse().find(l => l.role === 'customer');
+                const teach = button('teach_from_chat', () => teachFromChat(asked ? asked.content : '', line.content));
+                teach.classList.add('teach-from'); tab.log.append(teach);
+            }
         });
         if (tab.pending) {
             const el = node('div', tab.pending.staff ? t('staff') + ': ' + tab.pending.content : tab.pending.content);
@@ -408,7 +424,13 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
             }
             if (es) { const escalations=$('escalation-rows');escalations.replaceChildren();es.escalations.forEach(e=>row(escalations,[e.name+' ('+e.customer_id+')',stamp(e.at),t(e.reason),t(e.delivered?'sent':'send_failed')]));empty(escalations,4); }
             if (kb) {
-            const docs=$('kb-rows');docs.replaceChildren();kb.documents.slice().reverse().forEach(d=>{  /* newest upload first */const controls=node('div');controls.className='row';
+            lastKb = kb.documents; renderKb();
+            }
+        } finally { polling=false; }
+    }
+    // Documents (uploads, learned links) and taught notes share one row: name, learning, facts, actions
+    let lastKb = [], notesShown = 10;
+    function docRow(docs, d, label) {const controls=node('div');controls.className='row';
                 (d.status==='pending'?['publish','delete']:d.status==='published'||d.cleanup_pending?['revoke']:['delete']).forEach(action=>controls.append(button(action,async()=>{if(action==='publish'||await hubModal(t(action),t('confirm_'+action))){const result=await api('/kb/'+d.document_id+'/'+action,{});note(t(result.cleanup_pending?'cleanup_pending':action==='publish'?'queued':'saved'));}})));
                 const learning=d.learning||{total:0,done:0,failed:0,in_progress:0};
                 if(d.status==='published' && learning.failed) controls.append(button('relearn',async()=>{await api('/kb/'+d.document_id+'/relearn',{});note(t('queued'));}));
@@ -423,10 +445,28 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
                     step=(learning.failed ? '' : ' · '+phase)+' · '+t('attempts_done').replace('{k}',detail.attempts).replace('{n}',detail.max_attempts)
                         +(detail.last_error ? ' · '+detail.last_error : '');
                 }
-                row(docs,[d.name+' · '+d.original_name,d.status==='published'?progress+step:t(d.status),factsCell(d),controls]);});empty(docs,4);
-            }
-        } finally { polling=false; }
+                row(docs,[label,d.status==='published'?progress+step:t(d.status),factsCell(d),controls]);
     }
+    function renderKb() {
+        const newest = lastKb.slice().reverse();  // newest first
+        const docs = $('kb-rows'); docs.replaceChildren();
+        newest.filter(d => d.kind !== 'note').forEach(d => docRow(docs, d, d.name + ' · ' + d.original_name)); empty(docs, 4);
+        // Taught notes: a few lines each, many of them; searched, ten at a time
+        const all = newest.filter(d => d.kind === 'note'), query = $('notes-query').value.trim().toLocaleLowerCase();
+        const notes = query ? all.filter(d => d.name.toLocaleLowerCase().includes(query)) : all;
+        $('notes-count').textContent = all.length ? '(' + all.length + ')' : '';
+        const body = $('note-rows'); body.replaceChildren();
+        notes.slice(0, notesShown).forEach(d => {
+            const label = node('div'); label.append(node('div', d.name));
+            const when = d.published_at ? new Date(d.published_at).toLocaleDateString(document.documentElement.lang || undefined) : '';
+            const meta = node('div', [when, d.origin ? t('origin_' + d.origin) : ''].filter(Boolean).join(' · '));
+            meta.className = 'muted'; label.append(meta); docRow(body, d, label);
+        });
+        empty(body, 4);
+        $('notes-more').hidden = notes.length <= notesShown;
+    }
+    $('notes-query').addEventListener('input', () => { notesShown = 10; renderKb(); });
+    $('notes-more').onclick = () => { notesShown += 20; renderKb(); };
     // When the bot last received a message: a connection can stay up yet deliver nothing (custom)
     function lastInbound(bridge) {
         const at = bridge.lastInboundAt || bridge.connectedAt;
@@ -455,7 +495,16 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
         });
         empty(body, 5);
     }
+    let teachOrigin = null;  // where the note in the Teach box came from: a conversation (custom)
     function unlinkTeach() { teachingFor = null; $('teach-linked').hidden = true; }
+    function teachFromChat(question, answer) {
+        if (pageTab !== 'knowledge') setPageTab('knowledge');
+        const box = $('teach-text');
+        box.value = (question ? t('teach_q') + ': ' + question + '\n' : '') + t('teach_a') + ': ' + answer;
+        unlinkTeach(); teachOrigin = 'conversation';
+        box.scrollIntoView({block: 'center'}); box.focus();
+        box.setSelectionRange(box.value.length, box.value.length);
+    }
     $('teach-unlink').onclick = unlinkTeach;
     function teachFrom(e) {
         if (pageTab !== 'knowledge') setPageTab('knowledge');
@@ -504,7 +553,8 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
     }
     $('teach-form').onsubmit = e => { e.preventDefault(); act(e.submitter || e.target.querySelector('button'), async () => {
         const text = $('teach-text').value.trim(); if (!text) return;
-        const data = await api('/kb/teach', {text}); $('teach-text').value = '';
+        const origin = teachingFor ? 'unanswered' : teachOrigin || 'page';
+        const data = await api('/kb/teach', {text, origin}); $('teach-text').value = ''; teachOrigin = null;
         // The linked question is marked handled only when the note still answers it (review 13)
         const linked = teachingFor; unlinkTeach();
         if (linked && text.includes(linked.question) && text !== linked.prefill) await api('/unanswered/' + linked.id + '/handled', {}).catch(() => {});
@@ -520,15 +570,19 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
     });
     $('teach-keep').onclick = () => showRelated([]);
     // Try the knowledge as a customer would, without being one: escalation does not work here
-    function askLine(role, text) { const el = node('div', text); el.className = 'test-msg ' + role; $('kb-ask-log').append(el); $('kb-ask-log').scrollTop = $('kb-ask-log').scrollHeight; }
-    api('/kb/ask').then(data => data.messages.forEach(m => askLine(m.role === 'user' ? 'customer' : 'bot', m.content))).catch(() => {});
+    function askLine(role, text, timing) {
+        const el = node('div', text); el.className = 'test-msg ' + role; $('kb-ask-log').append(el);
+        if (timing && Number.isFinite(timing.reply_ms)) $('kb-ask-log').append(replyMeta({ms: timing.reply_ms, searches: timing.searches}));
+        $('kb-ask-log').scrollTop = $('kb-ask-log').scrollHeight;
+    }
+    api('/kb/ask').then(data => data.messages.forEach(m => askLine(m.role === 'user' ? 'customer' : 'bot', m.content, m))).catch(() => {});
     $('kb-ask-form').onsubmit = e => { e.preventDefault(); act(e.submitter || e.target.querySelector('button'), async () => {
         const text = $('kb-ask-input').value.trim(); if (!text) return;
         $('kb-ask-input').value = ''; askLine('customer', text);
         askLine('bot typing', t('typing')); const typing = $('kb-ask-log').lastChild;
         try {
             const data = await api('/kb/ask', {content: text});
-            askLine(data.silent ? 'staff' : 'bot', data.silent ? t('ask_silent') : data.reply);
+            askLine(data.silent ? 'staff' : 'bot', data.silent ? t('ask_silent') : data.reply, data);
         } finally { typing.remove(); }
     }); };
     $('kb-ask-clear').onclick = () => act($('kb-ask-clear'), async () => { await api('/kb/ask/clear', {}); $('kb-ask-log').replaceChildren(); });
