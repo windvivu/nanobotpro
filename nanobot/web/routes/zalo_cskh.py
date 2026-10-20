@@ -108,8 +108,12 @@ def _transcript(request, customer_id, limit):
                 if item.get("role") == "assistant" and not str(item.get("content") or "").strip():
                     continue  # the bot only called a tool (knowledge search, escalation): nothing was sent
                 if item.get("role") in {"user", "assistant"}:
-                    rows.append({"role": item["role"], "timestamp": item.get("timestamp", ""),
-                                 "content": _shown(item.get("content", ""), request.app.state.config.workspace_path)})
+                    row = {"role": item["role"], "timestamp": item.get("timestamp", ""),
+                           "content": _shown(item.get("content", ""), request.app.state.config.workspace_path)}
+                    for key in ("reply_ms", "searches"):  # how long the customer waited (custom)
+                        if isinstance(item.get(key), int) and not isinstance(item.get(key), bool) and item[key] >= 0:
+                            row[key] = item[key]
+                    rows.append(row)
     except (ValueError, TypeError, AttributeError) as exc:
         raise HTTPException(409, "Session cannot be read safely") from exc
     return list(rows)

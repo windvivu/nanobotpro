@@ -66,6 +66,10 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
 .test-msg.staff {align-self:flex-start;background:rgb(var(--c-accent) / .12);border:1px dashed rgb(var(--c-accent) / .6)}
 /* Shown before the saved conversation has it; the bot still answering */
 .test-msg.pending {opacity:.6}
+/* How long the customer waited for the reply above */
+.reply-meta {align-self:flex-start;margin-top:-5px;padding:0 4px;font-size:11px;opacity:.7;font-variant-numeric:tabular-nums}
+.reply-meta.warn {color:rgb(var(--c-warning));opacity:1}
+.reply-meta.slow {color:rgb(var(--c-danger));opacity:1}
 .test-msg.typing {opacity:.75;font-style:italic;animation:cskh-typing 1.2s ease-in-out infinite}
 @keyframes cskh-typing {50% {opacity:.35}}
 @media (prefers-reduced-motion: reduce) { .test-msg.typing {animation:none} }
@@ -219,7 +223,17 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
         let role = 'bot', content = typeof message.content === 'string' ? message.content : JSON.stringify(message.content);
         if (message.role === 'user') role = 'customer';
         else if (content.startsWith('[Nhân viên] ')) { role = 'staff'; content = content.slice('[Nhân viên] '.length); }
-        return {role, content, timestamp: message.timestamp};
+        return {role, content, timestamp: message.timestamp, ms: message.reply_ms, searches: message.searches};
+    }
+    // Seconds with one decimal in the page's language: "7,4 giây", "7.4 s"
+    const seconds = ms => t('reply_time').replace('{s}', new Intl.NumberFormat(document.documentElement.lang || undefined,
+        {minimumFractionDigits: 1, maximumFractionDigits: 1}).format(ms / 1000));
+    function replyMeta(line) {
+        const parts = [seconds(line.ms)];
+        if (line.searches) parts.push(t('reply_searches').replace('{n}', line.searches));
+        const el = node('div', parts.join(' · '));
+        el.className = 'reply-meta' + (line.ms >= 20000 ? ' slow' : line.ms >= 10000 ? ' warn' : '');
+        el.title = t('reply_time_hint'); return el;
     }
     function renderLines(tab, messages) {
         tab.messages = messages;
@@ -232,6 +246,7 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
         messages.map(lineOf).forEach(line => {
             const el = node('div', line.role === 'staff' ? t('staff') + ': ' + line.content : line.content);
             el.className = 'test-msg ' + line.role; el.title = stamp(line.timestamp); tab.log.append(el);
+            if (line.role === 'bot' && Number.isFinite(line.ms)) tab.log.append(replyMeta(line));
         });
         if (tab.pending) {
             const el = node('div', tab.pending.staff ? t('staff') + ': ' + tab.pending.content : tab.pending.content);
@@ -374,6 +389,11 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
             $('learning-pending').textContent = t('learning_pending').replace('{n}', ov.learning_pending || 0);
             $('daily-metrics').replaceChildren();
             ['new_customers','in','out','limited','escalations','friend_accepts'].forEach(key=>{const el=node('div');el.className='metric';el.append(node('span',t(key)),node('strong',ov.daily[key]||0));$('daily-metrics').append(el);});
+            {   // Today's average wait for a bot reply (real customers)
+                const replies = ov.daily.replies || 0, el = node('div'); el.className = 'metric'; el.title = t('reply_time_hint');
+                el.append(node('span', t('reply_avg')), node('strong', replies ? seconds(ov.daily.reply_ms / replies) : '–'));
+                $('daily-metrics').append(el);
+            }
             if (cs) {
             const customers=$('customer-rows'); customers.replaceChildren();
             cs.customers.forEach(c=>{const controls=node('div');controls.className='row';const path='/customers/'+encodeURIComponent(c.id);

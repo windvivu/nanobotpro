@@ -965,6 +965,31 @@ class AgentLoop:
         logger.info("Claimed-handoff escalation for {}: {}", msg.chat_id, result)
         return tool.last_handoff if str(result).startswith("the customer was told") else None
 
+    def _note_reply_time(self, msg: InboundMessage, messages: list[dict], skip: int,
+                         tools_used: list[str] | None, silent: bool) -> None:
+        """How long the customer waited for this reply, and how often the model searched the
+        knowledge (custom, CSKH page): kept on the reply line of the session, which the model never
+        reads back (get_history copies a fixed set of keys), and in today's average. Counted from
+        the message reaching the bot, so waiting for more messages to merge is not included."""
+        if silent or not getattr(self, "public_customer_mode", False) or msg.channel != "zalo":
+            return
+        reply = next((entry for entry in reversed(messages[skip:]) if entry.get("role") == "assistant"
+                      and not entry.get("tool_calls") and str(entry.get("content") or "").strip()), None)
+        if reply is None:
+            return  # nothing written back (the message tool sent it, or no reply)
+        from datetime import datetime
+        waited = max(0, round((datetime.now() - msg.timestamp).total_seconds() * 1000))
+        reply["reply_ms"] = waited
+        if searches := (tools_used or []).count("search_knowledge"):
+            reply["searches"] = searches
+        retention = getattr(self, "customer_retention", None)
+        getter = getattr(retention, "get_customer_state", None)
+        try:
+            if (state := getter() if getter else None) is not None:
+                state.record_reply_time(msg.sender_id, waited)
+        except Exception as exc:
+            logger.warning("Reply time not recorded: {}", type(exc).__name__)
+
     def _handoff_told(self, messages: list[dict], skip: int) -> str | None:
         """The handoff text the escalate tool told the customer in this turn (custom)."""
         told = any(entry.get("role") == "tool" and entry.get("name") == "escalate"
@@ -1947,6 +1972,8 @@ class AgentLoop:
                 after[-1]["content"] = told
             else:
                 all_msgs.append({"role": "assistant", "content": told})
+        else:
+            self._note_reply_time(msg, all_msgs, 1 + len(history), tools_used, silent)
 
         self._save_turn(session, all_msgs, 1 + len(history))
         self._clear_runtime_checkpoint(session)

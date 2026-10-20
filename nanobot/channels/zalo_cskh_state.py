@@ -78,6 +78,9 @@ class _Daily(BaseModel):
     escalations: int = Field(default=0, ge=0)
     friend_accepts: int = Field(default=0, ge=0)
     blocked_dropped: int = Field(default=0, ge=0)
+    # Bot replies and the customers' total wait for them: today's average reply time (custom)
+    replies: int = Field(default=0, ge=0)
+    reply_ms: int = Field(default=0, ge=0)
 
 
 class _State(BaseModel):
@@ -334,6 +337,15 @@ class CustomerServiceState:
             customer["images_today"] = customer.get("images_today", 0) + 1
             return customer["images_today"] <= per_day
         return self._update(change)
+
+    def record_reply_time(self, sender_id: str, waited_ms: int) -> None:
+        """One bot reply and how long the customer waited for it, for today's average."""
+        def change(now):
+            if not is_test_customer(sender_id):
+                daily = self._daily(now)
+                daily["replies"] = daily.get("replies", 0) + 1
+                daily["reply_ms"] = daily.get("reply_ms", 0) + max(0, int(waited_ms))
+        self._update(change)
 
     def record_outbound(self, sender_id: str) -> None:
         def change(now):
