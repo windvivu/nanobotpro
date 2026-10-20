@@ -105,6 +105,8 @@ def _transcript(request, customer_id, limit):
                 item = json.loads(line)
                 if item.get("role") == "assistant" and str(item.get("content", "")).strip() == "__SILENT__":
                     continue  # the bot chose not to answer a closing message
+                if item.get("role") == "assistant" and not str(item.get("content") or "").strip():
+                    continue  # the bot only called a tool (knowledge search, escalation): nothing was sent
                 if item.get("role") in {"user", "assistant"}:
                     rows.append({"role": item["role"], "timestamp": item.get("timestamp", ""),
                                  "content": _shown(item.get("content", ""), request.app.state.config.workspace_path)})

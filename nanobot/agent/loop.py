@@ -965,6 +965,13 @@ class AgentLoop:
         logger.info("Claimed-handoff escalation for {}: {}", msg.chat_id, result)
         return tool.last_handoff if str(result).startswith("the customer was told") else None
 
+    def _handoff_told(self, messages: list[dict], skip: int) -> str | None:
+        """The handoff text the escalate tool told the customer in this turn (custom)."""
+        told = any(entry.get("role") == "tool" and entry.get("name") == "escalate"
+                   and str(entry.get("content", "")).startswith("the customer was told")
+                   for entry in messages[skip:])
+        return (getattr(self.tools.get("escalate"), "last_handoff", "") or None) if told else None
+
     @staticmethod
     def _strip_think(text: str | None) -> str | None:
         """Remove <think>...</think> blocks that some models embed in content."""
@@ -1930,6 +1937,16 @@ class AgentLoop:
                     entry["content"] = handoff
                     break
             final_content = handoff  # what the customer gets, when the tool did not send it itself
+        elif told := self._handoff_told(all_msgs, 1 + len(history)):
+            # The escalate tool sent the customer its handoff text, and nothing the model wrote after
+            # it is delivered: the session keeps what the customer was told, or the CSKH page shows
+            # an empty line (or words never sent) and the next turns do not know it either
+            after = [entry for entry in all_msgs[1 + len(history):] if entry.get("role") == "assistant"
+                     and not entry.get("tool_calls") and str(entry.get("content") or "").strip()]
+            if after:
+                after[-1]["content"] = told
+            else:
+                all_msgs.append({"role": "assistant", "content": told})
 
         self._save_turn(session, all_msgs, 1 + len(history))
         self._clear_runtime_checkpoint(session)

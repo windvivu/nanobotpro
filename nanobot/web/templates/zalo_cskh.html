@@ -64,6 +64,11 @@ h1,h2,p {margin-top:0} input[type=checkbox] {accent-color:rgb(var(--c-accent))}
 #test-form input, #kb-ask-form input {flex:1;min-width:0}
 tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
 .test-msg.staff {align-self:flex-start;background:rgb(var(--c-accent) / .12);border:1px dashed rgb(var(--c-accent) / .6)}
+/* Shown before the saved conversation has it; the bot still answering */
+.test-msg.pending {opacity:.6}
+.test-msg.typing {opacity:.75;font-style:italic;animation:cskh-typing 1.2s ease-in-out infinite}
+@keyframes cskh-typing {50% {opacity:.35}}
+@media (prefers-reduced-motion: reduce) { .test-msg.typing {animation:none} }
 /* Page tabs: one job per tab; a badge counts what waits for the admin. The status band stays above. */
 .page-tabs {display:flex;gap:6px;overflow-x:auto;border-bottom:1px solid rgb(var(--c-primary) / .25);position:sticky;top:0;z-index:5;background:rgb(var(--c-canvas));margin-bottom:-8px}
 .cskh .page-tab {display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border:1px solid transparent;border-bottom:none;border-radius:10px 10px 0 0;background:none;font-weight:600;white-space:nowrap}
@@ -217,12 +222,23 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
         return {role, content, timestamp: message.timestamp};
     }
     function renderLines(tab, messages) {
+        tab.messages = messages;
+        // A message just sent shows at once, as in Try the knowledge: the saved conversation has it
+        // only when the bot's turn ends. It goes once the conversation changed and holds it.
+        const pending = tab.pending;
+        if (pending && (Date.now() - pending.at > 180000 || (tab.mark !== pending.mark
+                && messages.slice(-6).some(m => String(lineOf(m).content).includes(pending.content))))) tab.pending = null;
         tab.log.replaceChildren();
         messages.map(lineOf).forEach(line => {
             const el = node('div', line.role === 'staff' ? t('staff') + ': ' + line.content : line.content);
             el.className = 'test-msg ' + line.role; el.title = stamp(line.timestamp); tab.log.append(el);
         });
-        if (!messages.length) tab.log.append(node('p', t('empty')));
+        if (tab.pending) {
+            const el = node('div', tab.pending.staff ? t('staff') + ': ' + tab.pending.content : tab.pending.content);
+            el.className = 'test-msg pending ' + (tab.pending.staff ? 'staff' : 'customer'); tab.log.append(el);
+            if (!tab.pending.staff) { const typing = node('div', t('typing')); typing.className = 'test-msg bot typing'; tab.log.append(typing); }
+        }
+        if (!messages.length && !tab.pending) tab.log.append(node('p', t('empty')));
         tab.log.scrollTop = tab.log.scrollHeight;
     }
     function setState(tab, info) {
@@ -295,8 +311,12 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
         const actions = node('div'); actions.className = 'conv-actions';
         const send = async asStaff => {
             const content = box.value.trim(); if (!content) return;
-            if (asStaff) { await api('/customers/' + enc(id) + '/reply', {content}); note(t('staff_sent')); }
-            else await api('/test-customers/' + enc(id) + '/messages', {name: name, content});
+            tab.pending = {content, staff: asStaff, mark: tab.mark, at: Date.now()};
+            renderLines(tab, tab.messages || []);
+            try {
+                if (asStaff) { await api('/customers/' + enc(id) + '/reply', {content}); note(t('staff_sent')); }
+                else await api('/test-customers/' + enc(id) + '/messages', {name: name, content});
+            } catch (e) { tab.pending = null; renderLines(tab, tab.messages || []); throw e; }
             box.value = '';  // kept when the send failed, so it can be sent again
             await pollTab(tab, true); await refresh();
         };
@@ -483,8 +503,11 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
     $('kb-ask-form').onsubmit = e => { e.preventDefault(); act(e.submitter || e.target.querySelector('button'), async () => {
         const text = $('kb-ask-input').value.trim(); if (!text) return;
         $('kb-ask-input').value = ''; askLine('customer', text);
-        const data = await api('/kb/ask', {content: text});
-        askLine(data.silent ? 'staff' : 'bot', data.silent ? t('ask_silent') : data.reply);
+        askLine('bot typing', t('typing')); const typing = $('kb-ask-log').lastChild;
+        try {
+            const data = await api('/kb/ask', {content: text});
+            askLine(data.silent ? 'staff' : 'bot', data.silent ? t('ask_silent') : data.reply);
+        } finally { typing.remove(); }
     }); };
     $('kb-ask-clear').onclick = () => act($('kb-ask-clear'), async () => { await api('/kb/ask/clear', {}); $('kb-ask-log').replaceChildren(); });
     // The Facts count opens what the bot learned from that document

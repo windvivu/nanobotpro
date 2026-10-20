@@ -242,6 +242,7 @@
   "cskh.ask_send": "Ask",
   "cskh.ask_clear": "Clear conversation",
   "cskh.ask_silent": "(the bot chose not to answer)",
+  "cskh.typing": "Replying…",
   "cskh.groups": "Groups",
   "cskh.groups_note": "Groups the bot was added to. It stays silent until you allow a group; revoking silences it at once, though it stays in the group — leaving is done on the phone. In a group the bot does not hand off; it asks the customer to message privately.",
   "cskh.group": "Group",

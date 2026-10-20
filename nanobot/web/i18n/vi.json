@@ -242,6 +242,7 @@
   "cskh.ask_send": "Hỏi",
   "cskh.ask_clear": "Xoá hội thoại",
   "cskh.ask_silent": "(bot chọn không trả lời)",
+  "cskh.typing": "Đang trả lời…",
   "cskh.groups": "Nhóm",
   "cskh.groups_note": "Nhóm mà bot được thêm vào. Bot im lặng cho đến khi bạn cho phép; thu hồi thì im lại ngay nhưng vẫn ở trong nhóm, rời nhóm thì làm trên điện thoại. Trong nhóm bot không chuyển tiếp, sẽ mời khách nhắn riêng.",
   "cskh.group": "Nhóm",
