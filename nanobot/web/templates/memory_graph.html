@@ -251,14 +251,15 @@
             </article>
         </aside>
         <div class="ui-card p-2 relative min-w-0 min-h-[28rem] md:h-[min(70vh,48rem)] overflow-hidden">
-            <div id="brain-graph" class="w-full h-[min(70vh,48rem)] md:h-full" aria-label="{{ tr('graph.brain_graph') }}"></div>
+            <canvas id="graph-stars" class="absolute inset-0 w-full h-full pointer-events-none" hidden aria-hidden="true"></canvas>
+            <div id="brain-graph" class="relative w-full h-[min(70vh,48rem)] md:h-full" aria-label="{{ tr('graph.brain_graph') }}"></div>
             <div id="graph-empty" class="absolute inset-0 hidden items-center justify-center text-primary/50 text-sm">{{ tr('graph.no_match') }}</div>
             <div id="graph-view-controls" role="group" aria-label="{{ tr('graph.view_controls') }}" class="absolute top-3 right-3 z-10 flex items-center gap-1 ui-card p-1">
                 <label class="flex items-center gap-1 px-2 text-[10px] font-mono text-primary/70" title="{{ tr('graph.display_mode') }}">
                     <span class="sr-only">{{ tr('graph.display_mode') }}</span>
                     <select id="graph-display-mode" class="bg-transparent border-0 px-1 py-1 text-[10px] text-primary focus:outline-none" aria-label="{{ tr('graph.display_mode') }}">
                         <option value="network">{{ tr('graph.network') }}</option>
-                        <option value="nebula">{{ tr('graph.nebula') }}</option>
+                        <option value="nebula" selected>{{ tr('graph.nebula') }}</option>
                     </select>
                 </label>
                 <button id="graph-zoom-out" type="button" disabled title="{{ tr('graph.zoom_out') }}" aria-label="{{ tr('graph.zoom_out') }}" class="px-3 py-2 text-xs hover:bg-primary/10 disabled:opacity-40 disabled:cursor-not-allowed">−</button>
@@ -344,7 +345,7 @@
     let settingsSaveAgain = false;
     let settingsRevision = 0;
     let learningLogTimer = null;
-    let graphDisplayMode = 'network';
+    let graphDisplayMode = 'nebula';  // the default view (custom); Network stays one click away
     // Resolve theme tokens once to rgba syntax understood by both Canvas and
     // the color parser bundled with force-graph 1.51.4.
     const colour = (name, alpha = 1) => {
@@ -420,19 +421,64 @@
             if (fitPending && snapshot.nodes.length) graph.zoomToFit(500, 32);
             fitPending = false;
         });
+    // Nebula pulls loose clusters toward the centre into one rounded mass (custom, as javis-os does)
+    const centreGravity = strength => {
+        let nodes = [];
+        const force = alpha => { for (const n of nodes) { n.vx -= n.x * strength * alpha; n.vy -= n.y * strength * alpha; } };
+        force.initialize = list => { nodes = list; };
+        return force;
+    };
+    // Stars behind the Nebula view (custom): their own canvas, slow twinkle and drift at about 20
+    // frames a second, paused while the tab is hidden, still with reduced motion
+    const starField = (() => {
+        const canvas = document.getElementById('graph-stars'), ctx = canvas.getContext('2d');
+        const still = matchMedia('(prefers-reduced-motion: reduce)');
+        let points = [], frame = null, last = 0;
+        function size() {
+            const ratio = window.devicePixelRatio || 1, w = canvas.clientWidth, h = canvas.clientHeight;
+            canvas.width = Math.round(w * ratio); canvas.height = Math.round(h * ratio);
+            ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+            points = Array.from({length: Math.min(260, Math.round(w * h / 5000))}, () => ({
+                x: Math.random(), y: Math.random(), r: .3 + Math.random() * 1.1, a: .25 + Math.random() * .6,
+                phase: Math.random() * 6.283, speed: .2 + Math.random() * .8,
+            }));
+        }
+        function draw(time) {
+            const w = canvas.clientWidth, h = canvas.clientHeight, moving = !still.matches;
+            ctx.clearRect(0, 0, w, h); ctx.fillStyle = '#dfe8ff';
+            for (const p of points) {
+                ctx.globalAlpha = p.a * (moving ? .6 + .4 * Math.sin(time / 900 * p.speed + p.phase) : 1);
+                ctx.beginPath(); ctx.arc(((p.x + (moving ? time * p.speed / 4e6 : 0)) % 1) * w, p.y * h, p.r, 0, 6.283); ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+        }
+        function loop(time) {
+            frame = requestAnimationFrame(loop);
+            if (document.hidden || time - last < 50) return;
+            last = time; draw(time);
+        }
+        return {
+            start() { canvas.hidden = false; size(); draw(performance.now()); if (!still.matches && !frame) frame = requestAnimationFrame(loop); },
+            stop() { canvas.hidden = true; if (frame) cancelAnimationFrame(frame); frame = null; },
+            resize() { if (!canvas.hidden) { size(); draw(performance.now()); } },
+        };
+    })();
     function applyGraphDisplayMode() {
         const nebula = graphDisplayMode === 'nebula';
         graphPanel.style.background = nebula ? nebulaSurface : '';
         graphPanel.classList.toggle('nebula-mode', nebula);
+        nebula ? starField.start() : starField.stop();
+        graph.d3Force('gravity', nebula ? centreGravity(.1) : null);
         const data = graph.graphData();
         if (data.nodes.length) graph.graphData(data);
     }
-    const resize = () => graph.width(container.clientWidth).height(container.clientHeight);
+    applyGraphDisplayMode();
+    const resize = () => { graph.width(container.clientWidth).height(container.clientHeight); starField.resize(); };
     const observer = new ResizeObserver(resize);
     observer.observe(container);
     resize();
     window.addEventListener('pagehide', () => {
-        observer.disconnect(); graph.pauseAnimation();
+        observer.disconnect(); graph.pauseAnimation(); starField.stop();
         if (learningLogTimer) clearInterval(learningLogTimer);
         if (migrationSourceTimer) clearInterval(migrationSourceTimer);
         if (migrationStatusTimer) clearInterval(migrationStatusTimer);
@@ -751,6 +797,7 @@
     });
     document.getElementById('graph-display-mode').addEventListener('change', event => {
         graphDisplayMode = event.target.value === 'nebula' ? 'nebula' : 'network';
+        fitPending = true;  // the gravity changes with the view, so the layout grows or shrinks
         applyGraphDisplayMode();
     });
     function updateFullscreenButton() {

@@ -282,11 +282,13 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
         $('conv-toggle').classList.toggle('unread', !!document.querySelector('#conv-tabs .tab.unread'));
     }
     $('conv-toggle').onclick = () => setConversations(document.querySelector('.inbox').classList.contains('conv-closed'));
-    function activate(id) {
+    // focus: only when the admin picked this conversation, and never scrolling the page to the box
+    // (closing a tab or restoring tabs on load jumped to a reply box out of view)
+    function activate(id, focus = false) {
         activeTab = id;
         tabs.forEach(tab => { const on = tab.id === id; tab.el.classList.toggle('active', on); tab.el.setAttribute('aria-selected', String(on)); tab.panel.hidden = !on; if (on) tab.el.classList.remove('unread'); });
         saveTabs(); updateConvToggle();
-        const tab = tabs.get(id); if (tab) { pollTab(tab).catch(() => {}); tab.box.focus(); }
+        const tab = tabs.get(id); if (tab) { pollTab(tab).catch(() => {}); if (focus) tab.box.focus({preventScroll: true}); }
     }
     function closeTab(id) {
         const tab = tabs.get(id); if (!tab) return;
@@ -296,12 +298,12 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
     }
     function openTab(id, name, test) {
         if (convReady) setConversations(true);
-        if (tabs.has(id)) { activate(id); return tabs.get(id); }
+        if (tabs.has(id)) { activate(id, convReady); return tabs.get(id); }
         const el = node('button'); el.type = 'button'; el.className = 'tab'; el.setAttribute('role', 'tab');
         const label = node('span', (test ? '[' + t('test_badge') + '] ' : '') + (name || id)); label.className = 'tab-name'; label.title = id;
         const close = node('button', '×'); close.type = 'button'; close.className = 'tab-close'; close.setAttribute('aria-label', t('close_tab'));
         close.onclick = event => { event.stopPropagation(); closeTab(id); };
-        el.append(label, close); el.onclick = () => activate(id); $('conv-tabs').append(el);
+        el.append(label, close); el.onclick = () => activate(id, true); $('conv-tabs').append(el);
         const panel = node('div'); panel.className = 'conv-panel'; panel.hidden = true; panel.setAttribute('role', 'tabpanel');
         const head = node('p'); head.className = 'muted'; head.textContent = (name ? name + ' · ' : '') + id;
         const log = node('div'); log.className = 'test-log'; log.setAttribute('aria-live', 'polite');
@@ -332,7 +334,7 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
         form.append(box, actions); panel.append(head, log, state, form); $('conv-panels').append(panel);
         const tab = {id, name, test: !!test, mark: null, busy: false, el, panel, log, state, box};
         tabs.set(id, tab); $('conv-empty').hidden = true;
-        activate(id);
+        activate(id, convReady);
         if (!tabTimer) tabTimer = setInterval(() => { const tab = tabs.get(activeTab); if (tab && !document.hidden) pollTab(tab).catch(() => {}); }, 2000);
         return tab;
     }
