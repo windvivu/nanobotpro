@@ -197,6 +197,8 @@
   "graph.display_mode": "Chế độ hiển thị đồ thị",
   "graph.network": "Mạng",
   "graph.nebula": "Tinh vân",
+  "graph.nebula_3d": "Tinh vân 3D",
+  "graph.load_3d_failed": "Không tải được chế độ 3D. Thử lại hoặc dùng Tinh vân.",
   "graph.zoom_out": "Thu nhỏ",
   "graph.zoom_in": "Phóng to",
   "graph.fit": "Vừa khung",

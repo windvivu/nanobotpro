@@ -197,6 +197,8 @@
   "graph.display_mode": "Graph display mode",
   "graph.network": "Network",
   "graph.nebula": "Nebula",
+  "graph.nebula_3d": "Nebula 3D",
+  "graph.load_3d_failed": "The 3D view could not be loaded. Try again or use Nebula.",
   "graph.zoom_out": "Zoom out",
   "graph.zoom_in": "Zoom in",
   "graph.fit": "Fit",
