@@ -88,6 +88,17 @@ class BrainContextAdapter:
             return None
         return fact
 
+    def _sources(self, allowed: set[Path]) -> frozenset[str]:
+        """The published documents as KB references: the index filters on them in SQL (review 14)."""
+        root = self.index.store.workspace.resolve()
+        refs = set()
+        for path in allowed:
+            try:
+                refs.add(path.relative_to(root).as_posix())
+            except ValueError:
+                continue
+        return frozenset(refs)
+
     def _whole_kb(self, allowed: set[Path]) -> tuple[RetrievedChunk, ...] | None:
         """The whole public KB in source order when it fits retrievalTokenBudget, else None. Nothing
         is chosen then, so nothing is missed: a price page learned as 38 facts is about 1,000 words
@@ -96,7 +107,7 @@ class BrainContextAdapter:
         if self._whole is not None and self._whole[0] == key:
             return self._whole[1]
         found = []
-        for item in self.index.active_chunks():
+        for item in self.index.active_chunks(sources=self._sources(allowed)):
             if fact := self._public_fact(item.fact_id, allowed):
                 found.append((fact.source.source_ref, fact.source.line_start, item.chunk_id,
                               item.model_copy(update={"citation": fact.source})))
@@ -114,16 +125,18 @@ class BrainContextAdapter:
             return BrainContext(query, ())
         matched = None
         try:
-            accept = None
+            accept = sources = None
             if self.public_customer_mode:
                 from nanobot.web.kb_catalog import published_paths
                 allowed = published_paths(self.index.store.workspace)
+                sources = self._sources(allowed)  # in SQL: private facts never take the places
                 accept = lambda fact_id: self._public_fact(fact_id, allowed) is not None  # noqa: E731
             chunks = tuple(self.index.search(
                 query,
                 limit=self.config.retrieval_limit,
                 token_budget=self.config.retrieval_token_budget,
                 accept=accept,
+                sources=sources,
             ))
             if self.public_customer_mode:
                 # Index citations point to fact Markdown; public names resolve

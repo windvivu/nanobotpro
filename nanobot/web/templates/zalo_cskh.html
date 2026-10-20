@@ -30,6 +30,7 @@ h1,h2,p {margin-top:0} input[type=checkbox] {accent-color:rgb(var(--c-accent))}
 /* Hidden means hidden, whatever layout class the element also has (the Unlink line showed through) */
 .cskh [hidden] {display:none !important}
 .cskh .grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.cskh .grid .wide {grid-column:1/-1}
 .cskh label {display:flex;flex-direction:column;gap:6px} .cskh .check {flex-direction:row;align-items:center}
 .cskh .table-wrap {overflow-x:auto;width:100%} .cskh table {width:100%;border-collapse:collapse;font-size:.9rem}
 .cskh th,.cskh td {text-align:left;padding:10px 8px;border-bottom:1px solid rgb(var(--c-primary) / .2);vertical-align:top}
@@ -72,6 +73,8 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
 .reply-meta.slow {color:rgb(var(--c-danger));opacity:1}
 /* Teach the bot what staff answered */
 .teach-from {align-self:flex-start;margin-top:-4px;padding:2px 8px;font-size:11px;border-style:dashed}
+/* The hold message the customer got before a slow answer */
+.test-msg.hold {opacity:.6;font-size:.9em;font-style:italic}
 .kb-tabs {margin-bottom:14px}
 #notes-query {width:100%;max-width:420px;margin-bottom:10px}
 #notes-more {margin-top:10px}
@@ -174,7 +177,10 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
 <section id="cskh-settings" class="ui-card"><h2>{{ tr('cskh.settings') }}</h2><form id="settings-form"><div class="grid">
 {% for field,key in [('welcomeMessage','welcome'),('handoffMessage','handoff')] %}<label>{{ tr('cskh.' ~ key) }}<textarea name="{{ field }}" maxlength="4000"></textarea></label>{% endfor %}
 {% for field,key in [('inboundPerMinute','per_minute'),('inboundPerDay','per_day'),('pauseAfterEscalationMinutes','pause_minutes')] %}<label>{{ tr('cskh.' ~ key) }}<input name="{{ field }}" type="number" min="1" max="1000000" required></label>{% endfor %}
-<label class="check"><input name="autoAcceptFriend" type="checkbox">{{ tr('cskh.auto_accept') }}</label></div><p class="muted">{{ tr('cskh.settings_note') }}</p><button type="submit">{{ tr('cskh.save') }}</button></form></section>
+<label class="check"><input name="autoAcceptFriend" type="checkbox">{{ tr('cskh.auto_accept') }}</label>
+<label class="check"><input name="holdEnabled" type="checkbox">{{ tr('cskh.hold_enabled') }}</label>
+<label>{{ tr('cskh.hold_after') }}<input name="holdAfterSeconds" type="number" min="1" max="60" required></label>
+<label class="wide">{{ tr('cskh.hold_messages') }}<textarea name="holdMessages" rows="6" maxlength="15000"></textarea></label></div><p class="muted">{{ tr('cskh.settings_note') }}</p><button type="submit">{{ tr('cskh.save') }}</button></form></section>
 <section id="cskh-tools" class="ui-card"><h2>{{ tr('cskh.tools') }}</h2><div class="row"><button id="telegram-test">{{ tr('cskh.telegram_test') }}</button><button id="install-persona">{{ tr('cskh.persona') }}</button></div><p class="muted">{{ tr('cskh.delivery_note') }}</p></section>
 </div>
 </main>
@@ -235,7 +241,7 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
         let role = 'bot', content = typeof message.content === 'string' ? message.content : JSON.stringify(message.content);
         if (message.role === 'user') role = 'customer';
         else if (content.startsWith('[Nhân viên] ')) { role = 'staff'; content = content.slice('[Nhân viên] '.length); }
-        return {role, content, timestamp: message.timestamp, ms: message.reply_ms, searches: message.searches};
+        return {role, content, timestamp: message.timestamp, ms: message.reply_ms, searches: message.searches, hold: message.hold};
     }
     // Seconds with one decimal in the page's language: "7,4 giây", "7.4 s"
     const seconds = ms => t('reply_time').replace('{s}', new Intl.NumberFormat(document.documentElement.lang || undefined,
@@ -257,6 +263,10 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
         tab.log.replaceChildren();
         const lines = messages.map(lineOf);
         lines.forEach((line, i) => {
+            if (line.role === 'bot' && line.hold) {
+                const held = node('div', line.hold.text); held.className = 'test-msg bot hold';
+                held.title = t('hold_sent').replace('{s}', seconds(line.hold.after_ms)); tab.log.append(held);
+            }
             const el = node('div', line.role === 'staff' ? t('staff') + ': ' + line.content : line.content);
             el.className = 'test-msg ' + line.role; el.title = stamp(line.timestamp); tab.log.append(el);
             if (line.role === 'bot' && Number.isFinite(line.ms)) tab.log.append(replyMeta(line));
@@ -683,8 +693,8 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
         }
         form.reset(); note(t('uploaded').replace('{n}', done));
     });};
-    $('settings-form').onsubmit=e=>{e.preventDefault();act(e.submitter,async()=>{const form=e.target,body={};['welcomeMessage','handoffMessage'].forEach(k=>body[k]=form.elements[k].value);['inboundPerMinute','inboundPerDay','pauseAfterEscalationMinutes'].forEach(k=>body[k]=Number(form.elements[k].value));body.autoAcceptFriend=form.elements.autoAcceptFriend.checked;await api('/settings',body);note(t('saved'));});};
-    async function loadSettings(){const data=await api('/settings');Object.entries(data).forEach(([key,value])=>{const el=$('settings-form').elements[key];if(el){if(el.type==='checkbox')el.checked=value;else el.value=value;}});}
+    $('settings-form').onsubmit=e=>{e.preventDefault();act(e.submitter,async()=>{const form=e.target,body={};['welcomeMessage','handoffMessage'].forEach(k=>body[k]=form.elements[k].value);['inboundPerMinute','inboundPerDay','pauseAfterEscalationMinutes','holdAfterSeconds'].forEach(k=>body[k]=Number(form.elements[k].value));body.autoAcceptFriend=form.elements.autoAcceptFriend.checked;body.holdEnabled=form.elements.holdEnabled.checked;body.holdMessages=form.elements.holdMessages.value.split('\n').map(s=>s.trim()).filter(Boolean);await api('/settings',body);note(t('saved'));});};
+    async function loadSettings(){const data=await api('/settings');Object.entries(data).forEach(([key,value])=>{const el=$('settings-form').elements[key];if(el){if(el.type==='checkbox')el.checked=value;else el.value=Array.isArray(value)?value.join('\n'):value;}});}
     $('customer-status').onchange=()=>refresh().catch(e=>note(e.message));
     let debounce; $('customer-query').oninput=()=>{clearTimeout(debounce);debounce=setTimeout(()=>refresh().catch(e=>note(e.message)),250);};
     Promise.all([refresh(),loadSettings()]).then(()=>{const customer=new URLSearchParams(location.search).get('customer');if(customer)openTab(customer,'',customer.startsWith('test-'));}).catch(e=>note(t('error')+': '+e.message));

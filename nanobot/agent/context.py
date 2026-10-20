@@ -93,8 +93,11 @@ class ContextBuilder:
         memory_query: str | None = None,
         memory_session: str | None = None,
         include_user_profile: bool = True,
+        knowledge: tuple[str, int | None] | None = None,
     ) -> str:
-        """Build the system prompt from identity, bootstrap files, memory, and skills."""
+        """Build the system prompt from identity, bootstrap files, memory, and skills.
+
+        knowledge: the retrieval already done by prefetch_knowledge (off the event loop, custom)."""
         parts = [self._get_identity(channel=channel)]
 
         # A group chat's turns leave USER.md out: it is the owner's profile (custom, agent/group_chat.py)
@@ -102,29 +105,9 @@ class ContextBuilder:
         if bootstrap:
             parts.append(bootstrap)
 
-        brain_context = ""
-        self.last_knowledge_hits = None
-        if memory_query and self._brain_memory_config is not None:
-            config = self._brain_memory_config
-            if config.reads_session(memory_session):
-                try:
-                    self._knowledge_adapter()
-                    # A long message (a pasted text, a sub-agent's report) is searched by its start: the
-                    # index refuses queries over maxQueryChars and only uses their first 64 terms (custom)
-                    query = memory_query[:config.max_query_chars]
-                    if hasattr(self._brain_context, "retrieve"):
-                        retrieved = self._brain_context.retrieve(query)
-                        brain_context = retrieved.render()
-                        self.last_knowledge_hits = retrieved.hits
-                    else:
-                        brain_context = self._brain_context.render(query)
-                except Exception as exc:
-                    if self.public_customer_mode:
-                        from nanobot.security.public_output import public_error
-                        public_error(exc)  # Log reference locally; never add errors to the prompt.
-                    # Brain Memory is an optional cache; legacy context must
-                    # continue when its index is absent, corrupt or unavailable.
-                    brain_context = ""
+        brain_context, self.last_knowledge_hits = (
+            knowledge if knowledge is not None else self.prefetch_knowledge(memory_query, memory_session)
+        )
 
         # Brain retrieval is selective. When it finds relevant facts, omit the
         # full legacy MEMORY.md to avoid duplicating the same knowledge in the
@@ -158,6 +141,32 @@ class ContextBuilder:
             ))
 
         return "\n\n---\n\n".join(parts)
+
+    def prefetch_knowledge(self, memory_query: str | None, memory_session: str | None) -> tuple[str, int | None]:
+        """(rendered facts, facts matched) for the system prompt; None hits when not searched. Safe to
+        run in a thread: it sets no state the caller reads (custom, review 14: a broad query on a big
+        KB held the event loop every customer shares)."""
+        if not memory_query or self._brain_memory_config is None:
+            return "", None
+        config = self._brain_memory_config
+        if not config.reads_session(memory_session):
+            return "", None
+        try:
+            self._knowledge_adapter()
+            # A long message (a pasted text, a sub-agent's report) is searched by its start: the
+            # index refuses queries over maxQueryChars and only uses their first 64 terms (custom)
+            query = memory_query[:config.max_query_chars]
+            if hasattr(self._brain_context, "retrieve"):
+                retrieved = self._brain_context.retrieve(query)
+                return retrieved.render(), retrieved.hits
+            return self._brain_context.render(query), None
+        except Exception as exc:
+            if self.public_customer_mode:
+                from nanobot.security.public_output import public_error
+                public_error(exc)  # Log reference locally; never add errors to the prompt.
+            # Brain Memory is an optional cache; legacy context must
+            # continue when its index is absent, corrupt or unavailable.
+            return "", None
 
     def _knowledge_adapter(self) -> BrainContextAdapter:
         if self._brain_context is None:
@@ -291,6 +300,7 @@ class ContextBuilder:
         senders: Sequence[str] | None = None,
         include_user_profile: bool = True,
         memory_query: str | None = None,
+        knowledge: tuple[str, int | None] | None = None,
     ) -> list[dict[str, Any]]:
         """Build the complete message list for an LLM call.
 
@@ -324,6 +334,7 @@ class ContextBuilder:
                 memory_query=memory_query if memory_query is not None else retrieval_query(current_message, history),
                 memory_session=memory_session or (f"{channel}:{chat_id}" if channel and chat_id else None),
                 include_user_profile=include_user_profile,
+                knowledge=knowledge,
             )},
             *history,
         ]

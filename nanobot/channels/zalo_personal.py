@@ -16,8 +16,9 @@ from pathlib import Path
 from typing import Any, Literal
 
 from loguru import logger
-from pydantic import Field
+from pydantic import Field, field_validator
 
+from nanobot.agent.hold import DEFAULT_HOLD_MESSAGES, HOLD_MESSAGE_MAX_CHARS
 from nanobot.bus.events import OutboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.channels.base import BaseChannel
@@ -186,6 +187,18 @@ class ZaloCustomerServiceConfig(Base):
     inbound_per_minute: int = Field(default=6, ge=1)
     inbound_per_day: int = Field(default=200, ge=1)
     pause_after_escalation_minutes: int = Field(default=30, ge=1)
+    # Hold message (custom, agent/hold.py): a short "let me check" when an answer is slow
+    hold_enabled: bool = True
+    hold_after_seconds: int = Field(default=5, ge=1, le=60)
+    hold_messages: list[str] = Field(default_factory=lambda: list(DEFAULT_HOLD_MESSAGES), max_length=50)
+
+    @field_validator("hold_messages")
+    @classmethod
+    def _hold_phrases(cls, value: list[str]) -> list[str]:
+        phrases = [" ".join(str(item).split()) for item in value]
+        if any(len(phrase) > HOLD_MESSAGE_MAX_CHARS for phrase in phrases):
+            raise ValueError(f"Each hold message must be at most {HOLD_MESSAGE_MAX_CHARS} characters")
+        return [phrase for phrase in phrases if phrase]
 
 
 class ZaloPersonalConfig(Base):
@@ -1123,8 +1136,8 @@ class ZaloPersonalChannel(BaseChannel):
         coming_back = self._status in (self.STATUS_CONNECTING, self.STATUS_CONNECTED) or (
             self._reconnect_task is not None and not self._reconnect_task.done()
         )
-        if msg.metadata.get("_progress"):
-            return  # transient progress hint, not worth delivering late
+        if msg.metadata.get("_progress") or msg.metadata.get("_hold"):
+            return  # transient progress hint or hold message, not worth delivering late
         if not coming_back or self._intentional_disconnect:
             logger.warning("Zalo not connected ({}) — dropping message to {}", self._status, msg.chat_id)
             return

@@ -20,7 +20,7 @@ _TOKEN_RE = re.compile(r"[\wÀ-ỹ]+", re.UNICODE)
 _WIKILINK_RE = re.compile(r"\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]+)?\]\]")
 _CHUNK_LINES = 80
 _CHUNK_CHARS = 4000
-_INDEX_SCHEMA_VERSION = "3"
+_INDEX_SCHEMA_VERSION = "4"
 
 
 @dataclass(frozen=True)
@@ -57,6 +57,7 @@ QUERY_TERMS = 64
 # all scored 0 and the order of 38 facts was arbitrary: the one holding the prices came 13th.
 # Candidates are ranked here instead, by the question's terms each fact holds, diacritics kept.
 _CANDIDATES = 1000
+_CANDIDATE_PAGES = 5  # with a filter, more rows are read until enough pass it (review 14)
 _LOOSE = 0.8  # a prefix, or a term typed without diacritics matching one that has them
 # Neighbouring terms of the question side by side in the fact too ("cơ bản", "nhà thuốc"): all of
 # them together add less than one term, so holding more of the question always ranks first
@@ -118,6 +119,11 @@ def _rank(query: str, rows: list, total: int) -> list[tuple[float, object]]:
               for position, (row, hits, together) in enumerate(found)]
     # Ties keep the FTS order
     return [(score, row) for score, _, row in sorted(scored, key=lambda item: (-item[0], item[1])) if score > 0]
+
+
+def _sources_param(sources: frozenset[str] | None) -> str | None:
+    """The source filter as one SQL parameter (a JSON list), None for no filter."""
+    return None if sources is None else json.dumps(sorted(sources), ensure_ascii=False)
 
 
 def _fts_query(query: str) -> str:
@@ -199,7 +205,16 @@ class BrainIndex:
                     tags TEXT NOT NULL,
                     supersedes TEXT NOT NULL,
                     confidence REAL NOT NULL,
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    source_ref TEXT NOT NULL DEFAULT '',
+                    source_session TEXT NOT NULL DEFAULT ''
+                );
+                -- v4 (custom, review 14): which fact replaces which, indexed; the public KB filter
+                -- reads source_ref/source_session in SQL
+                CREATE TABLE IF NOT EXISTS supersessions (
+                    old_id TEXT NOT NULL,
+                    new_id TEXT NOT NULL,
+                    PRIMARY KEY(old_id, new_id)
                 );
                 CREATE TABLE IF NOT EXISTS chunks (
                     chunk_id TEXT PRIMARY KEY,
@@ -239,10 +254,19 @@ class BrainIndex:
             version = conn.execute(
                 "SELECT value FROM brain_meta WHERE key='schema_version'"
             ).fetchone()[0]
-            if version in {"1", "2"}:
+            rebuild = False
+            if version in {"1", "2", "3"}:
                 columns = {row[1] for row in conn.execute("PRAGMA table_info(facts)")}
-                if version == "1" and "supersedes" not in columns:
+                if "supersedes" not in columns:
                     conn.execute("ALTER TABLE facts ADD COLUMN supersedes TEXT NOT NULL DEFAULT ''")
+                for column in ("source_ref", "source_session"):
+                    if column not in columns:
+                        try:
+                            conn.execute(f"ALTER TABLE facts ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
+                        except sqlite3.OperationalError as exc:  # another opener added it a moment ago
+                            if "duplicate column" not in str(exc):
+                                raise
+                rebuild = True  # v4 columns and supersessions come from the fact files
                 # v2 created the links table but never populated it. Backfill
                 # once so reverse wikilink retrieval also works on existing
                 # indexes after upgrading to v3.
@@ -261,6 +285,8 @@ class BrainIndex:
             if version != _INDEX_SCHEMA_VERSION:
                 raise FormatError(f"Unsupported Brain Memory index schema: {version}")
             conn.commit()
+        if rebuild:
+            self.rebuild()
 
     def _iter_fact_files(self) -> Iterable[tuple[str, bytes]]:
         facts_dir = self.store.root / "facts"
@@ -308,6 +334,7 @@ class BrainIndex:
         conn.execute("DELETE FROM chunks")
         conn.execute("DELETE FROM facts")
         conn.execute("DELETE FROM links")
+        conn.execute("DELETE FROM supersessions")
 
     @staticmethod
     def _remove_fact(conn: sqlite3.Connection, fact_id: str) -> None:
@@ -318,18 +345,23 @@ class BrainIndex:
         conn.execute("DELETE FROM chunks WHERE fact_id = ?", (fact_id,))
         conn.execute("DELETE FROM facts WHERE id = ?", (fact_id,))
         conn.execute("DELETE FROM links WHERE source_id = ? OR target_id = ?", (fact_id, fact_id))
+        conn.execute("DELETE FROM supersessions WHERE new_id = ?", (fact_id,))
 
     @staticmethod
     def _insert_fact(conn: sqlite3.Connection, path: str, raw: bytes) -> tuple[Fact, int]:
         fact, chunks = BrainIndex._fact_rows(path, raw)
         conn.execute(
-            "INSERT INTO facts VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO facts (id, path, source_hash, status, type, topic, entities, tags, supersedes, "
+            "confidence, created_at, source_ref, source_session) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 fact.id, path, content_hash(raw), fact.status, fact.type,
                 fact.topic, json_tuple(fact.entities), json_tuple(fact.tags),
                 " ".join(fact.supersedes), fact.confidence, fact.created_at,
+                fact.source.source_ref, fact.source_session or "",
             ),
         )
+        conn.executemany("INSERT OR IGNORE INTO supersessions VALUES (?, ?)",
+                         ((old_id, fact.id) for old_id in fact.supersedes))
         for chunk in chunks:
             conn.execute("INSERT INTO chunks VALUES (?, ?, ?, ?, ?, ?, ?)", chunk[:7])
             conn.execute(
@@ -397,10 +429,12 @@ class BrainIndex:
             row = conn.execute("SELECT value FROM brain_meta WHERE key='generation'").fetchone()
         return str(row[0]) if row else ""
 
-    def active_chunks(self) -> list[RetrievedChunk]:
-        """Every chunk of the facts in force (custom: a small public KB goes into the prompt whole)."""
+    def active_chunks(self, *, sources: frozenset[str] | None = None) -> list[RetrievedChunk]:
+        """Every chunk of the facts in force (custom: a small public KB goes into the prompt whole);
+        with sources, only facts learned from those documents and not from a session."""
         if not self.config.enabled:
             return []
+        only = _sources_param(sources)
         with self._connection() as conn:
             rows = conn.execute(
                 """
@@ -408,13 +442,11 @@ class BrainIndex:
                 FROM chunks c
                 JOIN facts f ON f.id = c.fact_id
                 WHERE f.status = 'active'
-                  AND NOT EXISTS (
-                      SELECT 1 FROM facts newer
-                      WHERE newer.status = 'active'
-                        AND instr(' ' || newer.supersedes || ' ', ' ' || f.id || ' ') > 0
-                  )
+                  AND NOT EXISTS (SELECT 1 FROM supersessions s JOIN facts newer ON newer.id = s.new_id WHERE s.old_id = f.id AND newer.status = 'active')
+                AND (? IS NULL OR (f.source_session = '' AND f.source_ref IN (SELECT value FROM json_each(?))))
                 ORDER BY c.chunk_id ASC
-                """
+                """,
+                (only, only),
             ).fetchall()
         return [RetrievedChunk(
             chunk_id=row["chunk_id"], fact_id=row["fact_id"], text=row["text"], score=0.0,
@@ -423,9 +455,12 @@ class BrainIndex:
         ) for row in rows]
 
     def search(self, query: str, *, limit: int | None = None, token_budget: int | None = None,
-               accept: Callable[[str], bool] | None = None) -> list[RetrievedChunk]:
+               accept: Callable[[str], bool] | None = None,
+               sources: frozenset[str] | None = None) -> list[RetrievedChunk]:
         """accept(fact_id): which facts may be returned (the public KB), applied before the limit
-        and the budget so that facts left out do not take their place (custom)."""
+        and the budget so that facts left out do not take their place (custom). sources: only facts
+        learned from those documents (not from a session), filtered in SQL so that any number of
+        other facts matching first cannot crowd them out (review 14)."""
         if not self.config.enabled or not self.config.retrieval_enabled:
             return []
         if len(query) > self.config.max_query_chars:
@@ -436,27 +471,29 @@ class BrainIndex:
         limit = min(limit or self.config.retrieval_limit, self.config.retrieval_limit)
         budget = min(token_budget or self.config.retrieval_token_budget, self.config.retrieval_token_budget)
         with self._connection() as conn:
-            candidates = conn.execute(
-                """
-                SELECT c.chunk_id, c.fact_id, c.path, c.line_start, c.line_end,
-                       c.text, c.source_hash, bm25(chunks_fts) AS rank,
-                       chunks_fts.title, chunks_fts.topic, chunks_fts.entities, chunks_fts.tags
-                FROM chunks_fts
-                JOIN chunks c ON c.chunk_id = chunks_fts.chunk_id
-                JOIN facts f ON f.id = c.fact_id
-                WHERE chunks_fts MATCH ? AND f.status = 'active'
-                  AND NOT EXISTS (
-                      SELECT 1 FROM facts newer
-                      WHERE newer.status = 'active'
-                        AND instr(' ' || newer.supersedes || ' ', ' ' || f.id || ' ') > 0
-                  )
-                ORDER BY rank ASC, c.chunk_id ASC
-                LIMIT ?
-                """,
-                (match, max(limit * 4, _CANDIDATES)),
-            ).fetchall()
-            if accept is not None:
-                candidates = [row for row in candidates if accept(row["fact_id"])]
+            # The filter (the public KB) runs on candidates: with one, more pages are read until
+            # enough pass it, so private facts matching first cannot crowd a public one out
+            page_size, candidates, only = max(limit * 4, _CANDIDATES), [], _sources_param(sources)
+            for page in range(_CANDIDATE_PAGES if accept is not None else 1):
+                batch = conn.execute(
+                    """
+                    SELECT c.chunk_id, c.fact_id, c.path, c.line_start, c.line_end,
+                           c.text, c.source_hash, bm25(chunks_fts) AS rank,
+                           chunks_fts.title, chunks_fts.topic, chunks_fts.entities, chunks_fts.tags
+                    FROM chunks_fts
+                    JOIN chunks c ON c.chunk_id = chunks_fts.chunk_id
+                    JOIN facts f ON f.id = c.fact_id
+                    WHERE chunks_fts MATCH ? AND f.status = 'active'
+                      AND NOT EXISTS (SELECT 1 FROM supersessions s JOIN facts newer ON newer.id = s.new_id WHERE s.old_id = f.id AND newer.status = 'active')
+                      AND (? IS NULL OR (f.source_session = '' AND f.source_ref IN (SELECT value FROM json_each(?))))
+                    ORDER BY rank ASC, c.chunk_id ASC
+                    LIMIT ? OFFSET ?
+                    """,
+                    (match, only, only, page_size, page * page_size),
+                ).fetchall()
+                candidates += [row for row in batch if accept is None or accept(row["fact_id"])]
+                if len(batch) < page_size or len(candidates) >= page_size:
+                    break
             total = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
             rows = [{**dict(row), "rank": -score} for score, row in _rank(query, candidates, total)]
             # Relation expansion is deliberately done after direct FTS hits.
@@ -473,12 +510,10 @@ class BrainIndex:
                     SELECT f.id, f.topic, f.entities
                     FROM facts f
                     WHERE f.status = 'active'
-                      AND NOT EXISTS (
-                          SELECT 1 FROM facts newer
-                          WHERE newer.status = 'active'
-                            AND instr(' ' || newer.supersedes || ' ', ' ' || f.id || ' ') > 0
-                      )
-                    """
+                      AND NOT EXISTS (SELECT 1 FROM supersessions s JOIN facts newer ON newer.id = s.new_id WHERE s.old_id = f.id AND newer.status = 'active')
+                    AND (? IS NULL OR (f.source_session = '' AND f.source_ref IN (SELECT value FROM json_each(?))))
+                    """,
+                    (only, only),
                 ).fetchall()
                 metadata = {
                     row["id"]: (row["topic"], _decode_tuple(row["entities"]))
@@ -543,11 +578,7 @@ class BrainIndex:
                     FROM chunks c
                     JOIN facts f ON f.id = c.fact_id
                     WHERE c.fact_id IN ({}) AND f.status = 'active'
-                      AND NOT EXISTS (
-                          SELECT 1 FROM facts newer
-                          WHERE newer.status = 'active'
-                            AND instr(' ' || newer.supersedes || ' ', ' ' || f.id || ' ') > 0
-                      )
+                      AND NOT EXISTS (SELECT 1 FROM supersessions s JOIN facts newer ON newer.id = s.new_id WHERE s.old_id = f.id AND newer.status = 'active')
                     ORDER BY c.fact_id ASC, c.chunk_id ASC
                     """.format(",".join("?" * len(related_ids))),
                     tuple(related_ids),

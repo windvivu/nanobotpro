@@ -172,6 +172,8 @@ class MessageTool(Tool):
             await self._send_callback(msg)
             if channel == self._default_channel and chat_id == self._default_chat_id:
                 self._sent_in_turn = True
+                from nanobot.agent.hold import signal_answered
+                signal_answered()  # customer service: no hold message after a real answer (review 14)
                 if resolved_media:
                     self._answered_with_files = True
                     self._answer_content = content

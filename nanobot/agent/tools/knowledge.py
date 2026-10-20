@@ -47,5 +47,7 @@ class SearchKnowledgeTool(Tool):
         query = " ".join(str(query or "").split())[:QUERY_MAX_CHARS]
         if not query:
             return NOTHING_FOUND
+        from nanobot.agent.hold import signal_slow
+        signal_slow()  # one more model round is certain: the customer gets a hold message now
         found = await asyncio.to_thread(self._context.search_knowledge, query)
         return found or NOTHING_FOUND

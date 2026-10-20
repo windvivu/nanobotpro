@@ -456,11 +456,15 @@ class Consolidator:
         """Estimate current prompt size for the normal session history view."""
         history = session.get_history(max_messages=0)
         channel, chat_id = (session.key.split(":", 1) if ":" in session.key else (None, None))
+        # Custom: the customer service bot sets probe_memory_query = "" so this estimate does not
+        # search the knowledge on the event loop at every turn (review 14); others are unchanged
+        probe_query = getattr(self, "probe_memory_query", None)
         probe_messages = self._build_messages(
             history=history,
             current_message="[token-probe]",
             channel=channel,
             chat_id=chat_id,
+            **({} if probe_query is None else {"memory_query": probe_query}),
         )
         return estimate_prompt_tokens_chain(
             self.provider,

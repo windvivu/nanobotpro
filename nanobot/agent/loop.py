@@ -410,6 +410,9 @@ class AgentLoop:
         )
         # Public alias aligning with upstream API; internal code uses memory_consolidator
         self.consolidator = self.memory_consolidator
+        if self.public_customer_mode:
+            # The token estimate searches no knowledge: it ran on the event loop at every turn (review 14)
+            self.memory_consolidator.probe_memory_query = ""
         # Dream: instantiated and configured from dream_config
         from nanobot.config.schema import DreamConfig
         _dream_cfg: DreamConfig = dream_config if isinstance(dream_config, DreamConfig) else DreamConfig()
@@ -637,6 +640,8 @@ class AgentLoop:
                 service.model_dump() if hasattr(service, "model_dump") else service or {},
             )
             if service.enabled:
+                from nanobot.agent.hold import HoldMessages
+                self.hold_messages = HoldMessages(self.bus.publish_outbound, service)
                 self.tools.register(EscalateTool(
                     public_customer_mode=True, customer_service=service,
                     send_callback=self.bus.publish_outbound, sessions=self.sessions, workspace=self.workspace,
@@ -644,7 +649,7 @@ class AgentLoop:
                         self.customer_retention.get_customer_state()
                         if self.customer_retention.get_customer_state else None
                     ),
-                    on_handoff=lambda: setattr(self.tools.get("message"), "_sent_in_turn", True),
+                    on_handoff=self._handed_off,
                 ))
 
         image_generation_config = getattr(self, "_image_generation_config", None)
@@ -964,6 +969,12 @@ class AgentLoop:
             return None
         logger.info("Claimed-handoff escalation for {}: {}", msg.chat_id, result)
         return tool.last_handoff if str(result).startswith("the customer was told") else None
+
+    def _handed_off(self) -> None:
+        """The escalate tool told the customer: the turn's reply is sent, and no hold message follows."""
+        setattr(self.tools.get("message"), "_sent_in_turn", True)
+        from nanobot.agent.hold import signal_answered
+        signal_answered()
 
     def _note_reply_time(self, msg: InboundMessage, messages: list[dict], skip: int,
                          tools_used: list[str] | None, silent: bool) -> None:
@@ -1912,6 +1923,14 @@ class AgentLoop:
         group_turn = self._is_group_turn(msg, msg.channel, msg.chat_id)
         memory_query = await self._knowledge_query(msg.content, history)
         turn_started = time.time()
+        knowledge = None
+        if self.public_customer_mode:
+            # Off the event loop: a broad query on a big KB must not hold every other customer (review 14)
+            from nanobot.agent.context import retrieval_query
+            knowledge = await asyncio.to_thread(
+                self.context.prefetch_knowledge,
+                memory_query if memory_query is not None else retrieval_query(msg.content, history), session.key,
+            )
         initial_messages = self.context.build_messages(
             history=history,
             current_message=msg.content,
@@ -1926,6 +1945,7 @@ class AgentLoop:
             senders=msg.metadata.get("senders"),
             memory_session=session.key,
             include_user_profile=not group_turn,
+            knowledge=knowledge,
         )
         knowledge_hits = getattr(self.context, "last_knowledge_hits", None)  # before any await
 
@@ -1937,17 +1957,23 @@ class AgentLoop:
                 channel=msg.channel, chat_id=msg.chat_id, content=content, metadata=meta,
             ))
 
-        final_content, tools_used, all_msgs, stop_reason = await self._run_agent_loop(
-            initial_messages,
-            on_progress=on_progress or _bus_progress,
-            on_stream=on_stream,
-            on_stream_end=on_stream_end,
-            session=session,
-            channel=msg.channel,
-            chat_id=msg.chat_id,
-            message_id=msg.metadata.get("message_id"),
-            message_metadata=msg.metadata,
-        )
+        # Custom (customer service): a short "let me check" when this answer is slow (agent/hold.py)
+        holder = getattr(self, "hold_messages", None)
+        hold = holder.begin(msg) if holder is not None and self.public_customer_mode else None
+        try:
+            final_content, tools_used, all_msgs, stop_reason = await self._run_agent_loop(
+                initial_messages,
+                on_progress=on_progress or _bus_progress,
+                on_stream=on_stream,
+                on_stream_end=on_stream_end,
+                session=session,
+                channel=msg.channel,
+                chat_id=msg.chat_id,
+                message_id=msg.metadata.get("message_id"),
+                message_metadata=msg.metadata,
+            )
+        finally:
+            held = holder.end(hold) if hold is not None else None
 
         silent = bool(final_content) and final_content.strip() == SILENT_MARKER
         if not final_content or not final_content.strip():
@@ -1977,6 +2003,13 @@ class AgentLoop:
                 all_msgs.append({"role": "assistant", "content": told})
         else:
             self._note_reply_time(msg, all_msgs, 1 + len(history), tools_used, silent)
+        if held:
+            # The CSKH page shows the hold the customer got before this answer; get_history copies
+            # a fixed set of keys, so the model never reads it back
+            reply = next((entry for entry in reversed(all_msgs[1 + len(history):]) if entry.get("role") == "assistant"
+                          and not entry.get("tool_calls") and str(entry.get("content") or "").strip()), None)
+            if reply is not None:
+                reply["hold"] = held
 
         self._save_turn(session, all_msgs, 1 + len(history))
         self._clear_runtime_checkpoint(session)

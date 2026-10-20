@@ -113,6 +113,10 @@ def _transcript(request, customer_id, limit):
                     for key in ("reply_ms", "searches"):  # how long the customer waited (custom)
                         if isinstance(item.get(key), int) and not isinstance(item.get(key), bool) and item[key] >= 0:
                             row[key] = item[key]
+                    hold = item.get("hold")  # the hold message sent before this answer
+                    if isinstance(hold, dict) and isinstance(hold.get("text"), str) and isinstance(hold.get("after_ms"), int):
+                        row["hold"] = {"text": _shown(hold["text"], request.app.state.config.workspace_path),
+                                       "after_ms": max(0, hold["after_ms"])}
                     rows.append(row)
     except (ValueError, TypeError, AttributeError) as exc:
         raise HTTPException(409, "Session cannot be read safely") from exc

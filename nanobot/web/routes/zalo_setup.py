@@ -315,6 +315,9 @@ async def save_zalo_config(request: Request, body: dict):
         tool = tools.get("escalate") if tools is not None else None
         if tool is not None and hasattr(tool, "apply_settings"):
             tool.apply_settings(current_service)
+        holder = getattr(agent, "hold_messages", None)  # hold messages: on/off, delay, phrases
+        if holder is not None:
+            holder.apply_settings(current_service)
 
         logger.info(
             "Zalo config saved: allow_from={}, node_path={}, group_reply_mode={}, group_filter={}",
