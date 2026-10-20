@@ -72,6 +72,7 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
 .reply-meta.slow {color:rgb(var(--c-danger));opacity:1}
 /* Teach the bot what staff answered */
 .teach-from {align-self:flex-start;margin-top:-4px;padding:2px 8px;font-size:11px;border-style:dashed}
+.kb-tabs {margin-bottom:14px}
 #notes-query {width:100%;max-width:420px;margin-bottom:10px}
 #notes-more {margin-top:10px}
 .test-msg.typing {opacity:.75;font-style:italic;animation:cskh-typing 1.2s ease-in-out infinite}
@@ -153,14 +154,16 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
 <div id="kb-ask-log" class="test-log" aria-live="polite"></div>
 <form id="kb-ask-form" class="row"><input id="kb-ask-input" maxlength="2000" autocomplete="off" placeholder="{{ tr('cskh.ask_input') }}" aria-label="{{ tr('cskh.ask_title') }}"><button type="submit">{{ tr('cskh.ask_send') }}</button><button id="kb-ask-clear" type="button">{{ tr('cskh.ask_clear') }}</button></form></section>
 </div>
-<section id="cskh-notes" class="ui-card"><h2>{{ tr('cskh.notes') }} <span id="notes-count" class="muted"></span></h2>
+<section id="cskh-kb" class="ui-card">
+<div class="tabs kb-tabs" role="tablist" aria-label="{{ tr('cskh.knowledge') }}"><button type="button" class="tab" role="tab" id="kb-tab-documents" data-kb-tab="documents" aria-controls="kb-pane-documents">{{ tr('cskh.documents') }} <span id="docs-count" class="muted"></span></button><button type="button" class="tab" role="tab" id="kb-tab-notes" data-kb-tab="notes" aria-controls="kb-pane-notes">{{ tr('cskh.notes') }} <span id="notes-count" class="muted"></span></button></div>
+<div id="kb-pane-documents" role="tabpanel" aria-labelledby="kb-tab-documents">
+<p class="muted">{{ tr('cskh.kb_note') }}</p><form id="upload-form" class="row"><input name="file" type="file" accept=".md,.txt,.docx,.pdf" multiple required aria-label="{{ tr('cskh.file') }}"><input name="name" maxlength="200" placeholder="{{ tr('cskh.public_name') }}" aria-label="{{ tr('cskh.public_name') }}"><button type="submit">{{ tr('cskh.upload') }}</button></form>
+<div class="table-wrap"><table><thead><tr>{% for key in ['document','status','facts','actions'] %}<th>{{ tr('cskh.' ~ key) }}</th>{% endfor %}</tr></thead><tbody id="kb-rows"></tbody></table></div></div>
+<div id="kb-pane-notes" role="tabpanel" aria-labelledby="kb-tab-notes" hidden>
 <p class="muted">{{ tr('cskh.notes_note') }}</p>
 <input id="notes-query" type="search" maxlength="100" autocomplete="off" placeholder="{{ tr('cskh.notes_search') }}" aria-label="{{ tr('cskh.notes_search') }}">
 <div class="table-wrap"><table><thead><tr>{% for key in ['note','status','facts','actions'] %}<th>{{ tr('cskh.' ~ key) }}</th>{% endfor %}</tr></thead><tbody id="note-rows"></tbody></table></div>
-<button id="notes-more" type="button" hidden>{{ tr('cskh.notes_more') }}</button></section>
-<section id="cskh-kb" class="ui-card"><h2>{{ tr('cskh.documents') }}</h2>
-<p class="muted">{{ tr('cskh.kb_note') }}</p><form id="upload-form" class="row"><input name="file" type="file" accept=".md,.txt,.docx,.pdf" multiple required aria-label="{{ tr('cskh.file') }}"><input name="name" maxlength="200" placeholder="{{ tr('cskh.public_name') }}" aria-label="{{ tr('cskh.public_name') }}"><button type="submit">{{ tr('cskh.upload') }}</button></form>
-<div class="table-wrap"><table><thead><tr>{% for key in ['document','status','facts','actions'] %}<th>{{ tr('cskh.' ~ key) }}</th>{% endfor %}</tr></thead><tbody id="kb-rows"></tbody></table></div>
+<button id="notes-more" type="button" hidden>{{ tr('cskh.notes_more') }}</button></div>
 <div class="row" style="margin-top:16px"><a href="/memory/graph" target="_blank" rel="noopener noreferrer">{{ tr('cskh.graph') }}</a></div></section>
 </div>
 <div id="pane-groups" class="page-pane" data-pane="groups" role="tabpanel" aria-labelledby="tab-groups" hidden>
@@ -450,7 +453,9 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
     function renderKb() {
         const newest = lastKb.slice().reverse();  // newest first
         const docs = $('kb-rows'); docs.replaceChildren();
-        newest.filter(d => d.kind !== 'note').forEach(d => docRow(docs, d, d.name + ' · ' + d.original_name)); empty(docs, 4);
+        const documents = newest.filter(d => d.kind !== 'note');
+        $('docs-count').textContent = documents.length ? '(' + documents.length + ')' : '';
+        documents.forEach(d => docRow(docs, d, d.name + ' · ' + d.original_name)); empty(docs, 4);
         // Taught notes: a few lines each, many of them; searched, ten at a time
         const all = newest.filter(d => d.kind === 'note'), query = $('notes-query').value.trim().toLocaleLowerCase();
         const notes = query ? all.filter(d => d.name.toLocaleLowerCase().includes(query)) : all;
@@ -467,6 +472,23 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
     }
     $('notes-query').addEventListener('input', () => { notesShown = 10; renderKb(); });
     $('notes-more').onclick = () => { notesShown += 20; renderKb(); };
+    // Documents and taught notes: two tabs of one card, the choice kept per browser
+    function setKbTab(name) {
+        document.querySelectorAll('[data-kb-tab]').forEach(tab => {
+            const on = tab.dataset.kbTab === name;
+            tab.classList.toggle('active', on); tab.setAttribute('aria-selected', String(on)); tab.tabIndex = on ? 0 : -1;
+        });
+        $('kb-pane-documents').hidden = name !== 'documents'; $('kb-pane-notes').hidden = name !== 'notes';
+        try { localStorage.setItem('cskh-kb-tab', name); } catch (e) { /* optional */ }
+    }
+    document.querySelectorAll('[data-kb-tab]').forEach((tab, index, tabs) => {
+        tab.onclick = () => setKbTab(tab.dataset.kbTab);
+        tab.onkeydown = e => {
+            if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+            const next = tabs[(index + 1) % tabs.length]; e.preventDefault(); next.focus(); setKbTab(next.dataset.kbTab);
+        };
+    });
+    { let saved = null; try { saved = localStorage.getItem('cskh-kb-tab'); } catch (e) { /* optional */ } setKbTab(saved === 'notes' ? 'notes' : 'documents'); }
     // When the bot last received a message: a connection can stay up yet deliver nothing (custom)
     function lastInbound(bridge) {
         const at = bridge.lastInboundAt || bridge.connectedAt;
@@ -558,7 +580,8 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
         // The linked question is marked handled only when the note still answers it (review 13)
         const linked = teachingFor; unlinkTeach();
         if (linked && text.includes(linked.question) && text !== linked.prefill) await api('/unanswered/' + linked.id + '/handled', {}).catch(() => {});
-        showRelated(data.related); note(data.related.length ? t('related_found') : t('teach_done')); await refresh();
+        showRelated(data.related); note(data.related.length ? t('related_found') : t('teach_done'));
+        setKbTab('notes'); await refresh();  // the note just taught is the first line there
     }); };
     $('teach-text').addEventListener('keydown', e => { if (e.key !== 'Enter') return;
         if (e.ctrlKey || e.metaKey) { e.preventDefault(); $('teach-text').setRangeText('\n', $('teach-text').selectionStart, $('teach-text').selectionEnd, 'end'); }
