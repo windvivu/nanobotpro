@@ -329,7 +329,37 @@ def retire_facts(workspace: Path, config: BrainMemoryConfig, fact_ids: list[str]
     return {"retired_fact_ids": moved, "source_refs": sorted({sources[fact_id] for fact_id in moved})}
 
 
+# Scans kept per brain root until a fact, a manifest or the migration ledger changes (custom):
+# reading and parsing every fact file took 8-10 s per settings request with 451 facts on Windows.
+_PROCESSED_CACHE: dict[str, tuple[tuple, tuple]] = {}
+
+
+def _tree_stamp(store: BrainStore) -> tuple:
+    """Modification times of what the scan reads. Facts and manifests are written to a temporary
+    file in their folder and renamed into place, so any change moves the folder's time."""
+    stamp = []
+    for path in (store.root / "facts", store.root / "manifests" / "accepted",
+                 store.root / "manifests" / "rejected", store.root / ".migration" / "manifest.json"):
+        try:
+            stamp.append(path.stat().st_mtime_ns)
+        except OSError:
+            stamp.append(None)
+    return tuple(stamp)
+
+
 def _processed_hashes(
+    store: BrainStore,
+) -> tuple[set[tuple[str, str]], set[tuple[str, str]], set[str], set[str], set[str]]:
+    """_scan_processed_hashes, cached until the brain's facts or manifests change."""
+    key, stamp = str(store.root), _tree_stamp(store)
+    cached = _PROCESSED_CACHE.get(key)
+    if cached is None or cached[0] != stamp:
+        cached = (stamp, _scan_processed_hashes(store))
+        _PROCESSED_CACHE[key] = cached
+    return tuple(set(part) for part in cached[1])  # copies: the cache stays as scanned
+
+
+def _scan_processed_hashes(
     store: BrainStore,
 ) -> tuple[set[tuple[str, str]], set[tuple[str, str]], set[str], set[str], set[str]]:
     """Return staged/promoted hashes and source refs seen by migration.
@@ -344,6 +374,14 @@ def _processed_hashes(
     staged_refs: set[str] = set()
     promoted_refs: set[str] = set()
     empty_manifest_refs: set[str] = set()
+    facts: dict[str, object] = {}
+
+    def read_fact(fact_id: str):
+        # Each fact file is read and parsed once per scan; manifests name them again (custom)
+        if fact_id not in facts:
+            facts[fact_id] = store.read_fact(fact_id)
+        return facts[fact_id]
+
     try:
         ledger = json.loads(store.read_bytes(".migration/manifest.json").decode("utf-8"))
         for record in ledger.get("jobs", {}).values():
@@ -373,7 +411,7 @@ def _processed_hashes(
                     continue
                 for fact_id in fact_ids:
                     validated_id = TypeAdapter(FactId).validate_python(fact_id)
-                    store.read_fact(validated_id)
+                    read_fact(validated_id)
                 source_ref = manifest.source.source_ref
                 source_hash = manifest.source.source_hash
                 promoted.add((source_ref, source_hash))
@@ -403,7 +441,7 @@ def _processed_hashes(
     if facts_dir.is_dir():
         for path in facts_dir.glob("*.md"):
             try:
-                fact = store.read_fact(path.stem)
+                fact = read_fact(path.stem)
                 if fact.status in {"active", "superseded"}:
                     promoted.add((fact.source.source_ref, fact.source.source_hash))
                     promoted_refs.add(fact.source.source_ref)

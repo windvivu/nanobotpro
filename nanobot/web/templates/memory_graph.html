@@ -364,7 +364,7 @@
     };
     const graphPanel = container.parentElement;
     const nebulaSurface = 'radial-gradient(circle at 18% 22%, rgba(63, 147, 255, .22), transparent 34%), radial-gradient(circle at 78% 68%, rgba(190, 92, 255, .2), transparent 38%), radial-gradient(circle at 55% 38%, rgba(28, 221, 206, .12), transparent 46%), #080b1c';
-    let fitPending = false;
+    let fitPending = false, fitTicks = 0;
     const graph = ForceGraph()(container)
         .backgroundColor('transparent')
         .nodeId('id')
@@ -417,6 +417,8 @@
         })
         .onNodeClick(node => openFact(node.id).catch(e => status.textContent = e.message))
         .cooldownTicks(120)
+        // The view follows the layout while it settles, fitted from the start (custom)
+        .onEngineTick(() => { if (fitPending && snapshot.nodes.length && ++fitTicks % 10 === 0) graph.zoomToFit(0, 32); })
         .onEngineStop(() => {
             if (fitPending && snapshot.nodes.length) graph.zoomToFit(500, 32);
             fitPending = false;
@@ -805,7 +807,8 @@
         fullscreenButton.textContent = active ? tr('graph.exit_fullscreen') : tr('common.fullscreen');
         fullscreenButton.setAttribute('aria-label', active ? 'Exit graph fullscreen' : 'Open graph and node details in fullscreen');
         fullscreenButton.title = active ? tr('graph.exit_fullscreen') : tr('graph.open_fullscreen');
-        requestAnimationFrame(resize);
+        // A bigger or smaller canvas keeps its old offset: fit again, or the graph slides out of view
+        requestAnimationFrame(() => { resize(); if (snapshot.nodes.length) graph.zoomToFit(300, 32); });
     }
     fullscreenButton.addEventListener('click', async () => {
         try {

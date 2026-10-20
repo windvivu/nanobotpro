@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
@@ -112,7 +113,9 @@ async def memory_graph(
     query: str | None = Query(default=None, max_length=200),
     limit: int | None = Query(default=None, ge=1, le=5000),
 ):
-    snapshot = _snapshot(request, topic=topic, status=status, min_confidence=min_confidence, query=query, limit=limit)
+    # File and index work off the event loop: the bot shares it (custom)
+    snapshot = await run_in_threadpool(_snapshot, request, topic=topic, status=status,
+                                       min_confidence=min_confidence, query=query, limit=limit)
     return _response(snapshot, _brain_config(request).max_response_bytes)
 
 
@@ -133,7 +136,8 @@ async def memory_settings(request: Request):
         "migration_sources": config.migration_sources,
         "migration_stage_only": config.migration_stage_only,
         "migration_delete_sources": False,
-        "sources": sources(workspace, config, public_customer_mode=_public_mode(request)),
+        # Off the event loop: listing the sources reads the brain's files (custom)
+        "sources": await run_in_threadpool(sources, workspace, config, public_customer_mode=_public_mode(request)),
     }
 
 
@@ -266,7 +270,8 @@ async def memory_learning_status(request: Request):
     agent = getattr(request.app.state, "agent", None)
     runtime = getattr(agent, "brain_runtime", None)
     worker = getattr(runtime, "worker", None)
-    return learning_status(
+    return await run_in_threadpool(  # reads the job manifests; off the event loop (custom)
+        learning_status,
         request.app.state.config.workspace_path,
         _brain_config(request),
         worker,
