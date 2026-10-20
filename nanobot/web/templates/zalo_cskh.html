@@ -180,6 +180,8 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
 <label class="check"><input name="autoAcceptFriend" type="checkbox">{{ tr('cskh.auto_accept') }}</label>
 <label class="check"><input name="holdEnabled" type="checkbox">{{ tr('cskh.hold_enabled') }}</label>
 <label>{{ tr('cskh.hold_after') }}<input name="holdAfterSeconds" type="number" min="1" max="60" required></label>
+<label>{{ tr('cskh.hold_probability') }}<input name="holdProbability" type="number" min="0" max="100" required></label>
+<label>{{ tr('cskh.hold_safety') }}<input name="holdSafetySeconds" type="number" min="0" max="120" required></label>
 <label class="wide">{{ tr('cskh.hold_messages') }}<textarea name="holdMessages" rows="6" maxlength="15000"></textarea></label></div><p class="muted">{{ tr('cskh.settings_note') }}</p><button type="submit">{{ tr('cskh.save') }}</button></form></section>
 <section id="cskh-tools" class="ui-card"><h2>{{ tr('cskh.tools') }}</h2><div class="row"><button id="telegram-test">{{ tr('cskh.telegram_test') }}</button><button id="install-persona">{{ tr('cskh.persona') }}</button></div><p class="muted">{{ tr('cskh.delivery_note') }}</p></section>
 </div>
@@ -693,7 +695,7 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
         }
         form.reset(); note(t('uploaded').replace('{n}', done));
     });};
-    $('settings-form').onsubmit=e=>{e.preventDefault();act(e.submitter,async()=>{const form=e.target,body={};['welcomeMessage','handoffMessage'].forEach(k=>body[k]=form.elements[k].value);['inboundPerMinute','inboundPerDay','pauseAfterEscalationMinutes','holdAfterSeconds'].forEach(k=>body[k]=Number(form.elements[k].value));body.autoAcceptFriend=form.elements.autoAcceptFriend.checked;body.holdEnabled=form.elements.holdEnabled.checked;body.holdMessages=form.elements.holdMessages.value.split('\n').map(s=>s.trim()).filter(Boolean);await api('/settings',body);note(t('saved'));});};
+    $('settings-form').onsubmit=e=>{e.preventDefault();act(e.submitter,async()=>{const form=e.target,body={};['welcomeMessage','handoffMessage'].forEach(k=>body[k]=form.elements[k].value);['inboundPerMinute','inboundPerDay','pauseAfterEscalationMinutes','holdAfterSeconds','holdProbability','holdSafetySeconds'].forEach(k=>body[k]=Number(form.elements[k].value));body.autoAcceptFriend=form.elements.autoAcceptFriend.checked;body.holdEnabled=form.elements.holdEnabled.checked;body.holdMessages=form.elements.holdMessages.value.split('\n').map(s=>s.trim()).filter(Boolean);await api('/settings',body);note(t('saved'));});};
     async function loadSettings(){const data=await api('/settings');Object.entries(data).forEach(([key,value])=>{const el=$('settings-form').elements[key];if(el){if(el.type==='checkbox')el.checked=value;else el.value=Array.isArray(value)?value.join('\n'):value;}});}
     $('customer-status').onchange=()=>refresh().catch(e=>note(e.message));
     let debounce; $('customer-query').oninput=()=>{clearTimeout(debounce);debounce=setTimeout(()=>refresh().catch(e=>note(e.message)),250);};

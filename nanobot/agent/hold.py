@@ -97,11 +97,17 @@ class HoldMessages:
         self._send = send
         self._rng = rng or random.Random()
         self._last: OrderedDict[str, str] = OrderedDict()  # chat -> its last phrase, not sent twice in a row
+        # chat -> whether its last slow turn got a hold: the next slow turn then gets none
+        self._held: OrderedDict[str, bool] = OrderedDict()
         self.apply_settings(service)
 
     def apply_settings(self, service: Any) -> None:
         self.enabled = bool(getattr(service, "hold_enabled", True))
         self.after = float(getattr(service, "hold_after_seconds", 5))
+        # Not every slow turn holds, or it reads as a reflex (custom): a chance at the delay, never two
+        # slow turns in a row for one chat, and always once the wait reaches the safety mark (0: off)
+        self.chance = min(100, max(0, int(getattr(service, "hold_probability", 50)))) / 100
+        self.safety = float(getattr(service, "hold_safety_seconds", 15))
         phrases = [" ".join(str(m).split())[:HOLD_MESSAGE_MAX_CHARS]
                    for m in getattr(service, "hold_messages", None) or []]
         self.messages = tuple(m for m in phrases if m) or DEFAULT_HOLD_MESSAGES
@@ -133,13 +139,17 @@ class HoldMessages:
             _current.set(None)  # ended in another context
         return turn.sent
 
+    @staticmethod
+    def _remember(store: OrderedDict, chat_id: str, value) -> None:
+        store[chat_id] = value
+        store.move_to_end(chat_id)
+        while len(store) > LAST_PHRASES_MAX:
+            store.popitem(last=False)
+
     def _pick(self, chat_id: str) -> str:
         choices = [m for m in self.messages if m != self._last.get(chat_id)] or list(self.messages)
         phrase = self._rng.choice(choices)
-        self._last[chat_id] = phrase
-        self._last.move_to_end(chat_id)
-        while len(self._last) > LAST_PHRASES_MAX:
-            self._last.popitem(last=False)
+        self._remember(self._last, chat_id, phrase)
         return phrase
 
     async def _watch(self, msg: InboundMessage, turn: _Turn) -> None:
@@ -150,6 +160,15 @@ class HoldMessages:
             pass
         if turn.answered:
             return
+        # The turn is slow: hold by chance, and not if this chat's last slow turn held
+        if self._held.get(msg.chat_id) or self._rng.random() >= self.chance:
+            self._remember(self._held, msg.chat_id, False)
+            if self.safety <= 0:
+                return
+            waited = (datetime.now() - msg.timestamp).total_seconds()
+            await asyncio.sleep(max(0.0, self.safety - waited))  # a wait this long is not left silent
+            if turn.answered:
+                return
         text = self._pick(msg.chat_id)
         after_ms = max(0, round((datetime.now() - msg.timestamp).total_seconds() * 1000))
         try:
@@ -162,4 +181,5 @@ class HoldMessages:
             return
         # Handed to the channel; the bridge drops a hold rather than sending it late (review 14)
         turn.sent = {"text": text, "after_ms": after_ms}
+        self._remember(self._held, msg.chat_id, True)
         logger.debug("Hold message queued for {} after {} ms", msg.chat_id, after_ms)

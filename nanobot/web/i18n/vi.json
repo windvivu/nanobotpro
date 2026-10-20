@@ -327,6 +327,8 @@
   "cskh.reply_avg": "Phản hồi TB",
   "cskh.hold_enabled": "Gửi tin chờ khi bot trả lời chậm",
   "cskh.hold_after": "Gửi tin chờ sau (giây)",
+  "cskh.hold_probability": "Tỉ lệ gửi tin chờ khi chậm (%, không gửi hai lượt chậm liền nhau)",
+  "cskh.hold_safety": "Luôn gửi tin chờ khi khách đã chờ (giây, 0 = tắt)",
   "cskh.hold_messages": "Các câu chờ, mỗi dòng một câu (chọn ngẫu nhiên, không lặp câu vừa gửi)",
   "cskh.hold_sent": "Tin chờ, xếp gửi sau {s}. Zalo không xác nhận đã tới khách; nếu lúc đó Zalo mất kết nối, tin bị bỏ.",
   "cskh.notes": "Điều đã dạy",

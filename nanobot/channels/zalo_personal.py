@@ -190,6 +190,8 @@ class ZaloCustomerServiceConfig(Base):
     # Hold message (custom, agent/hold.py): a short "let me check" when an answer is slow
     hold_enabled: bool = True
     hold_after_seconds: int = Field(default=5, ge=1, le=60)
+    hold_probability: int = Field(default=50, ge=0, le=100)  # percent of slow turns that hold
+    hold_safety_seconds: int = Field(default=15, ge=0, le=120)  # always hold by then; 0: off
     hold_messages: list[str] = Field(default_factory=lambda: list(DEFAULT_HOLD_MESSAGES), max_length=50)
 
     @field_validator("hold_messages")

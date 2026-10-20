@@ -327,6 +327,8 @@
   "cskh.reply_avg": "Avg reply",
   "cskh.hold_enabled": "Send a hold message when the bot is slow",
   "cskh.hold_after": "Send the hold message after (seconds)",
+  "cskh.hold_probability": "Chance of a hold message when slow (%, never two slow turns in a row)",
+  "cskh.hold_safety": "Always send one once the customer has waited (seconds, 0 = off)",
   "cskh.hold_messages": "Hold messages, one per line (picked at random, never the one just sent)",
   "cskh.hold_sent": "Hold message, queued after {s}. Zalo does not confirm delivery; if Zalo was disconnected then, it was dropped.",
   "cskh.notes": "Taught notes",
