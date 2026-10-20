@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable
 
-PUBLIC_CUSTOMER_TOOLS = frozenset({"web_search", "web_fetch", "message", "escalate"})
+PUBLIC_CUSTOMER_TOOLS = frozenset({"web_search", "web_fetch", "message", "escalate", "search_knowledge"})
 
 # Tool groups, by the names the tools register under. "mcp" is a group too: it turns the MCP
 # servers on, and MCPServerConfig.roles decides which servers show in which role. `message` is

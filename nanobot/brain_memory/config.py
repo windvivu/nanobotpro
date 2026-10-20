@@ -89,13 +89,14 @@ class BrainMemoryConfig(BaseModel):
         return validate_ref(value)
 
 
-PUBLIC_RETRIEVAL_LIMIT = 12
+PUBLIC_RETRIEVAL_LIMIT = 30
 
 
 def public_brain_config(config: BrainMemoryConfig) -> BrainMemoryConfig:
     """Derive public policy without changing the persisted or caller-owned config."""
-    # A customer's question is answered from the KB alone, and one subject (a price list) spans
-    # a dozen facts: fewer than PUBLIC_RETRIEVAL_LIMIT leaves the answer out of the prompt.
+    # A customer's question is answered from the KB alone, and one subject spans many facts: a
+    # price page learned as 38 facts, 33 of them saying "gói". With 12, "các gói" left the prices
+    # out of the prompt (custom); retrievalTokenBudget still bounds the prompt.
     return config.model_copy(deep=True, update={
         "enabled": True, "retrieval_enabled": True, "retrieval_sessions": None,
         "retrieval_limit": max(config.retrieval_limit, PUBLIC_RETRIEVAL_LIMIT),

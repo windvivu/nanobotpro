@@ -108,18 +108,14 @@ class ContextBuilder:
             config = self._brain_memory_config
             if config.reads_session(memory_session):
                 try:
-                    if self._brain_context is None:
-                        store = BrainStore(self.workspace, config)
-                        self._brain_context = BrainContextAdapter(
-                            BrainIndex(store), config, public_customer_mode=self.public_customer_mode,
-                        )
+                    self._knowledge_adapter()
                     # A long message (a pasted text, a sub-agent's report) is searched by its start: the
                     # index refuses queries over maxQueryChars and only uses their first 64 terms (custom)
                     query = memory_query[:config.max_query_chars]
                     if hasattr(self._brain_context, "retrieve"):
                         retrieved = self._brain_context.retrieve(query)
                         brain_context = retrieved.render()
-                        self.last_knowledge_hits = len(retrieved.chunks)
+                        self.last_knowledge_hits = retrieved.hits
                     else:
                         brain_context = self._brain_context.render(query)
                 except Exception as exc:
@@ -162,6 +158,32 @@ class ContextBuilder:
             ))
 
         return "\n\n---\n\n".join(parts)
+
+    def _knowledge_adapter(self) -> BrainContextAdapter:
+        if self._brain_context is None:
+            config = self._brain_memory_config
+            self._brain_context = BrainContextAdapter(
+                BrainIndex(BrainStore(self.workspace, config)), config,
+                public_customer_mode=self.public_customer_mode,
+            )
+        return self._brain_context
+
+    def search_knowledge(self, query: str) -> str:
+        """The facts matching query alone, rendered, for the search_knowledge tool (custom). Empty
+        when nothing matches or the index is unavailable; the reason stays in the server log."""
+        config = self._brain_memory_config
+        if config is None or not config.reads_session(None):
+            return ""
+        try:
+            adapter = self._knowledge_adapter()
+            if not hasattr(adapter, "retrieve"):
+                return ""
+            return adapter.retrieve(query[:config.max_query_chars], whole=False).render()
+        except Exception as exc:
+            if self.public_customer_mode:
+                from nanobot.security.public_output import public_error
+                public_error(exc)
+            return ""
 
     def _get_identity(self, channel: str | None = None) -> str:
         """Get the core identity section — uses identity.md template."""

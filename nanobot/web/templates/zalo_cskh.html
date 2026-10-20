@@ -27,6 +27,8 @@ h1,h2,p {margin-top:0} input[type=checkbox] {accent-color:rgb(var(--c-accent))}
 .cskh button,.cskh-dialog button {cursor:pointer} .cskh button:hover {background:rgb(var(--c-primary) / .15)}
 .cskh button:disabled {opacity:.45;cursor:wait} .cskh textarea {width:100%;min-height:80px}
 .cskh .row {display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+/* Hidden means hidden, whatever layout class the element also has (the Unlink line showed through) */
+.cskh [hidden] {display:none !important}
 .cskh .grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
 .cskh label {display:flex;flex-direction:column;gap:6px} .cskh .check {flex-direction:row;align-items:center}
 .cskh .table-wrap {overflow-x:auto;width:100%} .cskh table {width:100%;border-collapse:collapse;font-size:.9rem}
@@ -84,6 +86,10 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
 .conv-toggle .badge {min-width:1.5em;padding:0 6px;border-radius:999px;background:rgb(var(--c-accent));color:rgb(var(--c-surface));font-size:.75rem;line-height:1.5em;text-align:center}
 .conv-toggle.unread .badge {box-shadow:0 0 0 3px rgb(var(--c-accent) / .35)}
 .conv-closed #conv-body {display:none} .conv-closed #cskh-conversations h2 {margin-bottom:0}
+/* The test-customer buttons: small, set apart in the accent colour, on the right, clear of the conversation tabs */
+.cskh .conv-tools {justify-content:flex-end;gap:8px;margin-bottom:14px}
+.cskh .conv-tools button {padding:3px 10px;font-size:.8rem;border-style:dashed;border-color:rgb(var(--c-accent) / .55);color:rgb(var(--c-accent))}
+.cskh .conv-tools button:hover {background:rgb(var(--c-accent) / .1)}
 @media(min-width:1280px) {.conv-closed #cskh-conversations {padding:16px 10px;position:sticky;top:60px}
   .conv-closed .conv-toggle {writing-mode:vertical-rl;padding:6px 0}}
 @media(min-width:1100px) {.pair {grid-template-columns:repeat(2,minmax(0,1fr))}}

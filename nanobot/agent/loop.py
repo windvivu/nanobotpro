@@ -624,6 +624,10 @@ class AgentLoop:
         ))
 
         if getattr(self, "public_customer_mode", False):
+            # The model searches the public KB again with its own words when the prompt does not
+            # answer (custom): retrieval picks facts by the customer's words only
+            from nanobot.agent.tools.knowledge import SearchKnowledgeTool
+            self.tools.register(SearchKnowledgeTool(self.context))
             from nanobot.agent.tools.escalate import EscalateTool
             from nanobot.channels.zalo_personal import ZaloCustomerServiceConfig
             from nanobot.config.public_mode import _field
@@ -895,8 +899,10 @@ class AgentLoop:
             if name and question.startswith(name + ": "):
                 question = question[len(name) + 2:]  # a group message carries its sender's name
             reply_text = reply if isinstance(reply, str) and not reply.startswith("*[Executed tools") else ""
+            # The model searched the knowledge itself: what the prompt held no longer says it all
+            searched = "search_knowledge" in (tools_used or [])
             reason = unanswered_reason(
-                question, reply_text, knowledge_hits=knowledge_hits,
+                question, reply_text, knowledge_hits=None if searched else knowledge_hits,
                 escalated_out_of_scope="escalate" in (tools_used or [])
                 and self._escalated_out_of_scope(msg.sender_id, turn_started),
             )
