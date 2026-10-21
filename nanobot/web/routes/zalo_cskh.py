@@ -171,6 +171,13 @@ def _needs_attention(state, key, customer) -> bool:
 
 
 NEW_GROUP_DAYS = 7  # a group not yet allowed counts on the Groups tab this long after it was first seen
+LIVE_CHAT_SECONDS = 300  # a customer who wrote this recently is "chatting with the bot now" (custom)
+
+
+def _chatting(key: str, customer: dict, now: float) -> bool:
+    """A real customer (not a page test) who wrote within LIVE_CHAT_SECONDS and is not blocked."""
+    return (not is_test_customer(key) and customer.get("status") != "blocked"
+            and customer["last_seen"] >= now - LIVE_CHAT_SECONDS)
 
 
 @router.get("/api/overview")
@@ -184,7 +191,10 @@ async def overview(request: Request):
     from nanobot.agent.unanswered import UnansweredLog
     unanswered = len(await run_in_threadpool(UnansweredLog(request.app.state.config.workspace_path).entries))
     learning_errors = sum(bool(doc["learning"].get("error")) or bool(doc["learning"].get("failed")) for doc in docs)
-    recent = time.time() - NEW_GROUP_DAYS * 86400
+    now = time.time()
+    recent = now - NEW_GROUP_DAYS * 86400
+    chatting = sorted(((c["last_seen"], c["name"] or key) for key, c in snapshot["customers"].items()
+                       if _chatting(key, c, now)), reverse=True)
     return {
         "bridge": channel.get_status(),
         "public_customer_mode": _public_mode(request),
@@ -202,6 +212,9 @@ async def overview(request: Request):
             "knowledge": unanswered + learning_errors,
             "groups": sum(not g["allowed"] and g["first_seen"] >= recent for g in snapshot.get("groups", {}).values()),
         },
+        # Who is talking to the bot right now: the page shows it on the Customers tab from any tab
+        "live": {"chatting": len(chatting), "names": [name for _, name in chatting[:5]],
+                 "window_s": LIVE_CHAT_SECONDS},
         "kb": {
             status: sum(doc["status"] == status for doc in docs)
             for status in ("published", "pending")
@@ -219,7 +232,7 @@ async def customers(
     _, state = _state(request)
     if status not in {"", "active", "paused", "blocked", "waiting", "escalated"}:
         raise HTTPException(400, "Invalid customer status")
-    rows = []
+    rows, now = [], time.time()
     for key, customer in state.snapshot()["customers"].items():
         effective = state.customer_status(key)
         # waiting: handed to staff and not resumed yet; escalated: handed over at least once
@@ -241,6 +254,7 @@ async def customers(
                 "escalations": len(customer["escalations"]),
                 "test": is_test_customer(key),
                 "attention": _needs_attention(state, key, customer),
+                "chatting": _chatting(key, customer, now),
                 # When a paused customer can write to the bot again (None: until resumed).
                 "paused_until": customer.get("paused_until") if effective == "paused" else None,
             }

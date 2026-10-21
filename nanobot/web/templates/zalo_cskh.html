@@ -80,7 +80,17 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
 #notes-more {margin-top:10px}
 .test-msg.typing {opacity:.75;font-style:italic;animation:cskh-typing 1.2s ease-in-out infinite}
 @keyframes cskh-typing {50% {opacity:.35}}
-@media (prefers-reduced-motion: reduce) { .test-msg.typing {animation:none} }
+/* Live signals: a customer chatting with the bot (green), one waiting for staff (red) — seen from any tab */
+.live-dot {display:inline-block;width:.6em;height:.6em;border-radius:50%;background:rgb(var(--c-success));box-shadow:0 0 0 0 rgb(var(--c-success) / .6);animation:cskh-live 1.6s ease-out infinite;vertical-align:middle}
+.page-tab .live {display:inline-flex;align-items:center;gap:4px;font-size:.75rem;color:rgb(var(--c-success))}
+.page-tab .badge.urgent {background:rgb(var(--c-danger));color:#fff;animation:cskh-urgent 1.4s ease-out infinite}
+.page-tab.urgent:not(.active) {color:rgb(var(--c-danger))}
+@keyframes cskh-live {0% {box-shadow:0 0 0 0 rgb(var(--c-success) / .6)} 100% {box-shadow:0 0 0 .5em rgb(var(--c-success) / 0)}}
+@keyframes cskh-urgent {0% {box-shadow:0 0 0 0 rgb(var(--c-danger) / .7)} 100% {box-shadow:0 0 0 .6em rgb(var(--c-danger) / 0)}}
+.attention-bar {display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 14px;border:1px solid rgb(var(--c-danger) / .5);border-radius:10px;background:rgb(var(--c-danger) / .1);color:rgb(var(--c-danger));font-weight:700}
+.attention-bar[hidden] {display:none}
+.attention-bar button {border-color:rgb(var(--c-danger));color:rgb(var(--c-danger));font-weight:700}
+@media (prefers-reduced-motion: reduce) { .test-msg.typing, .live-dot, .page-tab .badge.urgent {animation:none} }
 /* Page tabs: one job per tab; a badge counts what waits for the admin. The status band stays above. */
 .page-tabs {display:flex;gap:6px;overflow-x:auto;border-bottom:1px solid rgb(var(--c-primary) / .25);position:sticky;top:0;z-index:5;background:rgb(var(--c-canvas));margin-bottom:-8px}
 .cskh .page-tab {display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border:1px solid transparent;border-bottom:none;border-radius:10px 10px 0 0;background:none;font-weight:600;white-space:nowrap}
@@ -116,6 +126,7 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
 @media(max-width:640px) {.cskh .page-tab {padding:8px 10px;gap:6px}}
 .status-bar {display:flex;flex-direction:column;gap:10px;padding:14px 20px}
 .status-bar .status-line {display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.status-bar .status-actions {display:flex;gap:8px;flex-wrap:wrap}
 .status-bar .status-text {min-width:0} .status-bar .status-text p {margin:2px 0}
 .status-bar .today {display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .status-bar .metrics {gap:8px} .status-bar .metric {flex:0 0 auto;min-width:0;display:inline-flex;align-items:baseline;gap:6px;padding:3px 10px;border:1px solid rgb(var(--c-primary) / .2);border-radius:999px;font-size:.85rem}
@@ -128,9 +139,10 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
 {% include "themes/" ~ cskh_theme ~ "/effects.html" ignore missing %}
 <main class="cskh">
 <header><h1>{{ tr('nav.zalo_cskh') }}</h1><p class="muted">{{ tr('cskh.subtitle') }}</p><p id="cskh-note" role="status" aria-live="polite"></p></header>
-<section id="cskh-status" class="ui-card status-bar"><div class="status-line"><div class="status-text"><p id="bridge-status"></p><p id="telegram-target"></p><p id="paused-count"></p><p id="learning-pending" hidden></p></div><button id="pause-all">{{ tr('cskh.pause_all') }}</button></div>
+<section id="cskh-status" class="ui-card status-bar"><div class="status-line"><div class="status-text"><p id="bridge-status"></p><p id="telegram-target"></p><p id="paused-count"></p><p id="learning-pending" hidden></p></div><div class="status-actions"><button type="button" id="sound-toggle" aria-pressed="true" title="{{ tr('cskh.sound_hint') }}">{{ tr('cskh.sound_on') }}</button><button id="pause-all">{{ tr('cskh.pause_all') }}</button></div></div>
 <div id="cskh-today" class="today"><span class="muted">{{ tr('cskh.today') }}</span><div id="daily-metrics" class="metrics"></div></div></section>
-<div class="page-tabs" role="tablist" aria-label="{{ tr('cskh.page_tabs') }}">{% for name, key in [('customers','tab_customers'),('knowledge','knowledge'),('groups','groups'),('settings','settings')] %}<button type="button" class="page-tab" role="tab" id="tab-{{ name }}" data-tab="{{ name }}" aria-controls="pane-{{ name }}">{{ tr('cskh.' ~ key) }}<span class="badge" data-badge="{{ name }}" hidden></span></button>{% endfor %}</div>
+<div id="attention-bar" class="attention-bar" role="alert" hidden><span id="attention-text"></span><button type="button" id="attention-view">{{ tr('cskh.attention_view') }}</button></div>
+<div class="page-tabs" role="tablist" aria-label="{{ tr('cskh.page_tabs') }}">{% for name, key in [('customers','tab_customers'),('knowledge','knowledge'),('groups','groups'),('settings','settings')] %}<button type="button" class="page-tab" role="tab" id="tab-{{ name }}" data-tab="{{ name }}" aria-controls="pane-{{ name }}">{{ tr('cskh.' ~ key) }}{% if name == 'customers' %}<span class="live" id="live-chatting" hidden><span class="live-dot" aria-hidden="true"></span><span id="live-count"></span></span>{% endif %}<span class="badge" data-badge="{{ name }}" hidden></span></button>{% endfor %}</div>
 <div id="pane-customers" class="page-pane" data-pane="customers" role="tabpanel" aria-labelledby="tab-customers">
 <div class="inbox conv-closed">
 <section id="cskh-customers" class="ui-card"><h2>{{ tr('cskh.customers') }}</h2>
@@ -408,6 +420,7 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
                 on('customers') ? api('/customers'+filter) : null, on('customers') ? api('/escalations') : null,
                 on('knowledge') ? api('/kb') : null, on('groups') ? api('/groups') : null, on('knowledge') ? api('/unanswered') : null]);
             renderBadges(ov.badges);
+            lastOverview = ov; renderLive(ov);
             if (gr) renderGroups(gr.groups);
             if (ua) renderUnanswered(ua.entries);
             paused=ov.paused_all; $('pause-all').textContent=t(paused?'resume_all':'pause_all');
@@ -434,7 +447,10 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
                 const state=c.status==='paused' && c.paused_until ? t('waiting_until')
                     .replace('{time}', new Date(c.paused_until*1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}))
                     .replace('{m}', left) : t(c.status);
-                const tr = row(customers,[(c.attention ? '\u{1F514} ' : '')+(c.test ? '['+t('test_badge')+'] ' : '')+c.name+' ('+c.id+')',stamp(c.last_seen),state,c.messages_in+' / '+c.messages_out+' · '+t('limited')+': '+c.limited_count+' · '+t('escalations')+': '+c.escalations,controls]);
+                const who = node('span');
+                if (c.chatting) { const dot = node('span'); dot.className = 'live-dot'; dot.title = t('chatting_now'); who.append(dot, ' '); }
+                who.append((c.attention ? '\u{1F514} ' : '')+(c.test ? '['+t('test_badge')+'] ' : '')+c.name+' ('+c.id+')');
+                const tr = row(customers,[who,stamp(c.last_seen),state,c.messages_in+' / '+c.messages_out+' · '+t('limited')+': '+c.limited_count+' · '+t('escalations')+': '+c.escalations,controls]);
                 if (c.attention) { tr.className = 'attention'; tr.title = t('attention'); }});empty(customers,5);
             }
             if (es) { const escalations=$('escalation-rows');escalations.replaceChildren();es.escalations.forEach(e=>row(escalations,[e.name+' ('+e.customer_id+')',stamp(e.at),t(e.reason),t(e.delivered?'sent':'send_failed')]));empty(escalations,4); }
@@ -657,13 +673,78 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
         document.querySelectorAll('.page-pane').forEach(pane => { pane.hidden = pane.dataset.pane !== name; });
         try { localStorage.setItem('cskh-page-tab', name); } catch (e) { /* optional */ }
         history.replaceState(null, '', location.pathname + location.search + '#' + name);
+        if (lastOverview) renderLive(lastOverview);
         if (load) refresh().catch(e => note(t('error') + ': ' + e.message));
     }
     function renderBadges(badges) {
         Object.entries(badges || {}).forEach(([name, count]) => {
             const el = document.querySelector('[data-badge="' + name + '"]');
-            if (el) { el.textContent = count ? String(count) : ''; el.hidden = !count; }
+            if (el) { el.textContent = count ? (name === 'customers' ? '\u{1F514} ' : '') + count : ''; el.hidden = !count; }
         });
+        // Customers waiting for staff: red pulsing badge, red tab label (custom)
+        const waiting = (badges && badges.customers) || 0;
+        document.querySelector('[data-badge="customers"]').classList.toggle('urgent', waiting > 0);
+        $('tab-customers').classList.toggle('urgent', waiting > 0);
+    }
+    // Seen from any tab of the page, and from other browser tabs through the title (custom)
+    const BASE_TITLE = document.title;
+    function renderLive(ov) {
+        const waiting = (ov.badges && ov.badges.customers) || 0;
+        const chatting = (ov.live && ov.live.chatting) || 0;
+        if (knownWaiting !== null && waiting > knownWaiting) ting();  // not for the ones already waiting at load
+        knownWaiting = waiting;
+        const live = $('live-chatting');
+        live.hidden = !chatting;
+        $('live-count').textContent = chatting ? String(chatting) : '';
+        live.title = chatting ? t('live_chatting').replace('{n}', chatting).replace('{m}', Math.round((ov.live.window_s || 300) / 60))
+            + (ov.live.names.length ? ': ' + ov.live.names.join(', ') : '') : '';
+        $('attention-bar').hidden = !waiting || pageTab === 'customers';
+        $('attention-text').textContent = '\u{1F514} ' + t('attention_bar').replace('{n}', waiting);
+        document.title = waiting ? '(' + waiting + ') \u{1F514} ' + BASE_TITLE : chatting ? '\u{1F7E2} ' + BASE_TITLE : BASE_TITLE;
+    }
+    // A "ting" when one more customer waits for staff, also from a hidden browser tab (custom). Browsers
+    // only play sound after the page was clicked once: the first click or key press unlocks it.
+    let audio = null, knownWaiting = null;
+    const soundOn = () => { try { return localStorage.getItem('cskh-sound') !== 'off'; } catch (e) { return true; } };
+    function unlockAudio() {
+        try {
+            audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+            if (audio.state === 'suspended') audio.resume();
+        } catch (e) { /* no sound on this browser */ }
+    }
+    ['pointerdown', 'keydown'].forEach(name => document.addEventListener(name, unlockAudio, {passive: true}));
+    function ting() {
+        if (!soundOn() || !audio || audio.state !== 'running') return;
+        const start = audio.currentTime;
+        [[880, 0], [1320, 0.13]].forEach(([freq, delay]) => {  // two bell-like notes, about 0.8 s in all
+            const osc = audio.createOscillator(), gain = audio.createGain();
+            osc.type = 'sine'; osc.frequency.value = freq;
+            gain.gain.setValueAtTime(0.0001, start + delay);
+            gain.gain.exponentialRampToValueAtTime(0.3, start + delay + 0.01);
+            gain.gain.exponentialRampToValueAtTime(0.0001, start + delay + 0.65);
+            osc.connect(gain).connect(audio.destination);
+            osc.start(start + delay); osc.stop(start + delay + 0.7);
+        });
+    }
+    function showSound() {
+        const on = soundOn();
+        $('sound-toggle').textContent = t(on ? 'sound_on' : 'sound_off');
+        $('sound-toggle').setAttribute('aria-pressed', String(on));
+    }
+    $('sound-toggle').onclick = () => {
+        try { localStorage.setItem('cskh-sound', soundOn() ? 'off' : 'on'); } catch (e) { /* optional */ }
+        showSound(); unlockAudio();
+        if (soundOn()) setTimeout(ting, 50);  // let the viewer hear what it sounds like
+    };
+    showSound();
+    let lastOverview = null;
+    $('attention-view').onclick = () => {
+        $('customer-status').value = 'waiting';
+        setPageTab('customers');
+    };
+    // A hidden browser tab still follows waiting customers, at a slower pace: the title tells (custom)
+    async function pollAttention() {
+        try { const ov = await api('/overview'); lastOverview = ov; renderBadges(ov.badges); renderLive(ov); } catch (e) { /* next poll */ }
     }
     document.querySelectorAll('.page-tab').forEach((tab, index, tabs) => {
         tab.onclick = () => setPageTab(tab.dataset.tab);
@@ -700,7 +781,9 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
     $('customer-status').onchange=()=>refresh().catch(e=>note(e.message));
     let debounce; $('customer-query').oninput=()=>{clearTimeout(debounce);debounce=setTimeout(()=>refresh().catch(e=>note(e.message)),250);};
     Promise.all([refresh(),loadSettings()]).then(()=>{const customer=new URLSearchParams(location.search).get('customer');if(customer)openTab(customer,'',customer.startsWith('test-'));}).catch(e=>note(t('error')+': '+e.message));
-    const timer=setInterval(()=>{if(!document.hidden&&!busy)refresh().catch(e=>note(t('error')+': '+e.message));},5000);
+    let hiddenTicks=0;
+    const timer=setInterval(()=>{if(busy)return;if(!document.hidden){hiddenTicks=0;refresh().catch(e=>note(t('error')+': '+e.message));}else if(++hiddenTicks%3===0)pollAttention();},5000);
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!busy)refresh().catch(()=>{});});
     window.addEventListener('pagehide',()=>clearInterval(timer));
 })();
 </script>

@@ -9,6 +9,7 @@
  *                             "mediaUrl":"...", "mediaThumb":"...", "mediaType":"photo"|"video"|"voice"|"gif"|"file"|null}
  *     {"event":"sent",        "cmdId":"...", "threadId":"..."}                 — ack for a command that carried a cmdId
  *     {"event":"send_error",  "cmdId":"...", "threadId":"...", "message":"..."}
+ *     {"event":"listener","state":"reconnecting"|"connected"}   — the socket dropped and is being reopened / is back
  *     {"event":"disconnected","reason":"max_reconnect_reached"} — retries exhausted, session kept (Python restarts bridge)
  *     {"event":"disconnected","reason":"auth_expired"}          — server rejected the saved session, QR needed (bridge exits)
  *     {"event":"disconnected","reason":"duplicate_connection"}  — account opened in Zalo Web/PC elsewhere (bridge exits)
@@ -64,6 +65,11 @@ const IDLE_RESTART_THRESHOLD_MS = 5 * 60 * 1000; // no traffic/pong this long = 
 // for this long.
 let lastFrameAt = Date.now();
 const DEAF_RESTART_THRESHOLD_MS = 30 * 60 * 1000;
+// Seen live (2026-10-21): the reopened socket never got past the handshake — no "open", no
+// "close", no error — and the bridge waited for 'connected' for good while Python still showed
+// CONNECTED. `ws` has no handshake timeout of its own, so the bridge keeps one (custom).
+let handshakeTimer = null;
+const HANDSHAKE_TIMEOUT_MS = 30 * 1000;
 
 // Close codes (zca-js CloseReason) meaning the account was opened in another
 // Zalo Web/PC session — only one web listener per account. Reconnecting at once
@@ -127,6 +133,7 @@ function restartListener(reason) {
 
 /** Start (or restart) the listener and watch its socket for liveness signals. */
 function startListener() {
+    refreshListenerSession();
     api.listener.start();
     markActivity();
     lastFrameAt = Date.now();
@@ -136,12 +143,56 @@ function startListener() {
         ws.on("message", () => { lastFrameAt = Date.now(); });
         ws.on("pong", markActivity);
     }
+    armHandshakeTimeout(ws);
+}
+
+/** zca-js snapshots the cookie string and the socket URL when the API is created: a listener
+ *  reopened after the cookies rotated would log in with the stale ones (custom). */
+function refreshListenerSession() {
+    try {
+        const listener = api.listener;
+        const jar = api.getCookie && api.getCookie();
+        if (jar && typeof jar.getCookieStringSync === "function") {
+            listener.cookie = jar.getCookieStringSync("https://chat.zalo.me");
+        }
+        if (typeof listener.wsURL === "string") {
+            const url = new URL(listener.wsURL);
+            url.searchParams.set("t", String(Date.now()));
+            listener.wsURL = url.toString();
+        }
+    } catch (err) {
+        logErr(`Warning: could not refresh the listener session: ${err.message}`);
+    }
+}
+
+/** A socket that is still not open after HANDSHAKE_TIMEOUT_MS is dropped, which takes the usual
+ *  "closed" → scheduleReconnect() path (custom). Cleared on "connected" and on "closed". */
+function armHandshakeTimeout(ws) {
+    clearHandshakeTimeout();
+    if (!ws) return;
+    handshakeTimer = setTimeout(() => {
+        handshakeTimer = null;
+        const current = api && api.listener && api.listener.ws;
+        if (current !== ws || ws.readyState === ws.OPEN) return;
+        logErr(`No 'connected' within ${HANDSHAKE_TIMEOUT_MS / 1000}s — dropping the socket to reconnect`);
+        try { ws.terminate(); } catch (err) { logErr(`terminate failed: ${err.message}`); }
+    }, HANDSHAKE_TIMEOUT_MS);
+}
+
+function clearHandshakeTimeout() {
+    if (handshakeTimer) { clearTimeout(handshakeTimer); handshakeTimer = null; }
 }
 
 function heartbeat() {
     const ws = api && api.listener && api.listener.ws;
+    if (!ws && !reconnectTimer) {
+        // No socket and nothing on the way to one: never sit here for good (custom)
+        logErr("Heartbeat: no listener socket and no reconnect pending — scheduling one");
+        scheduleReconnect();
+        return;
+    }
     // Handshake/closing, or a reconnect already pending: the reconnect logic owns
-    // this phase — do not pile a restart on top of it.
+    // this phase — do not pile a restart on top of it (the handshake has its own timeout).
     if (!ws || ws.readyState !== ws.OPEN || reconnectTimer) return;
     const idleMs = Date.now() - lastActivityAt;
     if (idleMs > IDLE_RESTART_THRESHOLD_MS) {
@@ -215,6 +266,7 @@ function cleanup() {
     if (credsRefreshTimer) { clearInterval(credsRefreshTimer); credsRefreshTimer = null; }
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
     if (stableResetTimer) { clearTimeout(stableResetTimer); stableResetTimer = null; }
+    clearHandshakeTimeout();
     if (api && api.listener) {
         try { api.listener.stop(); } catch (_) {}
     }
@@ -509,7 +561,9 @@ async function main() {
 
     api.listener.on("connected", () => {
         logErr("Listener connected");
+        clearHandshakeTimeout();
         lastActivityAt = Date.now();
+        if (reconnectAttempts > 0) emit({ event: "listener", state: "connected" });
         // Do NOT reset reconnectAttempts immediately.
         // Schedule a delayed reset: if the connection stays alive for
         // MIN_STABLE_CONNECTION_MS, THEN it's a real connection and we reset.
@@ -534,8 +588,11 @@ async function main() {
             return;
         }
         logErr(`Listener closed (code ${code}${reason ? `, ${reason}` : ""}) — scheduling auto-reconnect`);
-        // Do NOT emit "disconnected" to Python yet.
+        clearHandshakeTimeout();
+        // Do NOT emit "disconnected" to Python yet (the session is kept); it is told the listener
+        // is being reopened, so the dashboard does not read CONNECTED meanwhile (custom).
         // scheduleReconnect() will only give up (and emit) after MAX_RECONNECT_ATTEMPTS.
+        emit({ event: "listener", state: "reconnecting", code });
         scheduleReconnect();
     });
 

@@ -364,8 +364,13 @@
         </p>
     </div>
 
-    <!-- Terminal Log -->
+    <!-- Terminal Log: the bridge's own lines (from the server), then this page's events -->
     <div class="ui-card p-4 font-mono text-[11px] leading-tight space-y-1" id="terminal-log">
+        <div class="flex justify-between items-center pb-1 mb-1 border-b border-primary/10" title="{{ tr('zalo.bridge_log_hint') }}">
+            <span class="text-[10px] uppercase tracking-wider text-primary/60">{{ tr('zalo.bridge_log') }}</span>
+            <button type="button" class="text-[10px] text-primary/60 hover:text-primary" onclick="refreshBridgeLog()">{{ tr('zalo.bridge_log_refresh') }}</button>
+        </div>
+        <div id="bridge-log" class="space-y-0.5 max-h-64 overflow-y-auto"></div>
         <div class="flex gap-2">
             <span class="text-primary/40">[ZALO]</span>
             <span class="text-primary">Module initialized. Awaiting connection...</span>
@@ -443,6 +448,7 @@
     let pollInterval = null;
     let currentStatus = '{{ zalo_status.status }}';
     let currentReconnecting = false;
+    let currentListenerReconnecting = false;
     let currentSetup = '';
     let isDisconnecting = false;
 
@@ -533,10 +539,12 @@
         }
 
         if (data.status === 'connected') {
-            statusDot.style.background = 'rgb(var(--c-success))';
-            statusDot.style.boxShadow = '0 0 8px rgb(var(--c-success) / var(--glow))';
-            statusText.textContent = 'CONNECTED';
-            statusText.style.color = 'rgb(var(--c-success))';
+            // The bridge is logged in but its socket dropped and is being reopened: not CONNECTED yet
+            const tone = data.listenerReconnecting ? 'warning' : 'success';
+            statusDot.style.background = `rgb(var(--c-${tone}))`;
+            statusDot.style.boxShadow = `0 0 8px rgb(var(--c-${tone}) / var(--glow))`;
+            statusText.textContent = data.listenerReconnecting ? 'RECONNECTING' : 'CONNECTED';
+            statusText.style.color = `rgb(var(--c-${tone}))`;
             headerDot.style.background = 'rgb(var(--c-success))';
             headerDot.style.boxShadow = '0 0 5px rgb(var(--c-success) / var(--glow))';
             userId.textContent = data.userId || '--';
@@ -640,6 +648,31 @@
             }
         }
         currentReconnecting = !!data.reconnecting;
+        currentListenerReconnecting = !!data.listenerReconnecting;
+    }
+
+    // The bridge's last log lines: a listener that reconnects, rotates cookies or hangs is read
+    // here instead of the server log (custom)
+    async function refreshBridgeLog() {
+        const box = document.getElementById('bridge-log');
+        if (!box) return;
+        try {
+            const res = await fetch('/zalo/log?limit=50');
+            const data = await res.json();
+            const lines = data.lines || [];
+            if (!lines.length) {
+                box.innerHTML = '<div class="text-primary/30">' + window.nanobotTr('zalo.bridge_log_empty', 'No bridge log yet') + '</div>';
+                return;
+            }
+            const escape = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+            const stamp = at => new Date(at * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', second: '2-digit'});
+            const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 8;
+            box.innerHTML = lines.map(l => '<div class="flex gap-2"><span class="text-primary/40 shrink-0">' + stamp(l.at)
+                + '</span><span class="text-primary/80 break-all">' + escape(l.line) + '</span></div>').join('');
+            if (atBottom) box.scrollTop = box.scrollHeight;
+        } catch (err) {
+            // keep the last lines shown
+        }
     }
 
     function addLog(msg) {
@@ -785,9 +818,11 @@
                 const setupChanged = (data.bridgeSetup || '') !== currentSetup;
                 showBridgeSetup(data);
                 showLastInbound(data);
+                refreshBridgeLog();
                 if (setupChanged && data.status === currentStatus) updateUI(data);
 
                 if (data.status !== currentStatus || !!data.reconnecting !== currentReconnecting
+                    || !!data.listenerReconnecting !== currentListenerReconnecting
                         || (data.status === 'connecting' && data.hasQr)) {
                     updateUI(data);
                     if (data.status === 'connected') {
@@ -911,6 +946,7 @@
 
     // Initialize UI on load
     updateUI({{ zalo_status | tojson }});
+    refreshBridgeLog();
 
     // If connecting, or the bot is still installing the bridge on its own, start polling
     showBridgeSetup({{ zalo_status | tojson }});

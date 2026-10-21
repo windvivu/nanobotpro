@@ -168,6 +168,15 @@ async def zalo_status(request: Request):
     return JSONResponse(zalo_channel.get_status())
 
 
+@router.get("/zalo/log")
+async def zalo_log(request: Request, limit: int = 50):
+    """The last lines of the bridge's log, for the connection log on the setup page (custom)."""
+    zalo_channel = _get_zalo_channel(request)
+    if not zalo_channel:
+        return JSONResponse({"lines": []})
+    return JSONResponse({"lines": zalo_channel.get_bridge_log(min(max(limit, 1), 200))})
+
+
 @router.get("/zalo/bridge-info")
 async def zalo_bridge_info(request: Request):
     """Return bridge installation status (zca-js version)."""

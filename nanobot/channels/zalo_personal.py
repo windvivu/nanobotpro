@@ -260,6 +260,7 @@ class ZaloPersonalChannel(BaseChannel):
     # it is not retried (a retry would most likely send it twice).
     TEXT_ACK_TIMEOUT_S = 20.0
     MEDIA_ACK_TIMEOUT_S = 180.0  # uploads of large videos/files take time
+    BRIDGE_LOG_LINES = 200  # kept for the dashboard's connection log
     OUTBOUND_QUEUE_MAX = 50
     OUTBOUND_QUEUE_TTL_S = 15 * 60.0
     OUTBOUND_FLUSH_SPACING_S = 2.1  # stays under the 5 msgs / 10s per-chat rate limit
@@ -325,6 +326,12 @@ class ZaloPersonalChannel(BaseChannel):
         # them, as a listener can stay connected yet receive nothing (custom, seen live)
         self._last_inbound_at: float | None = None
         self._connected_at: float | None = None
+        # The bridge's socket dropped and is being reopened (session kept): the dashboard shows
+        # RECONNECTING instead of CONNECTED meanwhile (custom, seen live 2026-10-21)
+        self._listener_reconnecting: bool = False
+        # The bridge's last log lines (stderr) and the channel's own connection events, for the
+        # dashboard: a connection problem is diagnosed from the page, not the server log (custom)
+        self._bridge_log: deque[tuple[float, str]] = deque(maxlen=self.BRIDGE_LOG_LINES)
         self._duplicate_streak: int = 0
         self._ready_at: float = 0.0  # monotonic time of the last "ready"
         # Messages sent while the bridge is coming back on its own; delivered
@@ -1054,6 +1061,14 @@ class ZaloPersonalChannel(BaseChannel):
             logger.warning("Zalo auto-reconnect: connect() returned {}", result)
             delay = None
 
+    def _note(self, line: str) -> None:
+        self._bridge_log.append((time.time(), line))
+
+    def get_bridge_log(self, limit: int = 50) -> list[dict]:
+        """The last lines of the bridge's log and the channel's connection events, oldest first."""
+        lines = list(self._bridge_log)[-max(1, limit):]
+        return [{"at": at, "line": line} for at, line in lines]
+
     def get_status(self) -> dict:
         """Get current connection status."""
         result = {
@@ -1063,6 +1078,7 @@ class ZaloPersonalChannel(BaseChannel):
             # Waiting out a backoff before reconnecting on its own (status still
             # reads "disconnected"); the dashboard shows it as RECONNECTING.
             "reconnecting": self._reconnect_is_waiting(),
+            "listenerReconnecting": self._listener_reconnecting,
             "disconnectReason": self._last_disconnect_reason,
             "bridgeSetup": self._setup_state,
             "bridgeSetupError": self._setup_error,
@@ -1333,6 +1349,7 @@ class ZaloPersonalChannel(BaseChannel):
                 line = line_bytes.decode("utf-8", errors="replace").strip()
                 if line:
                     logger.debug("[ZaloBridge] {}", line)
+                    self._note(line.removeprefix("[zalo_bridge] "))
         except asyncio.CancelledError:
             pass
         except Exception:
@@ -1343,12 +1360,14 @@ class ZaloPersonalChannel(BaseChannel):
         event_type = event.get("event", "")
 
         if event_type == "ready":
+            self._note(f"Logged in as {event.get('userId', 'unknown')}")
             self._user_id = event.get("userId", "unknown")
             self._status = self.STATUS_CONNECTED
             self._reconnect_attempts = 0  # reset backoff counter on successful connect
             self._last_disconnect_reason = ""
             self._ready_at = time.monotonic()
             self._connected_at = time.time()
+            self._listener_reconnecting = False
             self._ready_event.set()
             logger.info("Zalo logged in as user {}", self._user_id)
 
@@ -1607,6 +1626,7 @@ class ZaloPersonalChannel(BaseChannel):
             await self._cancel_customer_tasks()
             reason = event.get("reason", "unknown")
             logger.warning("Zalo disconnected: {}", reason)
+            self._note(f"Disconnected: {reason}")
             self._last_disconnect_reason = reason
             if reason == "auth_expired":
                 # Session is invalid — user must re-scan QR.
@@ -1649,6 +1669,15 @@ class ZaloPersonalChannel(BaseChannel):
         elif event_type == "error":
             message = event.get("message", "unknown error")
             logger.error("Zalo bridge error: {}", message)
+
+        elif event_type == "listener":
+            self._listener_reconnecting = event.get("state") == "reconnecting"
+            if self._listener_reconnecting:
+                logger.warning("Zalo listener dropped (code {}) — bridge reopening it", event.get("code"))
+                self._note(f"Listener dropped (code {event.get('code')}), reopening")
+            else:
+                logger.info("Zalo listener back")
+                self._note("Listener back")
 
         elif event_type in {"sent", "send_error"}:
             cmd_id = event.get("cmdId")
