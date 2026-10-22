@@ -626,11 +626,8 @@ class AgentLoop:
             public_customer_mode=getattr(self, "public_customer_mode", False),
         ))
 
+        AgentLoop._sync_knowledge_tool(self)  # through the class: tests build the loop from a namespace
         if getattr(self, "public_customer_mode", False):
-            # The model searches the public KB again with its own words when the prompt does not
-            # answer (custom): retrieval picks facts by the customer's words only
-            from nanobot.agent.tools.knowledge import SearchKnowledgeTool
-            self.tools.register(SearchKnowledgeTool(self.context))
             from nanobot.agent.tools.escalate import EscalateTool
             from nanobot.channels.zalo_personal import ZaloCustomerServiceConfig
             from nanobot.config.public_mode import _field
@@ -697,6 +694,35 @@ class AgentLoop:
         sync_market_scanner = getattr(self, "_sync_market_scanner_tool", None)
         if sync_market_scanner is not None:
             sync_market_scanner()
+
+    def _sync_knowledge_tool(self) -> None:
+        """search_knowledge (custom): the model searches the knowledge again with its own words when the
+        prompt does not answer, since retrieval picks facts by the user's words only. For a customer,
+        unless the whole KB already fits the prompt. For the internal bot, while Brain reads facts for
+        every session, the role allows it and the Brain page's Knowledge tab holds something learned.
+        Brain settings and the library change at runtime: the reload, the Brain page and a customer
+        turn that finds the KB grown or shrunk call this again."""
+        from nanobot.agent.tool_roles import allows_tool
+
+        self.tools.unregister("search_knowledge")
+        public = getattr(self, "public_customer_mode", False)
+        config = getattr(self, "brain_memory_config", None)
+        if public:
+            if getattr(getattr(self, "context", None), "knowledge_whole", None):
+                return  # the whole KB is in the prompt: a search finds nothing new
+        else:
+            if not (config is not None and config.reads_session(None)):
+                return
+            if not allows_tool(getattr(self, "tool_preset", "full"), "search_knowledge",
+                               custom_tools=getattr(self, "custom_tools", None)):
+                return  # the custom role has only the tools picked one by one (review)
+            from nanobot.brain_memory.config import LIBRARY_FOLDER
+            from nanobot.web.kb_catalog import published_paths
+            workspace = getattr(self, "workspace", None)
+            if workspace is None or not published_paths(workspace, LIBRARY_FOLDER):
+                return  # nothing taught on the Brain page yet: nothing worth a search round
+        from nanobot.agent.tools.knowledge import SearchKnowledgeTool
+        self.tools.register(SearchKnowledgeTool(self.context, public=public))
 
     def _sync_market_scanner_tool(self) -> None:
         """Register guarded trader tools only while Trader Mode is enabled, in roles that have them."""
@@ -1134,6 +1160,7 @@ class AgentLoop:
                 self.context._brain_context = None
                 if runtime := getattr(self, "brain_runtime", None):
                     runtime.config_changed()
+                self._sync_knowledge_tool()
 
             latest_image_config = config.tools.image_generation
             latest_image_provider_configs = image_gen_provider_configs(config)
@@ -1931,6 +1958,9 @@ class AgentLoop:
                 self.context.prefetch_knowledge,
                 memory_query if memory_query is not None else retrieval_query(msg.content, history), session.key,
             )
+            whole = getattr(self.context, "knowledge_whole", None)
+            if whole is not None and whole == (self.tools.get("search_knowledge") is not None):
+                self._sync_knowledge_tool()  # the whole KB now fits the prompt, or no longer does
         initial_messages = self.context.build_messages(
             history=history,
             current_message=msg.content,

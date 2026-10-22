@@ -145,9 +145,12 @@ class FactPromoter:
         return scan_text(*values)
 
     def _scoped_claim_key(self, draft: FactDraft) -> str:
+        from nanobot.brain_memory.config import is_document_source
+
         claim = _claim_key(draft)
-        if self.public_customer_mode:
-            # Each published document must remain independently revocable.
+        if self.public_customer_mode or is_document_source(draft.source.source_ref):
+            # Each published document must remain independently revocable: the internal bot's
+            # library too (custom, review), else forgetting one document removes another's fact.
             return canonical_hash({"claim": claim, "source_ref": draft.source.source_ref})
         return claim
 

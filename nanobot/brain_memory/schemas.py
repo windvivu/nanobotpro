@@ -127,6 +127,9 @@ class Chunk(Record):
 
 class RetrievedChunk(Chunk):
     score: float
+    # When the fact was learned (its created_at): shown to the model, which prefers the later of two
+    # facts that disagree (custom)
+    learned_at: str = ""
 
 
 class GraphNode(Record):

@@ -219,17 +219,33 @@ class LearningWorker:
         except (OSError, ValueError):
             logger.warning("Brain job quarantine unavailable: {}", job_id)
 
-    def _priority_kb(self, record: dict) -> bool:
-        """Derive priority from persisted provenance, never from a caller flag."""
-        from nanobot.brain_memory.config import is_public_kb_source
+    @staticmethod
+    def _document_job(record: dict) -> bool:
+        """A part of a document the admin gave (kb/ or library/): the longer timeout, in any mode."""
+        from nanobot.brain_memory.config import is_document_source
 
-        if not self.public_customer_mode:
-            return False
         try:
             event = ConversationEvent.model_validate(record["event"])
         except (KeyError, TypeError, ValueError):
             return False
-        return bool(event.migration_batch_id and is_public_kb_source(event.source.source_ref))
+        return bool(event.migration_batch_id and is_document_source(event.source.source_ref))
+
+    def _priority_kb(self, record: dict) -> bool:
+        """Derive priority from persisted provenance, never from a caller flag. A document the admin
+        gave: the public KB in customer service mode; the library (Brain page) for the internal bot,
+        an admin action that is learned at once, not held by the daily limit (custom)."""
+        from nanobot.brain_memory.config import is_document_source, is_public_kb_source
+
+        try:
+            event = ConversationEvent.model_validate(record["event"])
+        except (KeyError, TypeError, ValueError):
+            return False
+        if not event.migration_batch_id:
+            return False
+        ref = event.source.source_ref
+        if self.public_customer_mode:
+            return is_public_kb_source(ref)
+        return is_document_source(ref) and not is_public_kb_source(ref)
 
     def _daily_reserved_jobs(self) -> int:
         """Count once per day from metadata; checkpoints maintain the total."""
@@ -451,7 +467,7 @@ class LearningWorker:
                 raise DisabledError("Learning stopped")
             checkpoint("ai")
             generated = self.factory(event)
-            timeout = learning_timeout(self.config, published_kb=self._priority_kb(record))
+            timeout = learning_timeout(self.config, published_kb=self._document_job(record))
             manifest = await asyncio.wait_for(generated, timeout) if inspect.isawaitable(generated) else generated
             if self._stopping or not self.config.enabled or not self.config.learning_enabled:
                 raise DisabledError("Learning stopped")

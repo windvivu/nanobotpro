@@ -632,15 +632,15 @@ async def kb_action(request: Request, document_id: str, action: str):
             return await kb_catalog.publish_document(
                 workspace, config, getattr(agent, "brain_runtime", None), document_id
             )
-        if action == "revoke":
-            return kb_catalog.revoke_document(workspace, config, document_id)
+        if action == "revoke":  # moves fact files and rebuilds the index: off the event loop (custom, review)
+            return await run_in_threadpool(kb_catalog.revoke_document, workspace, config, document_id)
         if action == "relearn":
             agent = getattr(request.app.state, "agent", None)
             return await kb_catalog.relearn_document(
                 workspace, config, getattr(agent, "brain_runtime", None), document_id
             )
         if action == "delete":
-            kb_catalog.remove_document(workspace, document_id)
+            await run_in_threadpool(kb_catalog.remove_document, workspace, document_id)
             return {"deleted": True}
         raise HTTPException(404, "Unknown KB action")
     except (BrainMemoryError, KeyError, ValueError, OSError) as exc:

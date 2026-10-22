@@ -7,7 +7,7 @@ import unicodedata
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-from nanobot.brain_memory.config import is_public_kb_source
+from nanobot.brain_memory.config import is_document_source, is_public_kb_source
 from nanobot.brain_memory.errors import BrainMemoryError, DisabledError, FormatError
 from nanobot.brain_memory.graph import BrainGraph
 from nanobot.brain_memory.index import BrainIndex
@@ -194,14 +194,13 @@ class BrainRuntime:
         response = await asyncio.wait_for(self.agent.provider.chat(
             messages=[
                 {"role": "system", "content": (
-                    (_KB_EXTRACT if is_public_kb_source(event.source.source_ref) else _EXTRACT)
+                    (_KB_EXTRACT if is_document_source(event.source.source_ref) else _EXTRACT)
                     + _names_offer(topics, entities) + _EXTRACT_END
                 )},
                 {"role": "user", "content": text},
             ], model=self.agent.model, max_tokens=4096, temperature=0,
         ), timeout=learning_timeout(config, published_kb=bool(
-            getattr(self.agent, "public_customer_mode", False)
-            and event.migration_batch_id and is_public_kb_source(event.source.source_ref))))
+            event.migration_batch_id and is_document_source(event.source.source_ref))))
         if not self._allowed(event):
             raise DisabledError("Session learning disabled during generation")
         content = response.content or ""

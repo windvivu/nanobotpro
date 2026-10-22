@@ -10,7 +10,7 @@ from pathlib import Path
 from filelock import FileLock
 from pydantic import TypeAdapter, ValidationError
 
-from nanobot.brain_memory.config import BrainMemoryConfig, is_public_kb_source
+from nanobot.brain_memory.config import BrainMemoryConfig, is_document_source, is_public_kb_source
 from nanobot.brain_memory.errors import ConflictError, FormatError
 from nanobot.brain_memory.index import BrainIndex
 from nanobot.brain_memory.migration import current_promotion_sequence
@@ -179,6 +179,9 @@ def undo_migration_batch(workspace: Path, config: BrainMemoryConfig, batch_id: s
             raise FormatError("Migration batch is invalid")
         if batch.get("undone"):
             raise ConflictError("Migration batch was already undone")
+        if any(is_document_source(ref) for ref in batch.get("source_refs", []) if isinstance(ref, str)):
+            # Its catalog would still say learned (custom, review): documents are forgotten instead
+            raise ConflictError("A taught document is forgotten on its Knowledge page, not undone here")
         batch_dir = store.root / ".migration" / "batches"
         latest_batch_id = batch_id
         latest_created_at = str(batch.get("created_at", ""))

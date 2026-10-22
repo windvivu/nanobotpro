@@ -438,7 +438,8 @@ class BrainIndex:
         with self._connection() as conn:
             rows = conn.execute(
                 """
-                SELECT c.chunk_id, c.fact_id, c.path, c.line_start, c.line_end, c.text, c.source_hash
+                SELECT c.chunk_id, c.fact_id, c.path, c.line_start, c.line_end, c.text, c.source_hash,
+                       f.created_at
                 FROM chunks c
                 JOIN facts f ON f.id = c.fact_id
                 WHERE f.status = 'active'
@@ -450,6 +451,7 @@ class BrainIndex:
             ).fetchall()
         return [RetrievedChunk(
             chunk_id=row["chunk_id"], fact_id=row["fact_id"], text=row["text"], score=0.0,
+            learned_at=row["created_at"],
             citation=Citation(source_ref=row["path"], source_hash=row["source_hash"],
                               line_start=row["line_start"], line_end=row["line_end"]),
         ) for row in rows]
@@ -478,7 +480,7 @@ class BrainIndex:
                 batch = conn.execute(
                     """
                     SELECT c.chunk_id, c.fact_id, c.path, c.line_start, c.line_end,
-                           c.text, c.source_hash, bm25(chunks_fts) AS rank,
+                           c.text, c.source_hash, f.created_at, bm25(chunks_fts) AS rank,
                            chunks_fts.title, chunks_fts.topic, chunks_fts.entities, chunks_fts.tags
                     FROM chunks_fts
                     JOIN chunks c ON c.chunk_id = chunks_fts.chunk_id
@@ -574,7 +576,7 @@ class BrainIndex:
                 related_rows = conn.execute(
                     """
                     SELECT c.chunk_id, c.fact_id, c.path, c.line_start, c.line_end,
-                           c.text, c.source_hash
+                           c.text, c.source_hash, f.created_at
                     FROM chunks c
                     JOIN facts f ON f.id = c.fact_id
                     WHERE c.fact_id IN ({}) AND f.status = 'active'
@@ -608,7 +610,7 @@ class BrainIndex:
                     clipped = " ".join(words[:budget])
                     results.append(RetrievedChunk(
                         chunk_id=row["chunk_id"], fact_id=row["fact_id"],
-                        text=clipped, score=float(-row["rank"]),
+                        text=clipped, score=float(-row["rank"]), learned_at=row["created_at"],
                         citation=Citation(
                             source_ref=row["path"], source_hash=row["source_hash"],
                             line_start=row["line_start"], line_end=row["line_end"],
@@ -619,7 +621,7 @@ class BrainIndex:
             used += len(words)
             results.append(RetrievedChunk(
                 chunk_id=row["chunk_id"], fact_id=row["fact_id"],
-                text=row["text"], score=float(-row["rank"]),
+                text=row["text"], score=float(-row["rank"]), learned_at=row["created_at"],
                 citation=Citation(
                     source_ref=row["path"], source_hash=row["source_hash"],
                     line_start=row["line_start"], line_end=row["line_end"],

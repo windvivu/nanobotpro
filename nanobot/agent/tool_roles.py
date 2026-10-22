@@ -211,7 +211,7 @@ def role_tools(
         chosen = _chosen(custom_tools)
         if chosen is not None:
             return sorted(chosen | {"message"})
-        groups = {"shell", "inspect", "trading"}  # the old custom: exec by sandbox, `my` and trading on
+        groups = {"shell", "inspect", "trading", "knowledge"}  # the old custom: exec by sandbox, `my` and trading on
         if enable_file_tools:
             groups |= {"file_read", "file_write"}
         if enable_web_tools:
@@ -221,12 +221,15 @@ def role_tools(
         if enable_cron:
             groups.add("cron")
     else:
-        groups = set(ROLES[role].groups)
-    return sorted({name for group in groups if group in GROUP_TOOLS for name in GROUP_TOOLS[group]} | {"message"})
+        groups = set(ROLES[role].groups) | {"knowledge"}
+    tools = {name for group in groups if group in GROUP_TOOLS for name in GROUP_TOOLS[group]} | {"message"}
+    return sorted(tools | ({KNOWLEDGE_TOOL} if "knowledge" in groups else set()))
 
 
 # ── For the settings page ─────────────────────────────────────────────────────────────────────────
-ALL_TOOLS = frozenset(_TOOL_GROUP) | {"message"}
+# search_knowledge is in no group: every role has it (while Brain reads facts), custom only when picked
+KNOWLEDGE_TOOL = "search_knowledge"
+ALL_TOOLS = frozenset(_TOOL_GROUP) | {"message", KNOWLEDGE_TOOL}
 
 ROLE_ICONS = {
     "chatbot": "smart_toy",
@@ -265,6 +268,8 @@ TOOL_SECTIONS: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
     ("Tự động", "", (("cron", "Nhắc hẹn, việc định kỳ"), ("spawn", "Giao việc cho agent phụ"),
                      ("long_task", "Mục tiêu dài hạn (/goal)"), ("complete_goal", "Đánh dấu xong mục tiêu"))),
     ("Trạng thái bot", "", (("my", "Xem cấu hình và trạng thái của bot"),)),
+    ("Kiến thức", "Chỉ có khi Brain đọc fact cho mọi phiên chat.",
+     (("search_knowledge", "Tự tra kiến thức đã học (tài liệu, điều đã dạy)"),)),
     ("Trading", "Chỉ có khi Trader Mode bật.", (("tradingview", "Điều khiển chart TradingView"),
                                                ("market_scanner", "Quét thị trường"))),
     ("Office", "Đọc và tạo tài liệu trong vùng workspace.", (

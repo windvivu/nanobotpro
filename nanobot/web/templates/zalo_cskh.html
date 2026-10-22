@@ -32,6 +32,16 @@ h1,h2,p {margin-top:0} input[type=checkbox] {accent-color:rgb(var(--c-accent))}
 .cskh .grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
 .cskh .grid .wide {grid-column:1/-1}
 .cskh label {display:flex;flex-direction:column;gap:6px} .cskh .check {flex-direction:row;align-items:center}
+/* Facts a note may replace, as cards; the checked ones will be retired (custom) */
+.fact-cards {display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr));gap:10px;margin:8px 0}
+.cskh .fact-card {display:flex;flex-direction:column;gap:6px;padding:10px 12px;border:1px solid rgb(var(--c-primary) / .25);border-radius:10px;background:rgb(var(--c-surface));cursor:pointer;transition:border-color .15s,background .15s}
+.cskh .fact-card:hover {border-color:rgb(var(--c-primary) / .55)}
+.cskh .fact-card:has(input:checked) {border-color:rgb(var(--c-danger));background:rgb(var(--c-danger) / .08)}
+.cskh .fact-card:focus-within {outline:2px solid rgb(var(--c-accent));outline-offset:2px}
+.fact-card .fact-head {display:flex;gap:8px;align-items:flex-start;font-weight:700}
+.fact-card .fact-head input {margin-top:3px;flex:none}
+.fact-card .fact-body {font-size:.85rem;line-height:1.45;opacity:.85;white-space:pre-wrap;overflow-wrap:anywhere}
+.fact-card .fact-meta {font-size:.72rem;opacity:.6}
 .cskh .table-wrap {overflow-x:auto;width:100%} .cskh table {width:100%;border-collapse:collapse;font-size:.9rem}
 .cskh th,.cskh td {text-align:left;padding:10px 8px;border-bottom:1px solid rgb(var(--c-primary) / .2);vertical-align:top}
 .cskh td:first-child {overflow-wrap:anywhere;min-width:100px} .cskh td .row {min-width:210px}
@@ -164,7 +174,7 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
 <section id="cskh-teach" class="ui-card"><h2>{{ tr('cskh.teach_title') }}</h2><p class="muted">{{ tr('cskh.teach_hint') }}</p>
 <p id="teach-linked" class="row" hidden><span id="teach-linked-text"></span><button id="teach-unlink" type="button">{{ tr('cskh.unlink') }}</button></p>
 <form id="teach-form"><textarea id="teach-text" maxlength="2000" rows="3" placeholder="{{ tr('cskh.teach_input') }}" aria-label="{{ tr('cskh.teach_title') }}"></textarea><div class="row"><button type="submit">{{ tr('cskh.teach_send') }}</button><span class="muted">{{ tr('cskh.enter_hint') }}</span></div></form>
-<div id="teach-related" hidden><p id="teach-related-title"></p><div id="teach-related-list"></div><div class="row"><button id="teach-replace" type="button">{{ tr('cskh.replace') }}</button><button id="teach-keep" type="button">{{ tr('cskh.keep') }}</button></div></div></section>
+<div id="teach-related" hidden><p id="teach-related-title"></p><div id="teach-related-list" class="fact-cards"></div><div class="row"><button id="teach-replace" type="button">{{ tr('cskh.replace') }}</button><button id="teach-keep" type="button">{{ tr('cskh.keep') }}</button></div></div></section>
 <section id="cskh-ask" class="ui-card"><h2>{{ tr('cskh.ask_title') }}</h2><p class="muted">{{ tr('cskh.ask_hint') }}</p>
 <div id="kb-ask-log" class="test-log" aria-live="polite"></div>
 <form id="kb-ask-form" class="row"><input id="kb-ask-input" maxlength="2000" autocomplete="off" placeholder="{{ tr('cskh.ask_input') }}" aria-label="{{ tr('cskh.ask_title') }}"><button type="submit">{{ tr('cskh.ask_send') }}</button><button id="kb-ask-clear" type="button">{{ tr('cskh.ask_clear') }}</button></form></section>
@@ -462,7 +472,7 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
     // Documents (uploads, learned links) and taught notes share one row: name, learning, facts, actions
     let lastKb = [], notesShown = 10;
     function docRow(docs, d, label) {const controls=node('div');controls.className='row';
-                (d.status==='pending'?['publish','delete']:d.status==='published'||d.cleanup_pending?['revoke']:['delete']).forEach(action=>controls.append(button(action,async()=>{if(action==='publish'||await hubModal(t(action),t('confirm_'+action))){const result=await api('/kb/'+d.document_id+'/'+action,{});note(t(result.cleanup_pending?'cleanup_pending':action==='publish'?'queued':'saved'));}})));
+                (d.status==='pending'?(d.batch_id?['publish']:['publish','delete']):d.status==='published'||d.cleanup_pending?['revoke']:['delete']).forEach(action=>controls.append(button(action,async()=>{if(action==='publish'||await hubModal(t(action),t('confirm_'+action))){const result=await api('/kb/'+d.document_id+'/'+action,{});note(t(result.cleanup_pending?'cleanup_pending':action==='publish'?'queued':'saved'));}})));
                 const learning=d.learning||{total:0,done:0,failed:0,in_progress:0};
                 if(d.status==='published' && learning.failed) controls.append(button('relearn',async()=>{await api('/kb/'+d.document_id+'/relearn',{});note(t('queued'));}));
                 const progress = learning.error ? t('learning_unreadable')
@@ -596,10 +606,18 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
         box.hidden = !items.length;
         if (!items.length) return;
         $('teach-related-title').textContent = t('related_title').replace('{n}', items.length);
-        items.forEach(f => { const label = node('label'); label.className = 'check';
+        items.forEach(f => {
+            // One card per fact: a checked card is the one to retire (custom)
+            const card = node('label'); card.className = 'fact-card';
+            const head = node('span'); head.className = 'fact-head';
             const cb = node('input'); cb.type = 'checkbox'; cb.value = f.id;
-            label.append(cb, node('strong', f.title), node('span', ' — ' + f.body + (f.document ? ' (' + f.document + ')' : '')));
-            list.append(label); });
+            head.append(cb, node('span', f.title));
+            const body = node('span', f.body); body.className = 'fact-body';
+            const when = f.learned_at ? new Date(f.learned_at) : null;
+            const meta = node('span', [f.document, when && !isNaN(when) ? t('learned_on').replace('{date}', when.toLocaleDateString()) : '']
+                .filter(Boolean).join(' · ')); meta.className = 'fact-meta';
+            card.append(head, body, meta); list.append(card);
+        });
     }
     $('teach-form').onsubmit = e => { e.preventDefault(); act(e.submitter || e.target.querySelector('button'), async () => {
         const text = $('teach-text').value.trim(); if (!text) return;

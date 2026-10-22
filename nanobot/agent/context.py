@@ -85,6 +85,10 @@ class ContextBuilder:
         # Facts the last system prompt carried from the knowledge index; None when it was not
         # searched. The loop reads it right after build_messages (custom, unanswered questions)
         self.last_knowledge_hits: int | None = None
+        # Customer service: the whole published KB went into the last prompt, so searching it again
+        # can find nothing new and the loop takes search_knowledge away (custom). It depends on the
+        # KB alone, not on the question: the same for every customer until the KB changes.
+        self.knowledge_whole: bool | None = None
 
     def build_system_prompt(
         self,
@@ -115,7 +119,9 @@ class ContextBuilder:
         # as a safe fallback.
         if brain_context:
             parts.append("# Brain Memory Reference\n\n" + brain_context)
-        elif not self.public_customer_mode:
+        if taught := self._taught_documents_line(memory_session):
+            parts.append(taught)
+        if not brain_context and not self.public_customer_mode:
             memory = self.memory.get_memory_context()
             if memory:
                 parts.append(f"# Memory\n\n{memory}")
@@ -158,6 +164,8 @@ class ContextBuilder:
             query = memory_query[:config.max_query_chars]
             if hasattr(self._brain_context, "retrieve"):
                 retrieved = self._brain_context.retrieve(query)
+                if self.public_customer_mode:
+                    self.knowledge_whole = retrieved.matched is not None
                 return retrieved.render(), retrieved.hits
             return self._brain_context.render(query), None
         except Exception as exc:
@@ -167,6 +175,33 @@ class ContextBuilder:
             # Brain Memory is an optional cache; legacy context must
             # continue when its index is absent, corrupt or unavailable.
             return "", None
+
+    def _taught_documents_line(self, memory_session: str | None) -> str:
+        """The internal bot's taught documents by name (custom): a model that knows a subject from
+        training still searches the admin's book on it. Cheap: one small catalog file per turn."""
+        config = self._brain_memory_config
+        if self.public_customer_mode or config is None or not config.reads_session(memory_session):
+            return ""
+        try:
+            from nanobot.brain_memory.config import LIBRARY_FOLDER
+            from nanobot.web.kb_catalog import list_documents
+            names = [doc["name"] for doc in list_documents(self.workspace, LIBRARY_FOLDER)
+                     if doc["status"] == "published"]
+        except Exception:
+            return ""
+        if not names:
+            return ""
+        shown = "; ".join(name[:80] for name in names[:30]) + (" …" if len(names) > 30 else "")
+        return (
+            "# Documents the admin taught this bot\n\n"
+            f"{shown}\n\n"
+            "Within this bot they are the source of record, above what you learned in training: the "
+            "admin keeps them current for this organisation. When a question touches one of them, use "
+            "the facts given in the Brain Memory Reference, or call search_knowledge first. When such a "
+            "fact gives a figure, date or rule that differs from what you know, answer with the fact's "
+            "value and say it comes from the admin's document; you may add that public sources say "
+            "otherwise, but never replace the fact's value with your own."
+        )
 
     def _knowledge_adapter(self) -> BrainContextAdapter:
         if self._brain_context is None:

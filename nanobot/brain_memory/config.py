@@ -17,6 +17,25 @@ def is_public_kb_source(source_ref: str) -> bool:
     return True
 
 
+# The internal bot's own documents and notes, taught on the Brain page (custom). Kept apart from kb/:
+# public customer mode reads and learns kb/ only, so nothing here can reach a customer.
+LIBRARY_FOLDER = "library"
+
+
+def is_document_source(source_ref: str) -> bool:
+    """A document the admin gave the bot to learn (kb/ or library/), not a conversation or MEMORY.md:
+    it is read as a document, with the longer learning timeout (custom)."""
+    if is_public_kb_source(source_ref):
+        return True
+    if not isinstance(source_ref, str) or not source_ref.startswith(LIBRARY_FOLDER + "/"):
+        return False
+    try:
+        validate_ref(source_ref)
+    except ValueError:
+        return False
+    return True
+
+
 class BrainMemoryConfig(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
 

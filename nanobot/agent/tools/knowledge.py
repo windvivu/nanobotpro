@@ -16,6 +16,16 @@ from nanobot.agent.tools.base import Tool
 
 QUERY_MAX_CHARS = 200
 NOTHING_FOUND = "No matching information in the knowledge base."
+# The internal bot (custom): it searches what it learned, documents and notes from the Brain page first
+INTERNAL_DESCRIPTION = (
+    "Search the knowledge you learned (documents and notes the admin taught on the Brain page, and "
+    "earlier memory) with your own keywords. Use it when the reference information already given "
+    "does not answer the question, and before saying you do not know something the admin's "
+    "documents may cover. Use it even when you think you already know the answer: the admin's "
+    "documents may be newer than, or differ from, what you learned in training, and they take "
+    "precedence here. Write the words the knowledge would use, short and specific, not the "
+    "user's whole sentence; try other words if nothing matches. Returns the matching facts."
+)
 
 
 class SearchKnowledgeTool(Tool):
@@ -36,8 +46,10 @@ class SearchKnowledgeTool(Tool):
         "required": ["query"],
     }
 
-    def __init__(self, context: Any):
+    def __init__(self, context: Any, *, public: bool = True):
         self._context = context  # ContextBuilder: it owns the index and the public KB filter
+        if not public:
+            self.description = INTERNAL_DESCRIPTION
 
     @property
     def read_only(self) -> bool:

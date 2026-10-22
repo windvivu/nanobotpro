@@ -364,6 +364,7 @@ def create_app(config, session_manager=None, agent=None, channel_manager=None, t
     from nanobot.web.routes.cron import router as cron_router
     from nanobot.web.routes.dashboard import router as dashboard_router
     from nanobot.web.routes.memory import router as memory_router
+    from nanobot.web.routes.brain_library import router as brain_library_router
     from nanobot.web.routes.memory_graph import router as memory_graph_router
     from nanobot.web.routes.oauth import router as oauth_router
     from nanobot.web.routes.profiles import router as profiles_router
@@ -375,6 +376,7 @@ def create_app(config, session_manager=None, agent=None, channel_manager=None, t
     app.include_router(config_router)
     app.include_router(sessions_router)
     app.include_router(workspace_router)
+    app.include_router(brain_library_router)  # before the /api/memory/... routes (custom)
     app.include_router(memory_router)
     app.include_router(memory_graph_router)
     app.include_router(agentic_router)

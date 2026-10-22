@@ -128,6 +128,47 @@
             flex: 1 0 auto;
         }
     }
+    /* Graph | Knowledge tabs and the knowledge library (custom) */
+    #brain-pane-graph[hidden], #brain-pane-knowledge[hidden], #library-pane-documents[hidden], #library-pane-text[hidden] { display: none !important; }
+    .brain-tabs, .library-tabs { display: flex; gap: .25rem; border-bottom: 1px solid rgb(var(--c-primary) / .25); overflow-x: auto; }
+    .brain-tab, .library-tab {
+        display: inline-flex; align-items: center; gap: .45rem; padding: .55rem 1rem; white-space: nowrap;
+        border: 1px solid transparent; border-bottom: none; border-radius: .5rem .5rem 0 0;
+        font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: rgb(var(--c-primary) / .65);
+    }
+    .brain-tab:hover, .library-tab:hover { background: rgb(var(--c-primary) / .08); }
+    .brain-tab.active, .library-tab.active { border-color: rgb(var(--c-primary) / .3); background: rgb(var(--c-surface)); color: rgb(var(--c-primary)); }
+    .brain-tab:focus-visible, .library-tab:focus-visible, .library-btn:focus-visible { outline: 2px solid rgb(var(--c-primary)); outline-offset: 2px; }
+    .library-btn { padding: .35rem .75rem; border: 1px solid rgb(var(--c-primary) / .45); font-size: .7rem; text-transform: uppercase; color: rgb(var(--c-primary)); }
+    .library-btn:hover { background: rgb(var(--c-primary) / .12); }
+    .library-btn:disabled { opacity: .4; cursor: not-allowed; }
+    .library-input { background: rgb(0 0 0 / .2); border: 1px solid rgb(var(--c-primary) / .3); padding: .35rem .5rem; color: rgb(var(--c-primary)); font-size: .8rem; }
+    .library-warn { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem .75rem; padding: .6rem .8rem;
+        border: 1px solid rgb(var(--c-warning) / .55); background: rgb(var(--c-warning) / .1); color: rgb(var(--c-warning)); font-size: .75rem; }
+    .library-warn[hidden], .library-related[hidden] { display: none; }
+    .library-warn .library-btn { border-color: rgb(var(--c-warning)); color: rgb(var(--c-warning)); }
+    .library-related { display: flex; flex-direction: column; gap: .5rem; padding: .6rem .8rem; border: 1px dashed rgb(var(--c-primary) / .4); }
+    .fact-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr)); gap: .6rem; }
+    .fact-card { display: flex; flex-direction: column; gap: .35rem; padding: .6rem .75rem; border: 1px solid rgb(var(--c-primary) / .25);
+        border-radius: .6rem; background: rgb(var(--c-surface)); cursor: pointer; transition: border-color .15s, background .15s; }
+    .fact-card:hover { border-color: rgb(var(--c-primary) / .55); }
+    .fact-card:has(input:checked) { border-color: rgb(var(--c-danger)); background: rgb(var(--c-danger) / .08); }
+    .fact-card:focus-within { outline: 2px solid rgb(var(--c-primary)); outline-offset: 2px; }
+    .fact-card .fact-head { display: flex; gap: .5rem; align-items: flex-start; font-weight: 700; color: rgb(var(--c-primary)); }
+    .fact-card .fact-head input { margin-top: .2rem; flex: none; }
+    .fact-card .fact-body { line-height: 1.45; color: rgb(var(--c-primary) / .8); white-space: pre-wrap; overflow-wrap: anywhere; }
+    .fact-card .fact-meta { font-size: .65rem; color: rgb(var(--c-primary) / .5); }
+    .library-table { max-height: min(55vh, 30rem); overflow: auto; }
+    .library-table table { width: 100%; border-collapse: collapse; font-size: .75rem; }
+    .library-table th { position: sticky; top: 0; background: rgb(var(--c-surface)); text-align: left; padding: .4rem .5rem; color: rgb(var(--c-primary) / .6);
+        font-weight: 700; text-transform: uppercase; letter-spacing: .06em; font-size: .65rem; border-bottom: 1px solid rgb(var(--c-primary) / .25); }
+    .library-table td { padding: .45rem .5rem; border-bottom: 1px solid rgb(var(--c-primary) / .1); vertical-align: top; color: rgb(var(--c-primary) / .85); }
+    .library-table td .library-actions { display: flex; flex-wrap: wrap; gap: .35rem; }
+    .library-table .library-meta { color: rgb(var(--c-primary) / .5); font-size: .65rem; }
+    .library-table .library-facts-btn { text-decoration: underline; color: rgb(var(--c-primary)); font-variant-numeric: tabular-nums; }
+    .library-dialog { width: min(40rem, calc(100vw - 2rem)); padding: 1.25rem; border: 1px solid rgb(var(--c-primary) / .4); background: rgb(var(--c-surface)); color: rgb(var(--c-primary)); }
+    .library-dialog::backdrop { background: rgb(0 0 0 / .55); }
+    @media (max-width: 640px) { .library-table td .library-actions { flex-direction: column; align-items: flex-start; } }
 </style>
 <aside class="w-full lg:w-72 flex flex-col gap-6">
     <div class="ui-card p-6">
@@ -148,6 +189,11 @@
 
 {% if graph_available %}
 <section class="flex-1 min-w-0 flex flex-col gap-4">
+    <!-- Graph | Knowledge (custom): the knowledge the admin teaches the bot, on its own tab -->
+    <div class="brain-tabs" role="tablist" aria-label="{{ tr('graph.brain_graph') }}">
+        <button type="button" class="brain-tab" role="tab" id="brain-tab-graph" data-brain-tab="graph" aria-controls="brain-pane-graph"><span class="material-symbols-outlined text-sm" aria-hidden="true">hub</span>{{ tr('library.tab_graph') }}</button>
+        <button type="button" class="brain-tab" role="tab" id="brain-tab-knowledge" data-brain-tab="knowledge" aria-controls="brain-pane-knowledge"><span class="material-symbols-outlined text-sm" aria-hidden="true">menu_book</span>{{ tr('library.tab_knowledge') }}<span id="library-count" class="text-[10px] text-primary/50"></span></button>
+    </div>
     <div class="ui-card p-4" id="brain-settings">
         <button id="brain-settings-toggle" type="button" class="w-full flex items-center justify-between text-left border-b border-primary/20 pb-3" aria-expanded="false" aria-controls="brain-settings-body">
             <span>
@@ -213,6 +259,7 @@
             </div>
         </div>
     </div>
+    <div id="brain-pane-graph" role="tabpanel" aria-labelledby="brain-tab-graph" class="flex flex-col gap-4 min-w-0">
     <div id="graph-fullscreen-shell" class="flex flex-col gap-4 min-w-0">
     <div class="ui-card p-4 flex flex-wrap gap-3 items-end">
         <label class="text-xs font-mono text-primary/70">{{ tr('graph.search_nodes') }}
@@ -299,6 +346,61 @@
             </div>
             <div id="brain-learning-log" class="space-y-1 text-[10px] font-mono" aria-live="polite"></div>
         </div>
+    </div>
+    </div>
+    <!-- Knowledge: documents and notes the admin teaches the bot, kept in library/ (custom) -->
+    <div id="brain-pane-knowledge" role="tabpanel" aria-labelledby="brain-tab-knowledge" class="flex flex-col gap-4 min-w-0" hidden>
+    {% if public_mode %}
+        <div class="ui-card p-6 text-sm text-primary/80 space-y-3">
+            <p>{{ tr('library.public_mode') }}</p>
+            <a href="/zalo/cskh#knowledge" class="inline-block px-3 py-2 border border-primary/50 text-xs uppercase hover:bg-primary/20">{{ tr('library.open_cskh') }}</a>
+        </div>
+    {% else %}
+        <div class="ui-card p-4 space-y-2">
+            <h2 class="text-sm font-bold uppercase tracking-widest glow-text">{{ tr('library.title') }}</h2>
+            <p class="text-xs text-primary/65 leading-relaxed">{{ tr('library.intro') }}</p>
+            <div id="library-not-ready" class="library-warn" role="status" hidden>
+                <span id="library-not-ready-text"></span>
+                <button id="library-enable" type="button" class="library-btn">{{ tr('library.enable') }}</button>
+            </div>
+            <p id="library-note" class="text-xs font-mono text-primary/70" role="status" aria-live="polite"></p>
+        </div>
+        <div class="ui-card p-4">
+            <div class="library-tabs" role="tablist" aria-label="{{ tr('library.title') }}">
+                <button type="button" class="library-tab" role="tab" id="library-tab-documents" data-library-tab="documents" aria-controls="library-pane-documents">{{ tr('library.tab_documents') }} <span id="library-docs-count" class="text-primary/50"></span></button>
+                <button type="button" class="library-tab" role="tab" id="library-tab-text" data-library-tab="text" aria-controls="library-pane-text">{{ tr('library.tab_text') }} <span id="library-notes-count" class="text-primary/50"></span></button>
+            </div>
+            <div id="library-pane-documents" role="tabpanel" aria-labelledby="library-tab-documents" class="space-y-3 pt-4">
+                <p class="text-xs text-primary/60">{{ tr('library.upload_hint') }}</p>
+                <form id="library-upload" class="flex flex-wrap items-center gap-2 text-xs">
+                    <input name="file" type="file" accept=".md,.txt,.docx,.pdf" multiple required aria-label="{{ tr('library.file') }}" class="max-w-full">
+                    <input name="name" maxlength="200" placeholder="{{ tr('library.name') }}" aria-label="{{ tr('library.name') }}" class="library-input flex-1 min-w-[10rem]">
+                    <button type="submit" class="library-btn">{{ tr('library.upload') }}</button>
+                </form>
+                <div class="library-table"><table><thead><tr><th>{{ tr('library.col_document') }}</th><th>{{ tr('library.col_status') }}</th><th>{{ tr('library.col_facts') }}</th><th>{{ tr('library.col_actions') }}</th></tr></thead><tbody id="library-doc-rows"></tbody></table></div>
+            </div>
+            <div id="library-pane-text" role="tabpanel" aria-labelledby="library-tab-text" class="space-y-3 pt-4" hidden>
+                <p class="text-xs text-primary/60">{{ tr('library.teach_hint') }}</p>
+                <form id="library-teach" class="space-y-2">
+                    <textarea id="library-teach-text" maxlength="2000" rows="3" placeholder="{{ tr('library.teach_input') }}" aria-label="{{ tr('library.tab_text') }}" class="library-input w-full"></textarea>
+                    <button type="submit" class="library-btn">{{ tr('library.teach_send') }}</button>
+                </form>
+                <div id="library-related" class="library-related" hidden>
+                    <p id="library-related-title" class="text-xs text-primary/80"></p>
+                    <div id="library-related-list" class="fact-cards text-xs"></div>
+                    <div class="flex flex-wrap gap-2"><button id="library-replace" type="button" class="library-btn">{{ tr('library.replace') }}</button><button id="library-keep" type="button" class="library-btn">{{ tr('library.keep') }}</button></div>
+                </div>
+                <input id="library-notes-query" type="search" maxlength="100" autocomplete="off" placeholder="{{ tr('library.notes_search') }}" aria-label="{{ tr('library.notes_search') }}" class="library-input w-full">
+                <div class="library-table"><table><thead><tr><th>{{ tr('library.col_note') }}</th><th>{{ tr('library.col_status') }}</th><th>{{ tr('library.col_facts') }}</th><th>{{ tr('library.col_actions') }}</th></tr></thead><tbody id="library-note-rows"></tbody></table></div>
+                <button id="library-notes-more" type="button" class="library-btn" hidden>{{ tr('library.more') }}</button>
+            </div>
+        </div>
+        <dialog id="library-facts" class="library-dialog" aria-labelledby="library-facts-title">
+            <h3 id="library-facts-title" class="text-sm font-bold text-primary mb-3"></h3>
+            <div id="library-facts-body" class="space-y-2 text-xs text-primary/80 max-h-[60vh] overflow-y-auto"></div>
+            <form method="dialog" class="mt-4 text-right"><button class="library-btn">{{ tr('library.close') }}</button></form>
+        </dialog>
+    {% endif %}
     </div>
 </section>
 {% else %}
@@ -543,6 +645,7 @@
     async function show3d() {
         await load3dLibrary();
         if (!is3d()) return;  // switched back while it loaded
+        if (document.getElementById('brain-pane-graph')?.hidden) return;  // Knowledge tab open: start on return
         if (!graph3d) {
             graph3d = new ForceGraph3D(graph3dBox, {controlType: 'orbit'})
                 .backgroundColor('rgba(0,0,0,0)')
@@ -609,6 +712,10 @@
     observer.observe(container);
     observer.observe(graph3dBox);
     resize();
+    document.addEventListener('brain-tab', event => {  // Graph | Knowledge tabs (custom)
+        if (event.detail === 'graph') { applyGraphDisplayMode(); resize(); setTimeout(() => fitView(400), 60); }
+        else { graph.pauseAnimation(); starField.stop(); hide3d(); }
+    });
     window.addEventListener('pagehide', () => {
         observer.disconnect(); graph.pauseAnimation(); starField.stop(); hide3d();
         if (learningLogTimer) clearInterval(learningLogTimer);
@@ -1024,6 +1131,216 @@
         .then(() => loadLearningStatus())
         .catch(e => document.getElementById('brain-settings-status').textContent = e.message);
     load().catch(e => status.textContent = e.message);
+})();
+</script>
+<script>
+// Graph | Knowledge tabs, and the knowledge library the admin teaches the bot (custom)
+(() => {
+    const $ = id => document.getElementById(id);
+    const tr = (key, values) => window.nanobotTr('library.' + key, key, values);
+    const TABS = ['graph', 'knowledge'];
+    function setBrainTab(name, focus = false, announce = true) {
+        if (!TABS.includes(name)) name = 'graph';
+        document.querySelectorAll('[data-brain-tab]').forEach(tab => {
+            const on = tab.dataset.brainTab === name;
+            tab.classList.toggle('active', on); tab.setAttribute('aria-selected', String(on)); tab.tabIndex = on ? 0 : -1;
+            if (on && focus) tab.focus();
+        });
+        $('brain-pane-graph').hidden = name !== 'graph';
+        $('brain-pane-knowledge').hidden = name !== 'knowledge';
+        history.replaceState(null, '', location.pathname + location.search + (name === 'graph' ? '' : '#' + name));
+        try { localStorage.setItem('brain-tab', name); } catch (e) { /* optional */ }
+        if (announce) document.dispatchEvent(new CustomEvent('brain-tab', {detail: name}));
+    }
+    document.querySelectorAll('[data-brain-tab]').forEach((tab, index, tabs) => {
+        tab.onclick = () => setBrainTab(tab.dataset.brainTab);
+        tab.onkeydown = e => {
+            if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+            e.preventDefault(); setBrainTab(tabs[(index + 1) % tabs.length].dataset.brainTab, true);
+        };
+    });
+    let saved = null; try { saved = localStorage.getItem('brain-tab'); } catch (e) { /* optional */ }
+    const first = location.hash.slice(1) || saved || 'graph';
+    setBrainTab(first, false, first !== 'graph');  // the graph starts on its own
+    if (!$('library-doc-rows')) return;  // customer service mode: the knowledge lives on the CSKH page
+
+    const node = (tag, text) => { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; return el; };
+    const csrf = () => { const m = document.cookie.match(/(?:^|; )nanobot_csrf(?:_[^=]+)?=([^;]*)/); return m ? decodeURIComponent(m[1]) : ''; };
+    async function api(path, body, form) {
+        const init = body === undefined && !form ? {} : {method: 'POST', headers: {'X-CSRF-Token': csrf()}};
+        if (form) init.body = form;
+        else if (body !== undefined) { init.headers['Content-Type'] = 'application/json'; init.body = JSON.stringify(body); }
+        const response = await fetch('/api/memory/library' + path, init);
+        const data = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(typeof data?.detail === 'string' ? data.detail : 'HTTP ' + response.status);
+        return data;
+    }
+    const say = text => { $('library-note').textContent = text; };
+    async function act(button, work) {
+        if (button) button.disabled = true;
+        try { await work(); } catch (e) { say(tr('error', {reason: e.message})); }
+        finally { if (button) button.disabled = false; }
+    }
+    // Which Brain switches the library needs, by the labels of the settings card above
+    const SWITCH_LABEL = {retrieval_enabled: 'graph.read_facts', learning_enabled: 'graph.learn_sessions',
+        migration_enabled: 'graph.allow_migration', retrieval_sessions: 'graph.all_sessions', enabled: 'graph.brain_graph'};
+    function renderReady(data) {
+        const missing = data.missing || [];
+        $('library-not-ready').hidden = data.ready;
+        $('library-not-ready-text').textContent = tr('not_ready', {list: missing.map(name => window.nanobotTr(SWITCH_LABEL[name] || name)).join(', ')});
+    }
+    $('library-enable').onclick = () => act($('library-enable'), async () => {
+        const response = await fetch('/api/memory/settings', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrf()},
+            body: JSON.stringify({retrieval_enabled: true, learning_enabled: true, migration_enabled: true, retrieval_sessions: null})});
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        location.reload();  // the settings card above shows the new switches too
+    });
+
+    let documents = [], notesShown = 10;
+    function progressText(d) {
+        if (d.status === 'pending') return tr('status_pending');
+        if (d.status === 'revoked') return d.cleanup_pending ? tr('cleanup') : tr('status_revoked');
+        const l = d.learning || {total: 0, done: 0, failed: 0, in_progress: 0};
+        if (l.error) return tr('unreadable');
+        if (l.failed) return tr('failed', {k: l.failed, n: l.total});
+        if (l.in_progress) return tr('progress', {k: l.done, n: l.total});
+        return tr('done', {n: d.fact_count});
+    }
+    function actionButton(label, run) { const b = node('button', tr(label)); b.type = 'button'; b.className = 'library-btn'; b.onclick = () => act(b, run); return b; }
+    function docAction(d, action, confirmKey) {
+        return actionButton(action, async () => {
+            if (confirmKey && !window.confirm(tr(confirmKey))) return;
+            const result = await api('/' + encodeURIComponent(d.document_id) + '/' + action, {});
+            say(result.cleanup_pending ? tr('cleanup') : tr('saved')); await load();
+        });
+    }
+    function factsCell(d) {
+        if (!d.fact_count || d.status !== 'published') return String(d.fact_count || 0);
+        const b = node('button', String(d.fact_count)); b.type = 'button'; b.className = 'library-facts-btn'; b.title = tr('facts_view');
+        b.onclick = () => act(b, async () => {
+            const data = await api('/' + encodeURIComponent(d.document_id) + '/facts');
+            $('library-facts-title').textContent = tr('facts_of', {name: d.name, n: data.facts.length});
+            $('library-facts-body').replaceChildren(...data.facts.flatMap((f, i) => [node('strong', (i + 1) + '. ' + f.title), node('p', f.body)]));
+            $('library-facts').showModal();
+        });
+        return b;
+    }
+    function row(body, d, label) {
+        const actions = node('div'); actions.className = 'library-actions';
+        if (d.status === 'pending') {  // one with a batch was queued before: the server keeps it until learned
+            actions.append(docAction(d, 'learn'));
+            if (!d.batch_id) actions.append(docAction(d, 'delete', 'confirm_delete'));
+        }
+        else if (d.status === 'published' || d.cleanup_pending) {
+            if (d.status === 'published' && d.learning && d.learning.failed) actions.append(docAction(d, 'relearn'));
+            actions.append(docAction(d, 'forget', 'confirm_forget'));
+        } else actions.append(docAction(d, 'delete', 'confirm_delete'));
+        const tr_ = node('tr');
+        [label, progressText(d), factsCell(d), actions].forEach(value => { const td = node('td'); td.append(value); tr_.append(td); });
+        body.append(tr_);
+    }
+    function empty(body) { if (!body.children.length) { const r = node('tr'), td = node('td', tr('empty')); td.colSpan = 4; r.append(td); body.append(r); } }
+    function render() {
+        const newest = documents.slice().reverse();
+        const docs = newest.filter(d => d.kind !== 'note'), notes = newest.filter(d => d.kind === 'note');
+        $('library-docs-count').textContent = docs.length ? '(' + docs.length + ')' : '';
+        $('library-notes-count').textContent = notes.length ? '(' + notes.length + ')' : '';
+        $('library-count').textContent = documents.length ? ' ' + documents.length : '';
+        const docRows = $('library-doc-rows'); docRows.replaceChildren();
+        docs.forEach(d => { const label = node('div'); label.append(node('div', d.name));
+            const meta = node('div', d.original_name); meta.className = 'library-meta'; label.append(meta); row(docRows, d, label); });
+        empty(docRows);
+        const query = $('library-notes-query').value.trim().toLocaleLowerCase();
+        const shown = query ? notes.filter(d => d.name.toLocaleLowerCase().includes(query)) : notes;
+        const noteRows = $('library-note-rows'); noteRows.replaceChildren();
+        shown.slice(0, notesShown).forEach(d => { const label = node('div'); label.append(node('div', d.name));
+            if (d.published_at) { const meta = node('div', new Date(d.published_at).toLocaleString()); meta.className = 'library-meta'; label.append(meta); }
+            row(noteRows, d, label); });
+        empty(noteRows);
+        $('library-notes-more').hidden = shown.length <= notesShown;
+    }
+    let loading = null;
+    async function load() {
+        if (loading) return loading;
+        loading = (async () => { const data = await api(''); documents = data.documents; renderReady(data); render(); })();
+        try { await loading; } finally { loading = null; }
+    }
+    $('library-notes-query').addEventListener('input', () => { notesShown = 10; render(); });
+    $('library-notes-more').onclick = () => { notesShown += 20; render(); };
+
+    function setLibraryTab(name) {
+        document.querySelectorAll('[data-library-tab]').forEach(tab => {
+            const on = tab.dataset.libraryTab === name;
+            tab.classList.toggle('active', on); tab.setAttribute('aria-selected', String(on)); tab.tabIndex = on ? 0 : -1;
+        });
+        $('library-pane-documents').hidden = name !== 'documents'; $('library-pane-text').hidden = name !== 'text';
+        try { localStorage.setItem('brain-library-tab', name); } catch (e) { /* optional */ }
+    }
+    document.querySelectorAll('[data-library-tab]').forEach((tab, index, tabs) => {
+        tab.onclick = () => setLibraryTab(tab.dataset.libraryTab);
+        tab.onkeydown = e => { if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+            e.preventDefault(); const next = tabs[(index + 1) % tabs.length]; next.focus(); setLibraryTab(next.dataset.libraryTab); };
+    });
+    { let tab = null; try { tab = localStorage.getItem('brain-library-tab'); } catch (e) { /* optional */ } setLibraryTab(tab === 'text' ? 'text' : 'documents'); }
+
+    // Upload: each file is added and learned at once; one that Brain cannot learn yet stays pending
+    $('library-upload').onsubmit = e => { e.preventDefault(); const form = e.target;
+        act(e.submitter || form.querySelector('button'), async () => {
+            const files = [...form.elements.file.files], name = form.elements.name.value.trim();
+            const errors = [];
+            for (const file of files) {
+                const body = new FormData(); body.append('file', file);
+                if (name && files.length === 1) body.append('name', name);
+                try { const doc = await api('/upload', undefined, body); if (doc.learn_error) errors.push(tr('learn_error', {reason: file.name + ': ' + doc.learn_error})); }
+                catch (err) { errors.push(tr('upload_failed', {reason: file.name + ': ' + err.message})); }
+            }
+            form.reset();
+            say(errors.length ? errors.join(' · ') : tr('uploaded', {n: files.length}));
+            await load();
+        }); };
+    // Teach: a note becomes knowledge; the facts it may replace are offered for retirement
+    function showRelated(items) {
+        const list = $('library-related-list'); list.replaceChildren();
+        $('library-related').hidden = !items.length;
+        if (!items.length) return;
+        $('library-related-title').textContent = tr('related_title', {n: items.length});
+        items.forEach(f => {
+            // One card per fact: a checked card is the one to retire (custom)
+            const card = node('label'); card.className = 'fact-card';
+            const head = node('span'); head.className = 'fact-head';
+            const cb = node('input'); cb.type = 'checkbox'; cb.value = f.id;
+            head.append(cb, node('span', f.title));
+            const body = node('span', f.body); body.className = 'fact-body';
+            const when = f.learned_at ? new Date(f.learned_at) : null;
+            const meta = node('span', [f.document, when && !isNaN(when) ? tr('learned_on').replace('{date}', when.toLocaleDateString()) : '']
+                .filter(Boolean).join(' · ')); meta.className = 'fact-meta';
+            card.append(head, body, meta); list.append(card);
+        });
+    }
+    $('library-teach').onsubmit = e => { e.preventDefault();
+        act(e.submitter || e.target.querySelector('button'), async () => {
+            const text = $('library-teach-text').value.trim(); if (!text) return;
+            const data = await api('/teach', {text}); $('library-teach-text').value = '';
+            showRelated(data.related); say(data.related.length ? tr('related_found') : tr('taught'));
+            await load();
+        }); };
+    $('library-teach-text').addEventListener('keydown', e => { if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
+        e.preventDefault(); $('library-teach').requestSubmit(); });
+    $('library-replace').onclick = () => act($('library-replace'), async () => {
+        const ids = [...$('library-related-list').querySelectorAll('input:checked')].map(cb => cb.value); if (!ids.length) return;
+        const result = await api('/facts/retire', {fact_ids: ids});
+        say(tr('replaced', {n: result.retired_fact_ids.length})); showRelated([]); await load();
+    });
+    $('library-keep').onclick = () => showRelated([]);
+
+    // Follow learning while the tab is open
+    load().catch(e => say(e.message));
+    const timer = setInterval(() => {
+        if (document.hidden || $('brain-pane-knowledge').hidden) return;
+        load().catch(() => {});
+    }, 5000);
+    document.addEventListener('brain-tab', e => { if (e.detail === 'knowledge') load().catch(() => {}); });
+    window.addEventListener('pagehide', () => clearInterval(timer));
 })();
 </script>
 {% endif %}

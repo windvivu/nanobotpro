@@ -71,6 +71,7 @@ async def memory_graph_page(request: Request):
         request, "memory_graph.html", {
             "brain_memory": config,
             "graph_available": True,
+            "public_mode": _public_mode(request),  # the Knowledge tab points to the CSKH page then (custom)
         }
     )
 
@@ -189,6 +190,8 @@ async def update_memory_settings(request: Request, payload: BrainSettingsPayload
             if context := getattr(agent, "context", None):
                 context._brain_memory_config = effective
                 context._brain_context = None
+            if sync := getattr(agent, "_sync_knowledge_tool", None):
+                sync()  # search_knowledge follows "read facts" (custom)
     return await memory_settings(request)
 
 

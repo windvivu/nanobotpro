@@ -1,4 +1,8 @@
-"""Atomic publication catalog for administrator-supplied customer knowledge."""
+"""Atomic publication catalog for administrator-supplied knowledge.
+
+Two folders share this code (custom): kb/ holds the customer service KB, public once published;
+library/ holds the internal bot's documents and notes, taught on the Brain page, which public
+customer mode never reads. Every function takes folder=, kb by default."""
 
 import asyncio
 import hashlib
@@ -16,7 +20,7 @@ from pathlib import Path
 
 from filelock import FileLock
 
-from nanobot.brain_memory.config import BrainMemoryConfig
+from nanobot.brain_memory.config import LIBRARY_FOLDER, BrainMemoryConfig
 from nanobot.brain_memory.dashboard import learning_status, retire_facts, retire_facts_by_source
 from nanobot.brain_memory.errors import BrainMemoryError, ConflictError, FormatError
 from nanobot.brain_memory.migration import migrate_source, migration_batch_id, write_migration_batch
@@ -26,6 +30,8 @@ from nanobot.brain_memory.store import BrainStore
 from nanobot.security.public_output import public_error
 
 MAX_UPLOAD_BYTES = 4 * 1024 * 1024
+KB_FOLDER = "kb"
+FOLDERS = frozenset({KB_FOLDER, LIBRARY_FOLDER})
 _publish_locks = weakref.WeakValueDictionary()
 _progress_cache = {}
 _progress_cache_lock = threading.RLock()
@@ -48,13 +54,23 @@ def _now():
     return datetime.now(timezone.utc).isoformat()
 
 
-def _root(workspace):
-    root = resolve_ref(Path(workspace).resolve(), "kb")
+def _folder(folder):
+    if folder not in FOLDERS:
+        raise ValueError("Unknown knowledge folder")
+    return folder
+
+
+def _lock_key(workspace, folder):
+    return f"{Path(workspace).resolve()}|{folder}"
+
+
+def _root(workspace, folder=KB_FOLDER):
+    root = resolve_ref(Path(workspace).resolve(), _folder(folder))
     root.mkdir(parents=True, exist_ok=True)
     return root
 
 
-def _read(root):
+def _read(root, folder=KB_FOLDER):
     path = root / "catalog.json"
     if path.is_symlink():
         raise FormatError("KB catalog must not be a symlink")
@@ -67,7 +83,7 @@ def _read(root):
         if (
             not re.fullmatch(r"[a-f0-9]{12}", key)
             or not isinstance(doc, dict)
-            or doc.get("file") != f"kb/{key}.md"
+            or doc.get("file") != f"{folder}/{key}.md"
             or doc.get("status") not in {"pending", "published", "revoked"}
             or not isinstance(doc.get("name"), str)
         ):
@@ -88,19 +104,19 @@ def _save(root, catalog):
 
 
 @contextmanager
-def _catalog(workspace):
-    root = _root(workspace)
+def _catalog(workspace, folder=KB_FOLDER):
+    root = _root(workspace, folder)
     lock_path = root / ".catalog.lock"
     if lock_path.is_symlink():
         raise FormatError("Invalid catalog lock")
     with FileLock(str(lock_path), timeout=5):
-        yield root, _read(root)
+        yield root, _read(root, folder)
 
 
-def list_documents(workspace):
+def list_documents(workspace, folder=KB_FOLDER):
     # Reads never create a KB directory (chat attachment/retrieval paths use this).
-    root = resolve_ref(Path(workspace).resolve(), "kb")
-    return [dict(doc, document_id=key) for key, doc in _read(root)["documents"].items()]
+    root = resolve_ref(Path(workspace).resolve(), _folder(folder))
+    return [dict(doc, document_id=key) for key, doc in _read(root, folder)["documents"].items()]
 
 
 def _extract(original_name, data, budget):
@@ -146,7 +162,7 @@ def _extract(original_name, data, budget):
     raise FormatError("Supported files: .md, .txt, .docx, .pdf")
 
 
-def add_document(workspace, original_name, data: bytes, name=None, *, config=None):
+def add_document(workspace, original_name, data: bytes, name=None, *, config=None, folder=KB_FOLDER):
     if (
         not isinstance(original_name, str)
         or not original_name.strip()
@@ -172,7 +188,7 @@ def add_document(workspace, original_name, data: bytes, name=None, *, config=Non
     content = f"# {name}\n\n{text}".encode("utf-8")
     if len(content) > budget:
         raise FormatError("Extracted text exceeds max_document_bytes")
-    with _catalog(workspace) as (root, catalog):
+    with _catalog(workspace, folder) as (root, catalog):
         for key, doc in catalog["documents"].items():
             if doc["sha256"] == digest:
                 return dict(doc, document_id=key)
@@ -180,7 +196,7 @@ def add_document(workspace, original_name, data: bytes, name=None, *, config=Non
         path = root / f"{document_id}.md"
         doc = dict(
             name=name,
-            file=f"kb/{document_id}.md",
+            file=f"{folder}/{document_id}.md",
             original_name=original_name,
             sha256=digest,
             size=len(data),
@@ -208,12 +224,12 @@ def _document(catalog, document_id):
     return catalog["documents"][document_id]
 
 
-def set_status(workspace, document_id, status, **fields):
+def set_status(workspace, document_id, status, *, folder=KB_FOLDER, **fields):
     if status not in {"pending", "published", "revoked"}:
         raise ValueError("Invalid KB status")
     if fields.keys() - {"batch_id", "published_at", "revoked_at", "fact_count"}:
         raise ValueError("Invalid KB update")
-    with _catalog(workspace) as (root, catalog):
+    with _catalog(workspace, folder) as (root, catalog):
         doc = _document(catalog, document_id)
         _invalidate_progress(workspace, doc)
         doc.update(status=status, **fields)
@@ -222,11 +238,11 @@ def set_status(workspace, document_id, status, **fields):
         return dict(doc, document_id=document_id)
 
 
-def published_paths(workspace: Path) -> set[Path]:
+def published_paths(workspace: Path, folder=KB_FOLDER) -> set[Path]:
     try:
         return {
             resolve_ref(Path(workspace).resolve(), doc["file"])
-            for doc in list_documents(workspace)
+            for doc in list_documents(workspace, folder)
             if doc["status"] == "published"
             and resolve_ref(Path(workspace).resolve(), doc["file"]).is_file()
         }
@@ -234,12 +250,12 @@ def published_paths(workspace: Path) -> set[Path]:
         return set()
 
 
-def public_name(workspace: Path, source_ref: str) -> str | None:
+def public_name(workspace: Path, source_ref: str, folder=KB_FOLDER) -> str | None:
     try:
         return next(
             (
                 doc["name"]
-                for doc in list_documents(workspace)
+                for doc in list_documents(workspace, folder)
                 if doc["file"] == source_ref and doc["status"] == "published"
             ),
             None,
@@ -248,8 +264,8 @@ def public_name(workspace: Path, source_ref: str) -> str | None:
         return None
 
 
-def remove_document(workspace, document_id):
-    with _catalog(workspace) as (root, catalog):
+def remove_document(workspace, document_id, *, folder=KB_FOLDER):
+    with _catalog(workspace, folder) as (root, catalog):
         doc = _document(catalog, document_id)
         if doc.get("cleanup_pending") or doc["status"] == "published" or (doc["status"] == "pending" and doc["batch_id"]):
             raise ConflictError("Revoke the published or queued document before deleting it")
@@ -259,40 +275,41 @@ def remove_document(workspace, document_id):
         path.unlink(missing_ok=True)
 
 
-async def publish_document(workspace, config, runtime, document_id):
+async def publish_document(workspace, config, runtime, document_id, *, folder=KB_FOLDER):
     for flag in ("enabled", "learning_enabled", "migration_enabled"):
         if not getattr(config, flag):
             raise ConflictError(f"brainMemory.{flag} must be enabled")
     if runtime is None:
         raise ConflictError("Learning runtime is unavailable")
-    key = str(Path(workspace).resolve())
+    key = _lock_key(workspace, folder)
     async with _publish_locks.setdefault(key, asyncio.Lock()):
-        docs = {doc["document_id"]: doc for doc in list_documents(workspace)}
+        docs = {doc["document_id"]: doc for doc in list_documents(workspace, folder)}
         doc = _document({"documents": docs}, document_id)
         if doc["status"] == "published":
-            with _catalog(workspace):
+            with _catalog(workspace, folder):
                 _invalidate_progress(workspace, doc)
             return doc
         if doc["status"] == "revoked":
             raise ConflictError("Upload a new document version after revocation")
         store = BrainStore(Path(workspace), config)
-        result = migrate_source(store, doc["file"], stage=True)
+        # Snapshot and batch files under the store lock: off the event loop (custom, review)
+        result = await asyncio.to_thread(migrate_source, store, doc["file"], stage=True)
         batch_id = migration_batch_id([result])
-        write_migration_batch(store, [result], batch_id)
+        await asyncio.to_thread(write_migration_batch, store, [result], batch_id)
         # Persist before yielding: delete cannot remove a source already queued.
-        set_status(workspace, document_id, "pending", batch_id=batch_id)
+        set_status(workspace, document_id, "pending", folder=folder, batch_id=batch_id)
         jobs = await runtime.enqueue_migration_jobs(result, batch_id=batch_id, published_kb=True)
-        write_migration_batch(store, [result], batch_id, jobs)
+        await asyncio.to_thread(write_migration_batch, store, [result], batch_id, jobs)
         return set_status(
-            workspace, document_id, "published", published_at=_now(), batch_id=batch_id
+            workspace, document_id, "published", folder=folder, published_at=_now(), batch_id=batch_id
         )
 
 
-def revoke_document(workspace, config, document_id):
-    operation = _publish_locks.get(str(Path(workspace).resolve()))
+def revoke_document(workspace, config, document_id, *, folder=KB_FOLDER):
+    operation = _publish_locks.get(_lock_key(workspace, folder))
     if operation is not None and operation.locked():
         raise ConflictError("Knowledge is being queued; wait before revoking")
-    with _catalog(workspace) as (root, catalog):
+    with _catalog(workspace, folder) as (root, catalog):
         doc = _document(catalog, document_id)
         if doc["status"] == "published":
             if doc["batch_id"]:
@@ -341,9 +358,9 @@ def document_kind(doc: dict) -> str:
     return "note" if name.startswith(NOTE_PREFIX) and not name.startswith(NOTE_PREFIX + "link-") else "document"
 
 
-def _set_origin(workspace, document_id, origin):
+def _set_origin(workspace, document_id, origin, *, folder=KB_FOLDER):
     """Record where a note was taught; the first teaching of a text keeps its origin."""
-    with _catalog(workspace) as (root, catalog):
+    with _catalog(workspace, folder) as (root, catalog):
         doc = catalog["documents"].get(document_id)
         if doc is not None and not doc.get("origin"):
             doc["origin"] = origin
@@ -410,13 +427,13 @@ async def fetch_link_text(url: str, *, transport=None) -> tuple[str, str, str]:
     return title, text, final_url
 
 
-async def add_note(workspace, config, runtime, text, *, origin=None):
+async def add_note(workspace, config, runtime, text, *, origin=None, folder=KB_FOLDER, renew_revoked=False):
     """Publish one admin note and return it with the facts already in the KB on the same subject.
     A note that is only a link publishes that page's text, under the page's title. origin: where it
     was taught (NOTE_ORIGINS), shown next to the note on the CSKH page."""
     if not isinstance(text, str) or not text.strip() or len(text) > NOTE_MAX_CHARS:
         raise FormatError(f"Note must contain 1–{NOTE_MAX_CHARS} characters")
-    text = text.strip()
+    text = original = text.strip()
     if _LINK.fullmatch(text):
         title, page_text, final_url = await fetch_link_text(text)
         if not page_text.strip():
@@ -424,28 +441,36 @@ async def add_note(workspace, config, runtime, text, *, origin=None):
         name = " ".join((title or final_url).split())
         name = name if len(name) <= 120 else name[:117].rstrip() + "..."
         data = f"Nguồn: {final_url}\n\n{page_text}".encode("utf-8")
-        doc = add_document(workspace, f"{NOTE_PREFIX}link-{secrets.token_hex(4)}.md", data, name=name, config=config)
+        doc = await asyncio.to_thread(  # files and an index read: off the event loop (custom, review)
+            add_document, workspace, f"{NOTE_PREFIX}link-{secrets.token_hex(4)}.md", data, name=name, config=config,
+            folder=folder)
         text = page_text[:NOTE_MAX_CHARS]
     else:
         first = " ".join(text.split())
         name = first if len(first) <= 120 else first[:117].rstrip() + "..."
-        doc = add_document(workspace, f"{NOTE_PREFIX}{secrets.token_hex(4)}.md", text.encode("utf-8"), name=name, config=config)
+        doc = await asyncio.to_thread(
+            add_document, workspace, f"{NOTE_PREFIX}{secrets.token_hex(4)}.md", text.encode("utf-8"), name=name,
+            config=config, folder=folder)
     if origin in NOTE_ORIGINS and not doc.get("origin"):
-        doc = _set_origin(workspace, doc["document_id"], origin)
+        doc = _set_origin(workspace, doc["document_id"], origin, folder=folder)
     if doc["status"] == "pending":
         # New, or an earlier publish that failed before its jobs were queued (review 12 #8)
-        doc = await publish_document(workspace, config, runtime, doc["document_id"])
+        doc = await publish_document(workspace, config, runtime, doc["document_id"], folder=folder)
     elif doc["status"] == "revoked":
+        if renew_revoked and not doc.get("cleanup_pending"):
+            # Taught again after Forget: the old entry goes, the note is learned anew (custom, review)
+            await asyncio.to_thread(remove_document, workspace, doc["document_id"], folder=folder)
+            return await add_note(workspace, config, runtime, original, origin=origin, folder=folder)
         raise ConflictError("This note was revoked before; delete it in the table, then teach it again")
-    related = related_facts(workspace, config, text, exclude_file=doc["file"])
+    related = await asyncio.to_thread(related_facts, workspace, config, text, exclude_file=doc["file"], folder=folder)
     return {"document": doc, "related": related}
 
 
-def related_facts(workspace, config, text, *, exclude_file=None, limit=8):
+def related_facts(workspace, config, text, *, exclude_file=None, limit=8, folder=KB_FOLDER):
     """Published facts the retrieval would show next to this text: what a note may replace."""
     from nanobot.brain_memory.index import BrainIndex
     store = BrainStore(Path(workspace), config.model_copy(update={"enabled": True, "retrieval_enabled": True}))
-    allowed = published_paths(workspace)
+    allowed = published_paths(workspace, folder)
     found, seen = [], set()
     for item in BrainIndex(store).search(text[:config.max_query_chars], limit=limit):
         if item.fact_id in seen:
@@ -458,16 +483,16 @@ def related_facts(workspace, config, text, *, exclude_file=None, limit=8):
         ref = fact.source.source_ref
         if fact.status != "active" or ref == exclude_file or (store.workspace / ref).resolve() not in allowed:
             continue
-        found.append({"id": fact.id, "title": fact.title, "body": fact.body,
-                      "document": public_name(Path(workspace), ref) or ""})
+        found.append({"id": fact.id, "title": fact.title, "body": fact.body, "learned_at": fact.created_at,
+                      "document": public_name(Path(workspace), ref, folder) or ""})
     return found
 
 
-def retire_kb_facts(workspace, config, fact_ids):
+def retire_kb_facts(workspace, config, fact_ids, *, folder=KB_FOLDER):
     """Retire chosen facts of published documents and forget those documents' cached counts.
     A fact from anywhere else (the internal bot's memory) is outside this page (review 12 #7)."""
     store = BrainStore(Path(workspace), config)
-    allowed = published_paths(workspace)
+    allowed = published_paths(workspace, folder)
     for fact_id in dict.fromkeys(fact_ids):
         try:
             fact = store.read_fact(fact_id)
@@ -476,7 +501,7 @@ def retire_kb_facts(workspace, config, fact_ids):
         if (store.workspace / fact.source.source_ref).resolve() not in allowed:
             raise FormatError("Fact is not from a published document")
     result = retire_facts(Path(workspace), config, list(fact_ids))
-    with _catalog(workspace) as (_root_dir, catalog):
+    with _catalog(workspace, folder) as (_root_dir, catalog):
         for doc in catalog["documents"].values():
             if doc["file"] in result["source_refs"]:
                 _invalidate_progress(workspace, doc)
@@ -523,11 +548,11 @@ def _learning_detail(jobs, max_attempts):
     }
 
 
-def document_facts(workspace, config, document_id):
+def document_facts(workspace, config, document_id, *, folder=KB_FOLDER):
     """What the bot learned from one document, in learning order: the admin checks the facts
     behind a count, and sees what a customer can be told."""
     store = BrainStore(Path(workspace), config)
-    with _catalog(workspace) as (_root_dir, catalog):
+    with _catalog(workspace, folder) as (_root_dir, catalog):
         doc = dict(catalog["documents"][document_id])
     facts = []
     for job in _batch_jobs(store, doc):
@@ -541,7 +566,7 @@ def document_facts(workspace, config, document_id):
     return facts
 
 
-def refresh_fact_counts(workspace, config, worker=None, *, tolerate_errors=False):
+def refresh_fact_counts(workspace, config, worker=None, *, tolerate_errors=False, folder=KB_FOLDER):
     """Read each document's batch, including partial completion and failure.
 
     Learning is a derived response field, never persisted into the catalog.
@@ -550,7 +575,7 @@ def refresh_fact_counts(workspace, config, worker=None, *, tolerate_errors=False
     """
     store = BrainStore(Path(workspace), config)
     documents = []
-    with _catalog(workspace) as (root, catalog):
+    with _catalog(workspace, folder) as (root, catalog):
         changed = False
         for key, doc in catalog["documents"].items():
             progress, count, detail = _learning([]), doc["fact_count"], None
@@ -585,13 +610,13 @@ def refresh_fact_counts(workspace, config, worker=None, *, tolerate_errors=False
     return documents
 
 
-async def relearn_document(workspace, config, runtime, document_id):
+async def relearn_document(workspace, config, runtime, document_id, *, folder=KB_FOLDER):
     """Explicit retry of only failed jobs in the document's existing batch."""
     if runtime is None:
         raise ConflictError("Learning runtime is unavailable")
-    key = str(Path(workspace).resolve())
+    key = _lock_key(workspace, folder)
     async with _publish_locks.setdefault(key, asyncio.Lock()):
-        docs = {doc["document_id"]: doc for doc in list_documents(workspace)}
+        docs = {doc["document_id"]: doc for doc in list_documents(workspace, folder)}
         doc = _document({"documents": docs}, document_id)
         if doc["status"] != "published":
             raise ConflictError("Only published documents can be relearned")
@@ -600,12 +625,12 @@ async def relearn_document(workspace, config, runtime, document_id):
         if not failed:
             raise ConflictError("Document has no failed learning jobs")
         queued = []
-        with _catalog(workspace):
+        with _catalog(workspace, folder):
             _invalidate_progress(workspace, doc)
         try:
             for job in failed:
                 queued.append(await runtime.enqueue(ConversationEvent.model_validate(job["event"])))
         finally:
-            with _catalog(workspace):
+            with _catalog(workspace, folder):
                 _invalidate_progress(workspace, doc)
         return {"document_id": document_id, "job_ids": queued}
