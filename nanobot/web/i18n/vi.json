@@ -528,5 +528,16 @@
   "cskh.learned_on": "Học ngày {date}",
   "library.learned_on": "Học ngày {date}",
   "library.error": "Lỗi: {reason}",
-  "library.upload_failed": "Không tải lên được {reason}"
+  "library.upload_failed": "Không tải lên được {reason}",
+  "graph.migrate_partial": "{source}: phiên chat {total} vượt giới hạn {budget}, nên chỉ học phần mới nhất {kept} (từ {since}), khoảng {parts} lần gọi model.",
+  "common.header_profile_hint": "Profile đang chạy, bấm để đổi",
+  "common.code_running": "Commit đang chạy",
+  "common.code_stale": "Có code mới, cần khởi động lại",
+  "common.code_stale_hint": "Bot đang chạy {running}, code trên đĩa đã là {disk}. Python chỉ nạp code khi khởi động: bấm để khởi động lại.",
+  "common.code_stale_confirm": "Khởi động lại bot để dùng code mới? Các kênh chat ngắt vài giây.",
+  "graph.migrate_partial_title": "Phiên chat lớn: chỉ học phần mới nhất",
+  "graph.migrate_partial_line": "{total}, vượt giới hạn {budget}: chỉ học {kept} mới nhất, từ {since}, khoảng {parts} lần gọi model.",
+  "graph.migrate_partial_short": "{n} phiên chỉ học một phần",
+  "graph.migrate_failed": "Migrate không thành công",
+  "graph.dismiss": "Đóng"
 }

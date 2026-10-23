@@ -282,6 +282,23 @@ def create_app(config, session_manager=None, agent=None, channel_manager=None, t
 
     app.state.templates.env.globals["zalo_cskh_enabled"] = _zalo_cskh_enabled
 
+    def _header_profile() -> dict:
+        """{id, name, description} of the profile in use, read at each render: the header names the
+        running bot (custom)."""
+        from nanobot.web.routes.dashboard import active_profile_details
+        try:
+            return active_profile_details(app.state.config.workspace_path)
+        except Exception:
+            return {"id": "default", "name": "Default", "description": ""}
+
+    app.state.templates.env.globals["header_profile"] = _header_profile
+
+    # The commit this process started with, against the checkout now: the header says when a pull
+    # needs a restart (custom). Imported at start-up, so RUNNING_COMMIT is the code actually loaded.
+    from nanobot.web import code_version
+
+    app.state.templates.env.globals["code_version"] = code_version.status
+
 
 
     # --- Auth routes (register BEFORE middleware) ---

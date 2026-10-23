@@ -18,6 +18,8 @@ class MigrationResult:
     snapshot_ref: str
     staged: bool
     created: bool
+    # A chat session over maxSourceBytes: only its newest part was taken (custom). None: the whole file.
+    partial: dict | None = None
 
 
 def migration_batch_id(results: list[MigrationResult]) -> str:
@@ -83,13 +85,51 @@ def write_migration_batch(
     return record
 
 
-def _conversation(raw: bytes) -> tuple[str, list[dict], str]:
-    """Keep source JSONL line -> snapshot body line mapping; omit non-text payloads."""
+def _session_tail(path, budget: int) -> tuple[bytes, int, int, int]:
+    """(metadata line + the newest whole lines within budget, source line of the first kept message,
+    total bytes, kept bytes) for a chat session larger than budget (custom). Reads only the head line
+    and the tail of the file, and counts the skipped lines so citations keep their source line."""
+    total = path.stat().st_size
+    with path.open("rb") as stream:
+        head = stream.readline(65536)
+        if not head.endswith(b"\n"):
+            raise FormatError("Session metadata line is malformed")
+        room = budget - len(head)
+        if room <= 0:
+            raise FormatError("Source exceeds byte budget")
+        start = max(len(head), total - room)
+        stream.seek(start)
+        tail = stream.read(total - start)
+        if start > len(head):
+            cut = tail.find(b"\n")  # the first line is a partial one: dropped
+            if cut < 0:
+                raise FormatError("Source exceeds byte budget")
+            start += cut + 1
+            tail = tail[cut + 1:]
+        if not tail.strip():
+            raise FormatError("Source exceeds byte budget")
+        # Source line number of the first kept line: lines before it, counted in blocks
+        stream.seek(0)
+        lines_before, done = 0, 0
+        while done < start:
+            block = stream.read(min(1 << 20, start - done))
+            if not block:
+                break
+            lines_before += block.count(b"\n")
+            done += len(block)
+    return head + tail, lines_before + 1, total, len(head) + len(tail)
+
+
+def _conversation(raw: bytes, first_tail_line: int | None = None) -> tuple[str, list[dict], str]:
+    """Keep source JSONL line -> snapshot body line mapping; omit non-text payloads. first_tail_line:
+    raw is a session's metadata line and its newest lines from that source line on (custom)."""
     body_lines: list[str] = []
     mapping: list[dict] = []
     session_key = ""
     try:
         for line_no, line in enumerate(raw.decode("utf-8-sig").splitlines(), 1):
+            if first_tail_line is not None and line_no > 1:
+                line_no = line_no - 2 + first_tail_line
             if not line.strip():
                 continue
             message = json.loads(line)
@@ -137,17 +177,28 @@ def migrate_source(store: BrainStore, source_ref: str, *, stage: bool = False) -
         raise ScopeError("Cannot import the Brain Memory store into itself")
     if not source_path.is_file() or source_path.suffix.lower() not in {".jsonl", ".md"}:
         raise FormatError("Select a regular Markdown or session JSONL file")
+    budget = store.config.max_source_bytes
+    is_session = source_path.suffix.lower() == ".jsonl"
+    partial = first_tail_line = None
     with source_path.open("rb") as stream:
-        raw = stream.read(store.config.max_source_bytes + 1)
-    if len(raw) > store.config.max_source_bytes:
-        raise FormatError("Source exceeds byte budget")
+        raw = stream.read(budget + 1)
+    if len(raw) > budget:
+        if not is_session:
+            raise FormatError("Source exceeds byte budget")
+        # A long chat history: its newest part is learned instead of refusing all of it (custom)
+        raw, first_tail_line, total, kept = _session_tail(source_path, budget)
+        partial = {"total_bytes": total, "kept_bytes": kept, "budget_bytes": budget,
+                   "first_line": first_tail_line}
     source_hash = content_hash(raw)
     job_id = "import-" + canonical_hash({
         "schema_version": 1, "source_ref": source_ref, "source_hash": source_hash,
     })[7:]
-    is_session = source_path.suffix.lower() == ".jsonl"
     if is_session:
-        body, mapping, session_key = _conversation(raw)
+        body, mapping, session_key = _conversation(raw, first_tail_line)
+        if partial is not None:
+            first = next((m for m in mapping), None)
+            partial["since"] = _first_timestamp(body) if first else ""
+            partial["parts"] = -(-len(body.encode("utf-8")) // store.config.learning_input_bytes)
     else:
         try:
             body = raw.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
@@ -195,4 +246,12 @@ def migrate_source(store: BrainStore, source_ref: str, *, stage: bool = False) -
             if old is not None and old != updated:
                 store._write_locked(f".migration/backups/{content_hash(old)[7:]}.json", old)
             store._write_locked(ledger_ref, updated, replace=True)
-    return MigrationResult(job_id, source_ref, source_hash, snapshot_ref, stage, created)
+    return MigrationResult(job_id, source_ref, source_hash, snapshot_ref, stage, created, partial)
+
+
+def _first_timestamp(body: str) -> str:
+    """The timestamp of the first message in a converted session body ("## <timestamp> — role")."""
+    for line in body.splitlines():
+        if line.startswith("## ") and " — " in line:
+            return line[3:].split(" — ", 1)[0].strip()
+    return ""

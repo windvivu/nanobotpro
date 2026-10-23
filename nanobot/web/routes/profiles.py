@@ -36,6 +36,10 @@ def _get_workspace(request: Request) -> Path:
     return request.app.state.config.workspace_path
 
 
+PROFILE_NAME_MAX = 80
+PROFILE_DESCRIPTION_MAX = 160
+
+
 def _profiles_dir(workspace: Path) -> Path:
     return workspace / "profiles"
 
@@ -317,9 +321,13 @@ async def profiles_rename(
     name: str = Form(...),
     description: str = Form(""),
 ):
-    """Rename a profile."""
+    """Rename a profile; its id (and folder) stay. The header chip shows the name and description."""
     workspace = _get_workspace(request)
     data = _load_profiles_json(workspace)
+    name = " ".join(name.split())[:PROFILE_NAME_MAX]
+    description = " ".join(description.split())[:PROFILE_DESCRIPTION_MAX]
+    if not name:
+        return RedirectResponse(url="/profiles", status_code=302)
 
     for p in data["profiles"]:
         if p["id"] == profile_id:

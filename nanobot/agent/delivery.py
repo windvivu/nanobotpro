@@ -73,6 +73,11 @@ class ResponseDeliveryPolicy:
         # For direct callers (webchat): send via on_multi_send callback
         if on_stream is None and final_content:
             parts = self._split_multi_message(final_content)
+            if len(parts) > 1 and direct_return and on_multi_send is None:
+                # A direct caller with no per-part callback (the fleet route) gets one message
+                # holding every part; this used to return only the last part and drop the rest.
+                final_content = "\n\n".join(parts)
+                parts = [final_content]
             if len(parts) > 1:
                 import loguru
                 loguru.logger.info(

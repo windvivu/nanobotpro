@@ -492,7 +492,8 @@ def sources(workspace: Path, config: BrainMemoryConfig, *, public_customer_mode:
                 "session_id": session_id,
                 "bytes": size,
                 "source_hash": source_hash,
-                "importable": size <= config.max_source_bytes,
+                "importable": size <= config.max_source_bytes or ref.endswith(".jsonl"),
+                "partial": ref.endswith(".jsonl") and size > config.max_source_bytes,  # newest part only (custom)
                 "staged": bool(source_hash and key in staged),
                 "staged_once": ref in staged_refs,
                 "promoted": bool(source_hash and key in promoted),

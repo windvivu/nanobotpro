@@ -128,6 +128,13 @@
             flex: 1 0 auto;
         }
     }
+    /* Migration result notice under the Migrate button (custom) */
+    .brain-migration-notice { display: flex; flex-direction: column; gap: .5rem; padding: .7rem .85rem; border: 1px solid rgb(var(--c-warning) / .55);
+        background: rgb(var(--c-warning) / .08); color: rgb(var(--c-warning)); font-size: .72rem; line-height: 1.45; overflow-wrap: anywhere; }
+    .brain-migration-notice[hidden] { display: none; }
+    .brain-migration-notice.is-error { border-color: rgb(var(--c-danger) / .55); background: rgb(var(--c-danger) / .08); color: rgb(var(--c-danger)); }
+    .brain-migration-notice li { display: flex; flex-direction: column; gap: .1rem; }
+    .brain-migration-notice .source { font-family: ui-monospace, monospace; font-weight: 700; }
     /* Graph | Knowledge tabs and the knowledge library (custom) */
     #brain-pane-graph[hidden], #brain-pane-knowledge[hidden], #library-pane-documents[hidden], #library-pane-text[hidden] { display: none !important; }
     .brain-tabs, .library-tabs { display: flex; gap: .25rem; border-bottom: 1px solid rgb(var(--c-primary) / .25); overflow-x: auto; }
@@ -195,13 +202,14 @@
         <button type="button" class="brain-tab" role="tab" id="brain-tab-knowledge" data-brain-tab="knowledge" aria-controls="brain-pane-knowledge"><span class="material-symbols-outlined text-sm" aria-hidden="true">menu_book</span>{{ tr('library.tab_knowledge') }}<span id="library-count" class="text-[10px] text-primary/50"></span></button>
     </div>
     <div class="ui-card p-4" id="brain-settings">
-        <button id="brain-settings-toggle" type="button" class="w-full flex items-center justify-between text-left border-b border-primary/20 pb-3" aria-expanded="false" aria-controls="brain-settings-body">
-            <span>
+        <button id="brain-settings-toggle" type="button" class="w-full flex items-center justify-between gap-4 text-left border-b border-primary/20 pb-3" aria-expanded="false" aria-controls="brain-settings-body">
+            <span class="min-w-0 flex-1">
                 <span class="block text-sm font-bold uppercase tracking-widest glow-text">{{ tr('graph.settings') }}</span>
                 <span class="block text-[10px] font-mono text-primary/55 mt-1">{{ tr('graph.settings_help') }}</span>
             </span>
-            <span class="flex items-center gap-3">
-                <span id="brain-settings-status" class="text-[10px] font-mono text-primary/60">{{ tr('graph.loading') }}</span>
+            <!-- One short line, cut with "…" and whole in its tooltip: it never runs over the help text (custom) -->
+            <span class="flex items-center gap-3 min-w-0 max-w-[45%] flex-shrink-0">
+                <span id="brain-settings-status" class="block min-w-0 truncate text-right text-[10px] font-mono text-primary/60">{{ tr('graph.loading') }}</span>
                 <span id="brain-settings-chevron" class="material-symbols-outlined text-primary/70">expand_more</span>
             </span>
         </button>
@@ -256,6 +264,13 @@
             </div>
             <div class="flex flex-wrap items-center gap-2">
                 <button id="brain-migration-run" type="button" disabled class="px-3 py-2 border border-primary/30 text-xs uppercase hover:bg-primary/10 disabled:opacity-40 disabled:cursor-not-allowed"><span id="brain-migration-spinner" class="material-symbols-outlined text-sm align-middle animate-spin hidden" aria-hidden="true">progress_activity</span> <span id="brain-migration-action-label">{{ tr('graph.stage_sources') }}</span></button>
+            </div>
+            <div id="brain-migration-notice" class="brain-migration-notice" role="status" aria-live="polite" hidden>
+                <div class="flex items-start justify-between gap-3">
+                    <p id="brain-migration-notice-title" class="font-bold"></p>
+                    <button type="button" id="brain-migration-notice-close" class="material-symbols-outlined text-sm leading-none opacity-70 hover:opacity-100" aria-label="{{ tr('graph.dismiss') }}" title="{{ tr('graph.dismiss') }}">close</button>
+                </div>
+                <ul id="brain-migration-notice-list" class="space-y-1.5"></ul>
             </div>
         </div>
     </div>
@@ -768,7 +783,7 @@
         const disabled = !checked || !savedMigrationEnabled || migrationSettingsDirty;
         setMigrationControlsDisabled(disabled);
         if (checked && (!savedMigrationEnabled || migrationSettingsDirty)) {
-            document.getElementById('brain-settings-status').textContent = tr('graph.waiting_save');
+            setSettingsStatus(tr('graph.waiting_save'));
         }
     }
     function updateMigrationAction() {
@@ -808,7 +823,7 @@
             .filter(item => !item.migration_completed)
             .map(item => item.source_ref);
         fillOptions('brain-migration-sources', migrationSources, data.migration_sources || []);
-        document.getElementById('brain-settings-status').textContent = tr('graph.sources_available', '{count} migration sources available', {count: migrationSources.length});
+        setSettingsStatus(tr('graph.sources_available', '{count} migration sources available', {count: migrationSources.length}));
         updateMigrationControls();
     }
     async function saveSettings() {
@@ -828,7 +843,7 @@
         migrationSettingsDirty = false;
         document.getElementById('brain-migration').checked = savedMigrationEnabled;
         updateMigrationControls();
-        document.getElementById('brain-settings-status').textContent = tr('graph.auto_saved');
+        setSettingsStatus(tr('graph.auto_saved'));
     }
     function queueSettingsSave() {
         settingsRevision += 1;
@@ -836,7 +851,7 @@
         updateMigrationControls();
         if (settingsSaveTimer) clearTimeout(settingsSaveTimer);
         settingsSaveTimer = setTimeout(() => flushSettingsSave().catch(e => {
-            document.getElementById('brain-settings-status').textContent = e.message;
+            setSettingsStatus(e.message);
             updateMigrationControls();
         }), 300);
     }
@@ -848,7 +863,7 @@
         }
         settingsSaveRunning = true;
         const revision = settingsRevision;
-        document.getElementById('brain-settings-status').textContent = tr('graph.saving');
+        setSettingsStatus(tr('graph.saving'));
         updateMigrationControls();
         try {
             await saveSettings();
@@ -865,6 +880,46 @@
             }
         }
     }
+    // The Graph Settings status: one short line, whole in its tooltip (custom)
+    function setSettingsStatus(text) {
+        const status = document.getElementById('brain-settings-status');
+        status.textContent = text;
+        status.title = text;
+    }
+    // What a migration did that needs the admin's attention, under the Migrate button (custom)
+    function showMigrationNotice(title, items, isError = false) {
+        const box = document.getElementById('brain-migration-notice');
+        document.getElementById('brain-migration-notice-title').textContent = title;
+        const list = document.getElementById('brain-migration-notice-list');
+        list.replaceChildren(...items.map(item => {
+            const li = document.createElement('li');
+            if (item.source) {
+                const source = document.createElement('span');
+                source.className = 'source';
+                source.textContent = item.source;
+                li.append(source);
+            }
+            const text = document.createElement('span');
+            text.textContent = item.text;
+            li.append(text);
+            return li;
+        }));
+        box.classList.toggle('is-error', isError);
+        box.hidden = false;
+    }
+    document.getElementById('brain-migration-notice-close').addEventListener('click', () => {
+        document.getElementById('brain-migration-notice').hidden = true;
+    });
+    // Decimal units, as the limit is set (maxSourceBytes 2000000 reads "2 MB", not "1.9 MB")
+    const sizeText = bytes => bytes >= 1e6
+        ? (bytes / 1e6).toLocaleString(undefined, {maximumFractionDigits: 1}) + ' MB'
+        : Math.max(1, Math.round(bytes / 1e3)).toLocaleString() + ' kB';
+    const sinceText = value => {
+        const when = value ? new Date(value) : null;
+        return when && !isNaN(when)
+            ? when.toLocaleString(undefined, {year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'})
+            : (value || '?');
+    };
     async function stageSources() {
         if (migrationRunning) return;
         migrationRunning = true;
@@ -872,9 +927,23 @@
         try {
             const response = await fetch('/api/memory/migrate', { method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken()}, body: JSON.stringify({source_refs: selectedValues('brain-migration-sources')}) });
             const data = await readApiResponse(response);
-            document.getElementById('brain-settings-status').textContent = data.queued
+            // A chat session over the size limit: only its newest part is learned; say so (custom)
+            const partial = data.results.filter(result => result.partial).map(result => ({
+                source: result.source_ref,
+                text: tr('graph.migrate_partial_line',
+                    '{total} is over the {budget} limit: only the newest {kept} is learned, from {since}, about {parts} model calls.',
+                    {total: sizeText(result.partial.total_bytes), budget: sizeText(result.partial.budget_bytes),
+                     kept: sizeText(result.partial.kept_bytes), since: sinceText(result.partial.since), parts: result.partial.parts || '?'}),
+            }));
+            setSettingsStatus((data.queued
                 ? tr('graph.sources_staged_queued', '{count} source(s) staged and queued for learning', {count: data.results.length})
-                : tr('graph.sources_staged', '{count} source(s) staged', {count: data.results.length});
+                : tr('graph.sources_staged', '{count} source(s) staged', {count: data.results.length}))
+                + (partial.length ? ' · ' + tr('graph.migrate_partial_short', '{n} partly learned', {n: partial.length}) : ''));
+            if (partial.length) {
+                showMigrationNotice(tr('graph.migrate_partial_title', 'Large chat sessions: only the newest part is learned'), partial);
+            } else {
+                document.getElementById('brain-migration-notice').hidden = true;
+            }
             if (data.queued) watchMigrationSources();
             await loadLearningStatus().catch(() => {});
         } finally {
@@ -1099,7 +1168,10 @@
     ['brain-learning-daily-limit', 'brain-learning-input-bytes'].forEach(id => {
         document.getElementById(id).addEventListener('change', queueSettingsSave);
     });
-    document.getElementById('brain-migration-run').addEventListener('click', () => stageSources().catch(e => document.getElementById('brain-settings-status').textContent = e.message));
+    document.getElementById('brain-migration-run').addEventListener('click', () => stageSources().catch(e => {
+        setSettingsStatus(tr('graph.migrate_failed', 'Migration failed'));
+        showMigrationNotice(tr('graph.migrate_failed', 'Migration failed'), [{text: e.message}], true);
+    }));
     document.getElementById('brain-learning-log-toggle').addEventListener('click', event => {
         const toggle = event.currentTarget;
         const body = document.getElementById('brain-learning-log-body');
@@ -1129,7 +1201,7 @@
     });
     loadSettings()
         .then(() => loadLearningStatus())
-        .catch(e => document.getElementById('brain-settings-status').textContent = e.message);
+        .catch(e => setSettingsStatus(e.message));
     load().catch(e => status.textContent = e.message);
 })();
 </script>

@@ -137,6 +137,10 @@
                         class="px-3 py-2 border border-primary/30 text-primary/60 font-bold uppercase tracking-widest text-[10px] hover:bg-primary/10 hover:text-primary transition-all duration-300 flex items-center gap-1">
                         <span class="material-symbols-outlined text-[12px]">edit</span>
                     </a>
+                    <button type="button" class="rename-profile px-3 py-2 border border-primary/30 text-primary/60 font-bold uppercase tracking-widest text-[10px] hover:bg-primary/10 hover:text-primary transition-all duration-300 flex items-center gap-1"
+                        data-id="{{ p.id }}" data-name="{{ p.name }}" data-description="{{ p.description or '' }}" title="Rename / describe">
+                        <span class="material-symbols-outlined text-[12px]">edit_note</span>
+                    </button>
                     <button onclick="confirmDelete('{{ p.id }}', '{{ p.name }}')"
                         class="px-3 py-2 border border-red-500/30 text-red-500/60 font-bold uppercase tracking-widest text-[10px] hover:bg-red-500/10 hover:text-red-400 transition-all duration-300 flex items-center gap-1">
                         <span class="material-symbols-outlined text-[12px]">delete</span>
@@ -146,6 +150,10 @@
                         class="flex-1 px-3 py-2 border border-primary/20 bg-primary/10 text-primary/40 font-bold uppercase tracking-widest text-[10px] flex items-center justify-center gap-2 cursor-default">
                         <span class="material-symbols-outlined text-[12px]">lock</span>Active — Switch to edit
                     </span>
+                    <button type="button" class="rename-profile px-3 py-2 border border-primary/30 text-primary/60 font-bold uppercase tracking-widest text-[10px] hover:bg-primary/10 hover:text-primary transition-all duration-300 flex items-center gap-1"
+                        data-id="{{ p.id }}" data-name="{{ p.name }}" data-description="{{ p.description or '' }}" title="Rename / describe">
+                        <span class="material-symbols-outlined text-[12px]">edit_note</span>
+                    </button>
                     {% endif %}
                 </div>
             </div>
@@ -228,6 +236,40 @@
                     Create
                 </button>
                 <button type="button" onclick="document.getElementById('createModal').style.display='none'"
+                    class="px-6 py-3 border border-primary/20 text-primary/40 font-bold uppercase tracking-widest text-sm hover:text-primary transition-colors">
+                    Cancel
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Rename Modal: the name and description shown in the header chip (custom) -->
+<div id="renameModal" class="fixed inset-0 z-50 bg-black/80 items-center justify-center" style="display: none;">
+    <div class="ui-card p-6 w-full max-w-md flex flex-col gap-5 border-primary/40 shadow-glow-30-20">
+        <div class="flex items-center gap-3">
+            <span class="material-symbols-outlined text-primary glow-text">edit_note</span>
+            <h3 class="text-sm font-bold uppercase tracking-widest glow-text">Rename Profile</h3>
+        </div>
+        <form method="POST" action="/profiles/rename" class="flex flex-col gap-4">
+            <input type="hidden" name="profile_id" id="renameId">
+            <div class="flex flex-col gap-2">
+                <label for="renameName" class="text-[10px] text-primary/60 uppercase tracking-widest font-bold">Profile Name *</label>
+                <input type="text" name="name" id="renameName" required maxlength="80"
+                    class="w-full bg-black/60 border border-primary/30 focus:border-primary outline-none px-4 py-3 text-primary/90 font-mono text-xs">
+            </div>
+            <div class="flex flex-col gap-2">
+                <label for="renameDescription" class="text-[10px] text-primary/60 uppercase tracking-widest font-bold">Description</label>
+                <input type="text" name="description" id="renameDescription" maxlength="160" placeholder="Shown under the name in the header"
+                    class="w-full bg-black/60 border border-primary/30 focus:border-primary outline-none px-4 py-3 text-primary/90 font-mono text-xs">
+            </div>
+            <p class="text-[10px] text-primary/40 leading-relaxed">Only the name and description change: the profile's files and id stay as they are.</p>
+            <div class="flex gap-3">
+                <button type="submit"
+                    class="flex-1 px-6 py-3 border border-primary bg-primary/10 text-primary font-bold uppercase tracking-widest text-sm hover:bg-primary hover:text-black transition-all duration-300 flex items-center justify-center gap-2">
+                    <span class="material-symbols-outlined text-sm">save</span>Save
+                </button>
+                <button type="button" onclick="document.getElementById('renameModal').style.display='none'"
                     class="px-6 py-3 border border-primary/20 text-primary/40 font-bold uppercase tracking-widest text-sm hover:text-primary transition-colors">
                     Cancel
                 </button>
@@ -488,6 +530,15 @@
         document.getElementById('switchName').textContent = name;
         document.getElementById('switchModal').style.display = 'flex';
     }
+
+    // Rename: values come from data attributes, never from inline script (names may hold quotes)
+    document.querySelectorAll('.rename-profile').forEach(button => button.addEventListener('click', () => {
+        document.getElementById('renameId').value = button.dataset.id;
+        document.getElementById('renameName').value = button.dataset.name;
+        document.getElementById('renameDescription').value = button.dataset.description;
+        document.getElementById('renameModal').style.display = 'flex';
+        document.getElementById('renameName').focus();
+    }));
 
     function confirmDelete(id, name) {
         document.getElementById('deleteId').value = id;

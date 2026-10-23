@@ -528,5 +528,16 @@
   "cskh.learned_on": "Learned {date}",
   "library.learned_on": "Learned {date}",
   "library.error": "Error: {reason}",
-  "library.upload_failed": "Could not upload {reason}"
+  "library.upload_failed": "Could not upload {reason}",
+  "graph.migrate_partial": "{source}: {total} is over the {budget} limit; only the newest {kept} (from {since}) is learned, about {parts} model calls.",
+  "common.header_profile_hint": "Profile in use, click to switch",
+  "common.code_running": "Running commit",
+  "common.code_stale": "New code pulled, restart needed",
+  "common.code_stale_hint": "The bot runs {running}; the code on disk is now {disk}. Python loads code only at start: click to restart.",
+  "common.code_stale_confirm": "Restart the bot to use the new code? Chat channels drop for a few seconds.",
+  "graph.migrate_partial_title": "Large chat sessions: only the newest part is learned",
+  "graph.migrate_partial_line": "{total} is over the {budget} limit: only the newest {kept} is learned, from {since}, about {parts} model calls.",
+  "graph.migrate_partial_short": "{n} partly learned",
+  "graph.migrate_failed": "Migration failed",
+  "graph.dismiss": "Dismiss"
 }

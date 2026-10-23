@@ -344,10 +344,49 @@
                         style="filter: var(--logo-filter); box-shadow: 0 0 12px rgb(var(--c-accent) / calc(0.4 * var(--glow)));">
                 </div>
                 <div class="flex flex-col min-w-0 flex-1 sm:flex-none">
-                    <h1 class="text-base sm:text-xl font-bold tracking-[0.2em] glow-text uppercase">Nanobot OS v{{ nanobot_version }}</h1>
+                    {# The code this process runs, against the checkout now (custom; nanobot/web/code_version.py) #}
+                    {% set _code = code_version() if code_version is defined else none %}
+                    <h1 class="text-base sm:text-xl font-bold tracking-[0.2em] glow-text uppercase">Nanobot OS v{{ nanobot_version }}{% if _code and _code.running %}
+                        <span id="header-commit" class="normal-case tracking-normal font-mono font-normal text-[10px] opacity-60 align-middle"
+                            title="{{ tr('common.code_running') }}: {{ _code.running }}">{{ _code.running[:7] }}</span>{% endif %}</h1>
                     <p class="text-[10px] text-primary/60 tracking-widest">{{ theme_value('edition', 'Personal AI assistant') }}</p>
                     <p class="text-[10px] text-primary/50 tracking-widest">DEVELOPED_BY: HOANG_MINH_QUAN</p>
                 </div>
+                <!-- The profile in use: which bot this dashboard runs, at a glance (custom) -->
+                {# A server process older than this template has no header_profile: no chip rather than a wrong name #}
+                {% if header_profile is defined %}
+                {% set _profile = header_profile() %}
+                <a id="header-profile" href="/profiles"
+                    title="{{ tr('common.header_profile_hint') }}: {{ _profile.id }}{% if _profile.description %} — {{ _profile.description }}{% endif %}"
+                    class="w-full sm:w-auto min-w-0 inline-flex items-center gap-2 max-w-full sm:max-w-[20rem] px-3 py-1.5 {{ 'rounded-xl' if _profile.description else 'rounded-full' }} border text-xs font-bold tracking-wide transition-colors hover:bg-primary/10"
+                    style="border-color: rgb(var(--c-accent) / .55); background: rgb(var(--c-accent) / .1); color: rgb(var(--c-accent));">
+                    <span class="material-symbols-outlined text-[15px] leading-none">badge</span>
+                    <span class="flex flex-col min-w-0 leading-tight">
+                        <span class="truncate">{{ _profile.name }}</span>
+                        {% if _profile.description %}
+                        <span id="header-profile-description" class="truncate text-[10px] font-normal tracking-normal opacity-75">{{ _profile.description }}</span>
+                        {% endif %}
+                    </span>
+                </a>
+                {% endif %}
+                {% if _code and _code.stale %}
+                <!-- A pull changed the checkout; this process still runs the code it started with (custom) -->
+                <button type="button" id="code-stale-badge" onclick="restartForNewCode()"
+                    title="{{ tr('common.code_stale_hint') | replace('{running}', _code.running[:7]) | replace('{disk}', _code.disk[:7]) }}"
+                    class="w-full sm:w-auto inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-bold tracking-wide transition-colors hover:opacity-90"
+                    style="border-color: rgb(var(--c-warning) / .6); background: rgb(var(--c-warning) / .12); color: rgb(var(--c-warning));">
+                    <span class="material-symbols-outlined text-[15px] leading-none">system_update</span>
+                    <span>{{ tr('common.code_stale') }}</span>
+                    <span class="font-mono font-normal text-[10px] opacity-80">{{ _code.running[:7] }} → {{ _code.disk[:7] }}</span>
+                </button>
+                <script>
+                    function restartForNewCode() {
+                        if (window.confirm({{ tr('common.code_stale_confirm') | tojson }})) {
+                            window.location.href = '/restarting?next=' + encodeURIComponent(location.pathname + location.search);
+                        }
+                    }
+                </script>
+                {% endif %}
                 <!-- Fleet Claim Badge (neon yellow, hidden when unclaimed) -->
                 <div id="fleet-badge"
                     class="hidden w-full sm:w-auto sm:ml-2 px-3 py-1.5 rounded border flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider transition-all duration-500"

@@ -121,13 +121,19 @@ async def cmd_stop(ctx: CommandContext) -> OutboundMessage:
     )
 
 
+RESTART_DELAY_S = 1.0  # the "Restarting..." reply reaches the chat first
+
+
 async def cmd_restart(ctx: CommandContext) -> OutboundMessage:
     """Restart the process in-place via os.execv."""
     msg = ctx.msg
     set_restart_notice_to_env(channel=msg.channel, chat_id=msg.chat_id)
 
     async def _do_restart():
-        await asyncio.sleep(1)
+        await asyncio.sleep(RESTART_DELAY_S)
+        # The same line as the dashboard's restart: every in-place restart shows in the process log
+        # (custom; seen live, a /restart from a chat left no trace and looked like no restart at all)
+        logger.info("[Command] Restarting via os.execv... (/restart from {}:{})", msg.channel, msg.chat_id)
         os.execv(sys.executable, [sys.executable, "-m", "nanobot"] + sys.argv[1:])
 
     asyncio.create_task(_do_restart())

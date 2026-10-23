@@ -5,6 +5,7 @@ import json
 import os
 import re
 import time
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -46,8 +47,11 @@ async def password_status(request: Request):
 
 @router.get("/healthz")
 async def healthz():
-    """Lightweight liveness probe for browser restart progress pages."""
-    return JSONResponse({"ok": True})
+    """Lightweight liveness probe for browser restart progress pages. boot is new on every process
+    start (an in-place restart keeps the PID): the restart page waits for a different one (custom)."""
+    from nanobot.web.code_version import BOOT_ID
+
+    return JSONResponse({"ok": True, "boot": BOOT_ID})
 
 
 @router.get("/api/health")
@@ -387,15 +391,28 @@ async def fleet_message(request: Request):
 
         logger.info("[Fleet] Message from '{}': {}", from_bot, content[:100])
 
-        try:
-            resp = await asyncio.shield(
-                agent.process_direct(
+        # One turn at a time per session, the same lock Web Chat and the bus path take
+        # (AgentLoop._dispatch): without it, Fleet Manager timing out and sending the next
+        # message ran two turns over one session history. The lock is taken inside the
+        # shielded coroutine so a request Fleet Manager has already given up on keeps
+        # holding it until its turn really ends.
+        session_locks = getattr(agent, "_session_locks", None)
+        session_lock = (
+            session_locks.setdefault(session_key, asyncio.Lock())
+            if session_locks is not None else nullcontext()
+        )
+
+        async def _run_turn():
+            async with session_lock:
+                return await agent.process_direct(
                     content=content,
                     session_key=session_key,
                     channel="fleet",
                     chat_id=from_bot,
                 )
-            )
+
+        try:
+            resp = await asyncio.shield(_run_turn())
         except asyncio.CancelledError:
             logger.warning(
                 "[Fleet] Message request cancelled while agent was processing '{}'; returning controlled 499",

@@ -23,6 +23,21 @@ def active_profile(workspace) -> tuple[str, str]:
     return "default", "Default"
 
 
+def active_profile_details(workspace) -> dict:
+    """{id, name, description} of the profile in use, for the header chip (custom)."""
+    import json
+
+    profile_id, name = active_profile(workspace)
+    description = ""
+    try:
+        pdata = json.loads((workspace / "profiles" / "profiles.json").read_text(encoding="utf-8"))
+        description = next((str(p.get("description") or "") for p in pdata.get("profiles", [])
+                            if p.get("id") == profile_id), "")
+    except Exception:
+        pass
+    return {"id": profile_id, "name": name, "description": description.strip()}
+
+
 @router.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
     """Render the main dashboard page."""
