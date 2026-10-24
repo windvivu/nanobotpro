@@ -539,5 +539,10 @@
   "graph.migrate_partial_line": "{total} is over the {budget} limit: only the newest {kept} is learned, from {since}, about {parts} model calls.",
   "graph.migrate_partial_short": "{n} partly learned",
   "graph.migrate_failed": "Migration failed",
-  "graph.dismiss": "Dismiss"
+  "graph.dismiss": "Dismiss",
+  "cskh.image_alt": "Picture the customer sent",
+  "cskh.image_open": "Open full size",
+  "cskh.image_gone": "Picture no longer on the server",
+  "cskh.image_close": "Close",
+  "cskh.image_new_tab": "Open in a new tab"
 }

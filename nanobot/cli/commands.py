@@ -719,12 +719,18 @@ def gateway(
         cron_token = None
         if isinstance(cron_tool, CronTool):
             cron_token = cron_tool.set_cron_context(True)
+        # A job scheduled in a fleet turn: its result is filed under that turn and goes only to that
+        # fleet (custom, plan 3.3.11). The origin rides on the turn's metadata (the message tool copies
+        # it) and on the delivered reply
+        from nanobot.fleet.context import ORIGIN_KEY
+        fleet_meta = {ORIGIN_KEY: job.payload.origin} if getattr(job.payload, "origin", None) else {}
         try:
             resp = await agent.process_direct(
                 reminder_note,
                 session_key=f"cron:{job.id}",
                 channel=job.payload.channel or "cli",
                 chat_id=job.payload.to or "direct",
+                metadata=fleet_meta or None,
             )
         finally:
             if isinstance(cron_tool, CronTool) and cron_token is not None:
@@ -746,6 +752,8 @@ def gateway(
                     channel=job.payload.channel or "cli",
                     chat_id=job.payload.to,
                     content=response,
+                    # To Fleet Manager a cron result is a late reply of the turn that scheduled it
+                    metadata={**fleet_meta, "_late_reply": True} if job.payload.channel == "fleet" else {},
                 ))
         return response
     cron.on_job = on_cron_job
@@ -780,6 +788,15 @@ def gateway(
         return channel._get_customer_state() if channel is not None else None
 
     agent.customer_retention.get_customer_state = _customer_state_for_retention
+
+    def _media_dir_for_retention():
+        # Pictures customers sent go with their conversation, or after the retention days (custom)
+        if channels.channels.get("zalo") is None:
+            return None
+        from nanobot.config.paths import get_media_dir
+        return get_media_dir("zalo")
+
+    agent.customer_retention.get_media_dir = _media_dir_for_retention
 
     def _pick_heartbeat_target() -> tuple[str, str]:
         """Where heartbeat tasks run and report: gateway.heartbeat.target only, never a guess from the latest
@@ -1482,6 +1499,80 @@ def _login_github_copilot() -> None:
     except Exception as e:
         console.print(f"[red]Authentication error: {e}[/red]")
         raise typer.Exit(1)
+
+
+# ============================================================================
+# Fleet membership (custom; plan: fleet-manager native-parity.md, P1b)
+# ============================================================================
+
+fleet_app = typer.Typer(help="Fleet membership: the binding to a Fleet Manager and its outbox")
+app.add_typer(fleet_app, name="fleet")
+
+
+def _fleet_journal(config: str | None, workspace: str | None):
+    """The journal of the bot that config names, opened without the gateway's start-up recovery: the
+    gateway may be running, and recovery would fail the turns it is in the middle of. None when that
+    workspace has no journal yet (nothing is created)."""
+    from nanobot.fleet.journal import FleetJournal
+
+    cfg = _load_runtime_config(config, workspace)
+    path = cfg.workspace_path / "fleet" / "fleet.sqlite3"
+    console.print(f"[dim]Journal: {path}[/dim]")
+    if not path.exists():
+        console.print("No fleet journal here: this workspace has not run a fleet turn. "
+                      "A bot started with --config needs the same --config here.")
+        return None
+    return FleetJournal(path, recover=False)
+
+
+@fleet_app.command("status")
+def fleet_status(
+    config: str | None = typer.Option(None, "--config", "-c", help="Config file of the bot (as given to gateway)"),
+    workspace: str | None = typer.Option(None, "--workspace", "-w", help="Workspace directory"),
+):
+    """Show the fleet binding and the outbox (never the token). Safe while the gateway runs."""
+    journal = _fleet_journal(config, workspace)
+    if journal is None:
+        return
+    try:
+        binding = journal.binding()
+        counts = journal.outbox_counts()
+        if binding is None:
+            console.print("Binding: [yellow]none[/yellow] (a claim is accepted with the password alone)")
+        else:
+            console.print(f"Binding: fleet [green]{binding.fleet_id}[/green], token generation {binding.token_id}, "
+                          f"inbox {binding.inbox_url}")
+        console.print(f"Outbox: {counts['pending']} pending, {counts['dead']} dead letter(s)")
+        for dead in journal.dead_letters(limit=5):
+            console.print(f"  [red]dead[/red] {dead['kind']} {dead['event_id']}: {dead['last_status']} {dead['last_error']}")
+    finally:
+        journal.close()
+
+
+@fleet_app.command("reset-binding")
+def fleet_reset_binding(
+    config: str | None = typer.Option(None, "--config", "-c", help="Config file of the bot (as given to gateway)"),
+    workspace: str | None = typer.Option(None, "--workspace", "-w", help="Workspace directory"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Do not ask"),
+):
+    """Forget the Fleet Manager this bot is bound to: the way out when that Fleet Manager lost its secret.
+    The next claim is accepted with the password alone again; events still waiting for that fleet are dropped."""
+    journal = _fleet_journal(config, workspace)
+    if journal is None:
+        return
+    try:
+        binding = journal.binding()
+        if binding is None:
+            console.print("No binding to reset.")
+            return
+        if not yes and not typer.confirm(f"Forget fleet '{binding.fleet_id}' (token generation {binding.token_id})?"):
+            raise typer.Exit(1)
+        journal.unbind()
+        # A running gateway reads the binding on every request, so this holds at once
+        console.print(f"[green]✓[/green] Binding to fleet '{binding.fleet_id}' removed; the next claim needs "
+                      "the password alone.")
+    finally:
+        journal.close()
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ from datetime import date
 from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 from starlette.concurrency import run_in_threadpool
 
@@ -71,6 +71,37 @@ def _customer(request, customer_id):
 
 
 _MEDIA_MARKER = re.compile(r"\[(image|file|audio|video|voice|sticker|document)(?::[^\]]*)?\]")
+# A picture the customer sent, as the session keeps it for the model: "[image: <saved file>]" (custom)
+_IMAGE_MARKER = re.compile(r"\[image:\s*([^\]]+?)\s*\]")
+MEDIA_IMAGE_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif",
+                     ".webp": "image/webp"}
+
+
+def _zalo_media_dir():
+    """Where the Zalo channel saves what customers send: <data dir>/media/zalo."""
+    from nanobot.config.paths import get_media_dir
+    return get_media_dir("zalo")
+
+
+def _customer_image_name(customer_id: str, name: str) -> bool:
+    """One of this customer's pictures as the channel names them (<customer>_<ms>.<ext>): the page can
+    ask for nothing else, and never another customer's (custom)."""
+    return bool(re.fullmatch(re.escape(customer_id) + r"_\d{1,20}\.(jpg|jpeg|png|gif|webp)", name or ""))
+
+
+def _images(content, customer_id: str) -> list[dict]:
+    """The pictures of one message: their file names (not the server path) and whether still on disk."""
+    if isinstance(content, list):
+        content = "\n".join(block.get("text", "") for block in content if isinstance(block, dict))
+    if not isinstance(content, str):
+        return []
+    media = _zalo_media_dir()
+    found = []
+    for match in _IMAGE_MARKER.finditer(content):
+        name = re.split(r"[\\/]", match.group(1))[-1]
+        if _customer_image_name(customer_id, name) and name not in {image["name"] for image in found}:
+            found.append({"name": name, "available": (media / name).is_file()})
+    return found
 
 
 def _shown(content, workspace):
@@ -110,6 +141,11 @@ def _transcript(request, customer_id, limit):
                 if item.get("role") in {"user", "assistant"}:
                     row = {"role": item["role"], "timestamp": item.get("timestamp", ""),
                            "content": _shown(item.get("content", ""), request.app.state.config.workspace_path)}
+                    if item["role"] == "user" and (images := _images(item.get("content"), customer_id)):
+                        # Shown as pictures: their "[image]" markers leave the text (custom)
+                        row["images"] = images
+                        row["content"] = "\n".join(line for line in row["content"].split("\n")
+                                                   if line.strip() != "[image]").strip()
                     for key in ("reply_ms", "searches"):  # how long the customer waited (custom)
                         if isinstance(item.get(key), int) and not isinstance(item.get(key), bool) and item[key] >= 0:
                             row[key] = item[key]
@@ -260,6 +296,21 @@ async def customers(
             }
         )
     return {"customers": sorted(rows, key=lambda row: row["last_seen"], reverse=True)[:limit]}
+
+
+@router.get("/api/customers/{customer_id}/media/{name}")
+async def customer_media(request: Request, customer_id: str, name: str):
+    """A picture this customer sent, for the conversation on this page (custom). Only a file the Zalo
+    channel saved for this customer, inside its media folder, served as an image."""
+    _customer(request, customer_id)
+    if not _customer_image_name(customer_id, name):
+        raise HTTPException(404, "Image not found")
+    media = _zalo_media_dir().resolve()
+    path = media / name
+    if path.is_symlink() or not path.is_file() or path.resolve().parent != media:
+        raise HTTPException(404, "Image not found")
+    return FileResponse(path, media_type=MEDIA_IMAGE_TYPES[path.suffix.lower()],
+                        headers={"Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff"})
 
 
 @router.get("/api/customers/{customer_id}/transcript")

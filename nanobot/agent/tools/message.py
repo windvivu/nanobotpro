@@ -10,6 +10,7 @@ from nanobot.agent.tools.base import Tool, tool_parameters
 from nanobot.agent.tools.schema import ArraySchema, StringSchema, tool_parameters_schema
 from nanobot.agent.tools.turn_state import TurnLocal
 from nanobot.bus.events import OutboundMessage
+from nanobot.fleet.context import ORIGIN_KEY
 
 # Stop reason of a turn the bot ended by sending its reply with files to the current chat (custom)
 ANSWERED_WITH_FILES = "answered_with_files"
@@ -159,6 +160,9 @@ class MessageTool(Tool):
             # Sent while answering a sub-agent's result: a late reply, which Web Chat pushes (custom)
             if self._default_metadata.get("_late_reply"):
                 metadata["_late_reply"] = True
+            # Sent while answering work a fleet turn started: Fleet Manager files it under that turn (custom)
+            if self._default_metadata.get(ORIGIN_KEY):
+                metadata[ORIGIN_KEY] = self._default_metadata[ORIGIN_KEY]
         msg = OutboundMessage(
             channel=channel,
             chat_id=chat_id,

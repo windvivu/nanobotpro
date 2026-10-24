@@ -24,6 +24,7 @@ from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
 from nanobot.bus.events import InboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.config.schema import ExecToolConfig, WebToolsConfig
+from nanobot.fleet.context import ORIGIN_KEY
 from nanobot.providers.base import LLMProvider
 from nanobot.utils.prompt_templates import render_template
 
@@ -273,11 +274,16 @@ class SubagentManager:
         origin_channel: str = "cli",
         origin_chat_id: str = "direct",
         session_key: str | None = None,
+        fleet_origin: dict[str, Any] | None = None,
     ) -> str:
-        """Spawn a subagent to execute a task in the background."""
+        """Spawn a subagent to execute a task in the background.
+
+        fleet_origin: the fleet turn that asked for it (nanobot.fleet.context.fleet_origin_now): the
+        result is filed under that turn and sent only to that fleet (custom, plan 3.3.11)."""
         task_id = str(uuid.uuid4())[:8]
         display_label = label or task[:30] + ("..." if len(task) > 30 else "")
-        origin = {"channel": origin_channel, "chat_id": origin_chat_id, "session_key": session_key}
+        origin = {"channel": origin_channel, "chat_id": origin_chat_id, "session_key": session_key,
+                  "fleet": fleet_origin}
         status = SubagentStatus(
             task_id=task_id,
             label=display_label,
@@ -418,6 +424,8 @@ class SubagentManager:
             chat_id=f"{origin['channel']}:{origin['chat_id']}",
             content=announce_content,
             session_key_override=origin.get("session_key") or f"{origin['channel']}:{origin['chat_id']}",
+            # The fleet turn that spawned it rides along to the late reply (custom, plan 3.3.11)
+            metadata={ORIGIN_KEY: origin["fleet"]} if origin.get("fleet") else {},
         )
 
         await self.bus.publish_inbound(msg)
@@ -486,7 +494,7 @@ class SubagentManager:
         path = _running_file(self.workspace)
         data = _read_running(path)
         data[task_id] = {"label": label, "channel": origin["channel"], "chat_id": origin["chat_id"],
-                         "session_key": origin.get("session_key"), "boot": _BOOT_ID,
+                         "session_key": origin.get("session_key"), "fleet": origin.get("fleet"), "boot": _BOOT_ID,
                          "started_at": datetime.now().isoformat(timespec="seconds")}
         _write_running(path, data)
 

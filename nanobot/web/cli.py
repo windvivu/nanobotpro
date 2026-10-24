@@ -26,11 +26,21 @@ async def start_web(config, session_manager=None, agent=None, channel_manager=No
     from nanobot.web.app import create_app
 
     app = create_app(config, session_manager, agent, channel_manager=channel_manager, theme=theme)
+    fleet_turns = getattr(agent, "fleet_turns", None)
     if channel_manager is not None and hasattr(channel_manager, "outbound_sinks"):
         # Web Chat is not a channel: replies sent after their turn (a sub-agent's result) reach its tabs
         from nanobot.web.routes.chat import deliver_late_reply
 
         channel_manager.outbound_sinks["webchat"] = deliver_late_reply
+        # Fleet Manager is not a channel either: what a fleet turn sends reaches the request waiting for it
+        if fleet_turns is not None:
+            channel_manager.outbound_sinks["fleet"] = fleet_turns.deliver
+    outbox_task = None
+    if fleet_turns is not None:
+        # The fleet API lives with the web server, so its outbox worker does too: it posts the events of
+        # fleet turns and late replies to the bound Fleet Manager's inbox (custom, plan P1b)
+        fleet_turns.bot_id = getattr(config.gateway, "bot_id", "") or "default"
+        outbox_task = asyncio.create_task(fleet_turns.outbox.run())
 
     uvi_config = uvicorn.Config(
         app,
@@ -51,3 +61,5 @@ async def start_web(config, session_manager=None, agent=None, channel_manager=No
         await server.serve()
     finally:
         cleanup.cancel()
+        if outbox_task is not None:
+            outbox_task.cancel()

@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import Callable
 
 from nanobot.bus.events import InboundMessage, OutboundMessage
+from nanobot.fleet.context import stamp_envelope
 
 
 class MessageBus:
@@ -31,6 +32,8 @@ class MessageBus:
 
     async def publish_outbound(self, msg: OutboundMessage) -> None:
         """Publish a response from the agent to channels."""
+        # A fleet turn's sends carry its envelope, whichever code path sends them (custom, nanobot/fleet)
+        stamp_envelope(msg)
         await self.outbound.put(msg)
 
     async def consume_outbound(self) -> OutboundMessage:

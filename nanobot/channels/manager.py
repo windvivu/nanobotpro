@@ -12,6 +12,7 @@ from nanobot.bus.events import OutboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.channels.base import BaseChannel
 from nanobot.config.schema import Config
+from nanobot.fleet.context import ORIGIN_KEY
 from nanobot.utils.restart import consume_restart_notice_from_env, format_restart_completed_message
 
 # Retry delays for message sending (exponential backoff: 1s, 2s, 4s)
@@ -216,9 +217,14 @@ class ChannelManager:
             logger.warning("Could not read the interrupted sub-agents: {}", e)
             return
         by_chat: dict[tuple[str, str], list[str]] = {}
+        # The fleet turn that started the work, when one did: the notice is filed under it (plan 3.3.11)
+        fleet_origins: dict[tuple[str, str], dict] = {}
         for rec in ended:
             if rec.get("channel") and rec.get("chat_id"):
-                by_chat.setdefault((rec["channel"], str(rec["chat_id"])), []).append(rec.get("label") or "?")
+                key = (rec["channel"], str(rec["chat_id"]))
+                by_chat.setdefault(key, []).append(rec.get("label") or "?")
+                if isinstance(rec.get("fleet"), dict):
+                    fleet_origins.setdefault(key, rec["fleet"])
         if not by_chat:
             return
 
@@ -229,10 +235,13 @@ class ChannelManager:
                 if channel not in self.channels and channel not in self.outbound_sinks:
                     logger.debug("Interrupted sub-agents of {}:{} not reported: no such channel", channel, chat_id)
                     continue
+                metadata = {"_late_reply": True, "_notice": True}
+                if (channel, chat_id) in fleet_origins:
+                    metadata[ORIGIN_KEY] = fleet_origins[(channel, chat_id)]
                 await self.bus.publish_outbound(OutboundMessage(
                     channel=channel, chat_id=chat_id, content=_interrupted_notice(labels),
                     # _notice: not saved in the session, so Web Chat shows it even after a reload
-                    metadata={"_late_reply": True, "_notice": True},
+                    metadata=metadata,
                 ))
                 told += 1
             logger.info("Told {} chat(s) about sub-agents a restart ended", told)

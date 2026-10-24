@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from collections.abc import Callable, Collection
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -17,10 +18,13 @@ from nanobot.session.manager import SessionManager
 class CustomerSessionRetention:
     INTERVAL_SECONDS = 24 * 60 * 60
     CUSTOMER_CHANNELS = frozenset({"zalo", "telegram"})
+    # What the Zalo channel saves a customer sent: <customer>_<ms>.<ext> (custom)
+    MEDIA_NAME = re.compile(r"(?P<principal>[^_\\/]+)_\d{1,20}\.[A-Za-z0-9]{1,8}")
 
     def __init__(self, sessions: SessionManager, *, enabled: bool = False,
                  retention_days: int = 180, max_sessions: int = 5000,
-                 get_customer_state: Callable[[], Any] | None = None):
+                 get_customer_state: Callable[[], Any] | None = None,
+                 get_media_dir: Callable[[], Path | None] | None = None):
         if retention_days < 1 or max_sessions < 1:
             raise ValueError("Customer session retention limits must be positive")
         self.sessions = sessions
@@ -29,6 +33,9 @@ class CustomerSessionRetention:
         self.max_sessions = max_sessions
         # Resolved lazily by the gateway to the channel's shared store (M6).
         self.get_customer_state = get_customer_state
+        # The Zalo channel's media folder, set by the gateway only: without it no picture is ever removed,
+        # so a test or a tool building this class cannot reach a real folder (custom)
+        self.get_media_dir = get_media_dir
 
     @staticmethod
     def _utc(value: datetime) -> datetime:
@@ -119,6 +126,7 @@ class CustomerSessionRetention:
         excess = max(0, len(remaining) - self.max_sessions)
         capped = [key for _, key in remaining if key not in active_keys][:excess]
         deleted = 0
+        removed_customers: set[str] = set()
         for key in sorted(expired | set(capped)):
             paths = candidates[key][1]
             try:
@@ -139,11 +147,42 @@ class CustomerSessionRetention:
                     path.unlink()
                 self.sessions.invalidate(key)
                 deleted += 1
+                if key.startswith("zalo:"):
+                    removed_customers.add(key.partition(":")[2])
             except (OSError, ValueError):
                 logger.exception("Customer retention could not remove a session")
-        logger.info("Customer retention: removed {} sessions; preserved {} unrecognized files",
-                    deleted, len(invalid))
+        pictures = self._sweep_media(cutoff, removed_customers)
+        logger.info("Customer retention: removed {} sessions and {} pictures; preserved {} unrecognized files",
+                    deleted, pictures, len(invalid))
         return deleted
+
+    def _sweep_media(self, cutoff: datetime, removed_customers: set[str]) -> int:
+        """Pictures customers sent (custom): those of a customer removed above, and any older than the
+        retention days. Only files named as the channel names them, directly in its media folder."""
+        if self.get_media_dir is None:
+            return 0
+        try:
+            media = self.get_media_dir()
+            if media is None or not media.is_dir():
+                return 0
+            root = media.resolve()
+            entries = list(root.iterdir())
+        except OSError:
+            logger.exception("Customer retention could not read the media folder")
+            return 0
+        oldest = cutoff.timestamp()
+        removed = 0
+        for path in entries:
+            match = self.MEDIA_NAME.fullmatch(path.name)
+            try:
+                if not match or path.is_symlink() or not path.is_file() or path.resolve().parent != root:
+                    continue
+                if match["principal"] in removed_customers or path.stat().st_mtime < oldest:
+                    path.unlink()
+                    removed += 1
+            except OSError:
+                logger.exception("Customer retention could not remove a picture")
+        return removed
 
     async def run(self, active_keys: Callable[[], Collection[str]]) -> None:
         if not self.enabled:

@@ -55,10 +55,13 @@ class SpawnTool(Tool):
 
     async def execute(self, task: str, label: str | None = None, **kwargs: Any) -> str:
         """Spawn a subagent to execute the given task."""
+        from nanobot.fleet.context import fleet_origin_now
+
         return await self._manager.spawn(
             task=task,
             label=label,
             origin_channel=self._origin_channel,
             origin_chat_id=self._origin_chat_id,
             session_key=self._session_key,
+            fleet_origin=fleet_origin_now(),  # the fleet turn asking, if any (custom, plan 3.3.11)
         )

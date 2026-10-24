@@ -191,6 +191,8 @@ class CronTool(Tool):
         else:
             return "Error: either every_seconds, cron_expr, or at is required"
 
+        from nanobot.fleet.context import fleet_origin_now
+
         job = self._cron.add_job(
             name=name or message[:30],
             schedule=schedule,
@@ -199,6 +201,7 @@ class CronTool(Tool):
             channel=self._channel,
             to=self._chat_id,
             delete_after_run=delete_after,
+            origin=fleet_origin_now(),  # the fleet turn scheduling it, if any (custom, plan 3.3.11)
         )
         return f"Created job '{job.name}' (id: {job.id})"
 

@@ -29,6 +29,9 @@ class CronPayload:
     force_deliver: bool = False
     channel: str | None = None  # e.g. "whatsapp"
     to: str | None = None  # e.g. phone number
+    # The fleet turn that scheduled it (nanobot.fleet.context.fleet_origin_now): the result is filed
+    # under that turn and goes only to that fleet (custom, plan 3.3.11)
+    origin: dict | None = None
 
 
 @dataclass

@@ -328,6 +328,7 @@ class GatewayConfig(Base):
     port: int = 18790
     bot_id: str = ""  # Unique bot ID for fleet management
     fleet_id: str = ""  # Fleet this bot belongs to (empty = unassigned, prevents double-registration)
+    fleet_via_bus: bool = True  # Fleet messages run as bus turns; False keeps the older direct call (custom)
     heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig)
     web: WebConfig = Field(default_factory=WebConfig)
 

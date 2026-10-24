@@ -77,6 +77,18 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
 .test-msg.staff {align-self:flex-start;background:rgb(var(--c-accent) / .12);border:1px dashed rgb(var(--c-accent) / .6)}
 /* Shown before the saved conversation has it; the bot still answering */
 .test-msg.pending {opacity:.6}
+/* Pictures a customer sent, in their bubble; one no longer on the server says so (custom) */
+.msg-images {display:flex;flex-wrap:wrap;gap:6px}
+.msg-images + .msg-text {margin-top:6px}
+.msg-image {display:block;max-width:min(220px,100%);max-height:220px;border-radius:8px;object-fit:cover;cursor:zoom-in;background:rgb(var(--c-primary) / .08)}
+/* A picture opened large over the page; Esc, a click or Close shuts it (custom) */
+.img-viewer {position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;padding:56px 16px 16px;background:rgb(0 0 0 / .82);cursor:zoom-out}
+.img-viewer[hidden] {display:none}
+.img-viewer img {max-width:min(96vw,1600px);max-height:calc(100vh - 80px);border-radius:8px;box-shadow:0 10px 40px rgb(0 0 0 / .5);background:#fff;cursor:zoom-out}
+.img-viewer .viewer-bar {position:absolute;top:12px;right:16px;display:flex;gap:8px}
+.img-viewer .viewer-bar a, .img-viewer .viewer-bar button {padding:6px 12px;border-radius:8px;border:1px solid rgb(255 255 255 / .5);background:rgb(0 0 0 / .45);color:#fff;font-size:.85rem;text-decoration:none;cursor:pointer}
+.img-viewer .viewer-bar a:focus-visible, .img-viewer .viewer-bar button:focus-visible {outline:2px solid #fff;outline-offset:2px}
+.msg-image-gone {display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border-radius:8px;border:1px dashed rgb(var(--c-primary) / .35);font-size:.8em;opacity:.75}
 /* How long the customer waited for the reply above */
 .reply-meta {align-self:flex-start;margin-top:-5px;padding:0 4px;font-size:11px;opacity:.7;font-variant-numeric:tabular-nums}
 .reply-meta.warn {color:rgb(var(--c-warning));opacity:1}
@@ -265,7 +277,8 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
         let role = 'bot', content = typeof message.content === 'string' ? message.content : JSON.stringify(message.content);
         if (message.role === 'user') role = 'customer';
         else if (content.startsWith('[Nhân viên] ')) { role = 'staff'; content = content.slice('[Nhân viên] '.length); }
-        return {role, content, timestamp: message.timestamp, ms: message.reply_ms, searches: message.searches, hold: message.hold};
+        return {role, content, timestamp: message.timestamp, ms: message.reply_ms, searches: message.searches, hold: message.hold,
+                images: Array.isArray(message.images) ? message.images : []};
     }
     // Seconds with one decimal in the page's language: "7,4 giây", "7.4 s"
     const seconds = ms => t('reply_time').replace('{s}', new Intl.NumberFormat(document.documentElement.lang || undefined,
@@ -276,6 +289,53 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
         const el = node('div', parts.join(' · '));
         el.className = 'reply-meta' + (line.ms >= 20000 ? ' slow' : line.ms >= 10000 ? ' warn' : '');
         el.title = t('reply_time_hint'); return el;
+    }
+    // The picture viewer: one overlay for the page, built on first use (custom)
+    let imageViewer = null, viewerReturnFocus = null;
+    function closeImageViewer() {
+        if (!imageViewer || imageViewer.hidden) return;
+        imageViewer.hidden = true; imageViewer.querySelector('img').removeAttribute('src');
+        if (viewerReturnFocus) viewerReturnFocus.focus();
+    }
+    function openImageViewer(url) {
+        if (!imageViewer) {
+            imageViewer = node('div'); imageViewer.className = 'img-viewer'; imageViewer.hidden = true;
+            imageViewer.setAttribute('role', 'dialog'); imageViewer.setAttribute('aria-modal', 'true');
+            imageViewer.setAttribute('aria-label', t('image_alt'));
+            const bar = node('div'); bar.className = 'viewer-bar';
+            const open = node('a', t('image_new_tab')); open.target = '_blank'; open.rel = 'noopener';
+            const close = node('button', t('image_close')); close.type = 'button';
+            bar.append(open, close);
+            const img = node('img'); img.alt = t('image_alt');
+            imageViewer.append(bar, img);
+            imageViewer.addEventListener('click', e => { if (e.target !== open) closeImageViewer(); });
+            document.addEventListener('keydown', e => { if (e.key === 'Escape') closeImageViewer(); });
+            document.body.append(imageViewer);
+        }
+        viewerReturnFocus = document.activeElement;
+        imageViewer.querySelector('img').src = url;
+        imageViewer.querySelector('a').href = url;
+        imageViewer.hidden = false;
+        imageViewer.querySelector('button').focus();
+    }
+    // A customer's message with pictures: thumbnails that open full size, then its text (custom)
+    function messageWithImages(tab, line) {
+        const el = node('div'), box = node('div'); box.className = 'msg-images';
+        line.images.forEach(image => {
+            if (!image.available) {
+                const gone = node('span', t('image_gone')); gone.className = 'msg-image-gone'; box.append(gone); return;
+            }
+            const url = '/zalo/cskh/api/customers/' + enc(tab.id) + '/media/' + enc(image.name);
+            const link = node('a'); link.href = url; link.target = '_blank'; link.rel = 'noopener'; link.title = t('image_open');
+            // A plain click opens it large on this page; Ctrl/Cmd/Shift/middle click still opens a tab
+            link.onclick = e => { if (e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return; e.preventDefault(); openImageViewer(url); };
+            const img = node('img'); img.src = url; img.alt = t('image_alt'); img.loading = 'lazy'; img.className = 'msg-image';
+            img.onerror = () => { const gone = node('span', t('image_gone')); gone.className = 'msg-image-gone'; link.replaceWith(gone); };
+            link.append(img); box.append(link);
+        });
+        el.append(box);
+        if (line.content) { const text = node('div', line.content); text.className = 'msg-text'; el.append(text); }
+        return el;
     }
     function renderLines(tab, messages) {
         tab.messages = messages;
@@ -291,7 +351,8 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
                 const held = node('div', line.hold.text); held.className = 'test-msg bot hold';
                 held.title = t('hold_sent').replace('{s}', seconds(line.hold.after_ms)); tab.log.append(held);
             }
-            const el = node('div', line.role === 'staff' ? t('staff') + ': ' + line.content : line.content);
+            const el = line.images.length ? messageWithImages(tab, line)
+                : node('div', line.role === 'staff' ? t('staff') + ': ' + line.content : line.content);
             el.className = 'test-msg ' + line.role; el.title = stamp(line.timestamp); tab.log.append(el);
             if (line.role === 'bot' && Number.isFinite(line.ms)) tab.log.append(replyMeta(line));
             if (line.role === 'staff') {

@@ -14,6 +14,10 @@ from fastapi.responses import JSONResponse, Response
 from loguru import logger
 from starlette.responses import StreamingResponse
 
+from nanobot.fleet.journal import Binding
+from nanobot.fleet.signing import HEADER_FLEET_ID, PROTOCOL_VERSION
+from nanobot.fleet.signing import verify as verify_fleet_signature
+
 router = APIRouter()
 
 _start_time = time.time()
@@ -26,6 +30,7 @@ _fleet_claim: dict = {
 }
 
 _FLEET_MCP_NAME_RE = re.compile(r"^[a-zA-Z0-9._-]{1,64}$")
+_FLEET_BOT_ID_RE = re.compile(r"[\x21-\x7e]{1,256}")  # the fleet's id for this bot, sent as an X-Bot-ID value
 
 
 def _fleet_mcp_name(value: object) -> str:
@@ -119,17 +124,27 @@ async def health(request: Request):
         else:
             model_label = model
 
-        return JSONResponse({
+        binding = _fleet_binding(request)
+        payload = {
             "status": "ok",
             "bot_id": bot_id,
-            "fleet_id": _fleet_claim["fleet_id"] or gateway.fleet_id or "",
+            # The durable binding is a claim that survived a restart (custom, plan 3.3.1)
+            "fleet_id": _fleet_claim["fleet_id"] or (binding.fleet_id if binding else "") or gateway.fleet_id or "",
             "fleet_claimed_by": _fleet_claim["claimed_by"],
             "fleet_claimed_at": _fleet_claim["claimed_at"],
             "model": model_label,
             "uptime": uptime_seconds,
             "channels": channels,
             "web_port": gateway.web.port,
-        })
+        }
+        # Fleet protocol v1 (custom, plan 3.3.6): what this code can do, and the state of the channel now.
+        # Only with fleet turns over the bus; the older direct call has no journal or outbox
+        turns = _fleet_turns(request)
+        if turns is not None and getattr(gateway, "fleet_via_bus", True):
+            payload["fleet_protocol_version"] = PROTOCOL_VERSION
+            payload["fleet_capabilities"] = ["inbox"]
+            payload["fleet_channel"] = turns.channel_status()
+        return JSONResponse(payload)
     except Exception as e:
         logger.error("[API] Health check error: {}", e)
         return JSONResponse({"status": "error", "error": str(e)}, status_code=500)
@@ -175,6 +190,110 @@ def _verify_fleet_auth(request: Request) -> JSONResponse | None:
     return None
 
 
+# ── Fleet protocol v1: the channel binding and signed requests (custom, plan 3.3.1, 3.3.13) ──
+
+
+def _fleet_turns(request: Request):
+    """The agent's FleetTurns (journal, binding, outbox), or None without an agent or on the old path."""
+    return getattr(getattr(request.app.state, "agent", None), "fleet_turns", None)
+
+
+def _fleet_binding(request: Request) -> Binding | None:
+    turns = _fleet_turns(request)
+    if turns is None:
+        return None
+    try:
+        return turns.journal.binding()
+    except Exception as e:  # a journal that cannot be read must not take the fleet API down
+        logger.warning("[Fleet] Could not read the channel binding: {}", e)
+        return None
+
+
+async def _verify_fleet_request(request: Request) -> JSONResponse | None:
+    """Basic Auth as always; once bound to a fleet, every POST must also be signed with its token.
+
+    Without a binding the X-Fleet-* headers are ignored: the first claim rests on the password alone,
+    as does a bot that `nanobot fleet reset-binding` freed. The signed path is the route's own path
+    (/api/fleet/claim, ...), never the URL as served, so a proxy prefix does not matter. The body is
+    hashed as received. Returns the error response, or None when the request may proceed.
+    """
+    auth_err = _verify_fleet_auth(request)
+    if auth_err:
+        return auth_err
+    return await _verify_fleet_signature(request)
+
+
+async def _verify_fleet_signature(request: Request) -> JSONResponse | None:
+    """The signature half of _verify_fleet_request, for a route that checks Basic Auth itself."""
+    binding = _fleet_binding(request)
+    if binding is None:
+        return None
+    fleet_header = request.headers.get(HEADER_FLEET_ID)
+    if fleet_header and fleet_header != binding.fleet_id:
+        return JSONResponse({"ok": False, "error": "fleet_mismatch"}, status_code=403)
+    route = request.scope.get("route")
+    canonical_path = getattr(route, "path", None) or request.url.path
+    body = await request.body()
+    ok, error, extra = verify_fleet_signature(binding.token, binding.token_id, request.method, canonical_path, body,
+                                              request.headers, protocol_version=binding.protocol_version)
+    if not ok:
+        logger.warning("[Fleet] {} {} refused: {} (bound to fleet '{}', token generation {})",
+                       request.method, canonical_path, error, binding.fleet_id, binding.token_id)
+        return JSONResponse({"ok": False, "error": error, **extra}, status_code=401)
+    return None
+
+
+def _attach_channel(request: Request, body: dict, fleet_id: str) -> dict:
+    """Take the channel a claim brings (inbox URL and token) into the durable binding.
+
+    A claim without channel changes nothing. The first channel attaches; a later one with a new token
+    rotates it (that claim was verified with the old token). Returns the channel block of the answer.
+    channel.bot_id is the fleet's id for this bot, sent back as X-Bot-ID on every event.
+
+    A channel this bot cannot use leaves it unattached, with the reason in the answer, but the claim
+    itself still stands: a bad channel must not take the bot out of its fleet.
+    """
+    turns = _fleet_turns(request)
+    if turns is None:
+        return {"attached": False}
+    channel = body.get("channel")
+    if isinstance(channel, dict) and (channel.get("inbox_url") or channel.get("token")):
+        inbox_url = str(channel.get("inbox_url") or "").strip()
+        token = str(channel.get("token") or "")
+        bot_id = str(channel.get("bot_id") or "")
+        problem = ""
+        try:
+            token_id = int(channel.get("token_id", 0))
+            protocol_version = int(channel.get("protocol_version") or PROTOCOL_VERSION)
+        except (TypeError, ValueError):
+            problem = "token_id and protocol_version must be integers"
+        if not problem and (not inbox_url.startswith(("http://", "https://")) or not token):
+            problem = "inbox_url (http or https) and token are required"
+        if not problem and bot_id and not _FLEET_BOT_ID_RE.fullmatch(bot_id):
+            problem = "bot_id is sent as a header value: printable ASCII without spaces, at most 256"
+        if problem:
+            logger.warning("[Fleet] Claim of fleet '{}' accepted without attaching its channel: {}", fleet_id, problem)
+            current = turns.journal.binding()
+            return {"attached": current is not None, "token_id": current.token_id if current else None,
+                    "error": f"Invalid channel: {problem}"}
+        new = Binding(fleet_id, inbox_url, token, token_id, protocol_version, bot_id)
+        current = turns.journal.binding()
+        if current != new:
+            turns.journal.bind(new)
+            turns.outbox.bound()
+            logger.info("[Fleet] Channel {} fleet '{}': inbox {}, token generation {}",
+                        "rotated for" if current is not None else "attached to", fleet_id, inbox_url, token_id)
+        return {"attached": True, "token_id": token_id}
+    binding = turns.journal.binding()
+    return {"attached": binding is not None, "token_id": binding.token_id if binding else None}
+
+
+def _bound_fleet_id(request: Request, gateway) -> str:
+    """The fleet this bot answers to right now: the live claim, else the durable binding, else config."""
+    binding = _fleet_binding(request)
+    return _fleet_claim["fleet_id"] or (binding.fleet_id if binding else "") or getattr(gateway, "fleet_id", "") or ""
+
+
 @router.post("/api/fleet/claim")
 async def fleet_claim(request: Request):
     """Fleet-manager claims this bot. Stores fleet_id + caller IP in runtime.
@@ -182,16 +301,22 @@ async def fleet_claim(request: Request):
     - If unclaimed: accept, store fleet_id + IP
     - If same fleet_id: idempotent, update IP/timestamp
     - If different fleet_id: reject (409 Conflict)
+
+    Fleet protocol v1 (custom, plan 3.3.1): the body may carry ``channel`` {inbox_url, token, token_id,
+    protocol_version}; it is kept in the durable binding, which then counts as the claim across restarts
+    and makes every later fleet POST require that token's signature.
     """
     global _fleet_claim
 
-    auth_err = _verify_fleet_auth(request)
+    auth_err = await _verify_fleet_request(request)
     if auth_err:
         return auth_err
 
     try:
         body = await request.json()
     except Exception:
+        return JSONResponse({"ok": False, "error": "Invalid JSON"}, status_code=400)
+    if not isinstance(body, dict):
         return JSONResponse({"ok": False, "error": "Invalid JSON"}, status_code=400)
 
     fleet_id = (body.get("fleet_id", "") or "").strip()
@@ -209,6 +334,15 @@ async def fleet_claim(request: Request):
             "error": f"Bot is locked to fleet '{config_fleet}' via config. Cannot claim for '{fleet_id}'.",
         }, status_code=409)
 
+    # The durable binding is a claim that survived a restart: another fleet needs a release first
+    binding = _fleet_binding(request)
+    if binding is not None and binding.fleet_id != fleet_id:
+        return JSONResponse({
+            "ok": False,
+            "error": f"Bot is bound to fleet '{binding.fleet_id}'. Release it first.",
+            "claimed_by_fleet": binding.fleet_id,
+        }, status_code=409)
+
     if current and current != fleet_id:
         return JSONResponse({
             "ok": False,
@@ -218,6 +352,8 @@ async def fleet_claim(request: Request):
             "claimed_at": _fleet_claim["claimed_at"],
         }, status_code=409)
 
+    channel_state = _attach_channel(request, body, fleet_id)
+
     # Accept claim (or update existing)
     _fleet_claim = {
         "fleet_id": fleet_id,
@@ -225,15 +361,19 @@ async def fleet_claim(request: Request):
         "claimed_at": datetime.now(timezone.utc).isoformat(),
     }
     logger.info("[Fleet] Bot claimed by fleet '{}' from {}", fleet_id, client_ip)
-    return JSONResponse({"ok": True, "fleet_id": fleet_id, "claimed_by": client_ip})
+    return JSONResponse({"ok": True, "fleet_id": fleet_id, "claimed_by": client_ip, "channel": channel_state})
 
 
 @router.post("/api/fleet/release")
 async def fleet_release(request: Request):
-    """Release this bot from its fleet. Only the claiming fleet can release."""
+    """Release this bot from its fleet. Only the claiming fleet can release.
+
+    Fleet protocol v1 (custom, plan 3.3.1): ``revoke: true`` also drops the durable channel binding and
+    the events still waiting for that fleet; a bound bot only accepts a release signed with its token.
+    """
     global _fleet_claim
 
-    auth_err = _verify_fleet_auth(request)
+    auth_err = await _verify_fleet_request(request)
     if auth_err:
         return auth_err
 
@@ -241,15 +381,18 @@ async def fleet_release(request: Request):
         body = await request.json()
     except Exception:
         return JSONResponse({"ok": False, "error": "Invalid JSON"}, status_code=400)
+    if not isinstance(body, dict):
+        return JSONResponse({"ok": False, "error": "Invalid JSON"}, status_code=400)
 
     fleet_id = (body.get("fleet_id", "") or "").strip()
     if not fleet_id:
         return JSONResponse({"ok": False, "error": "fleet_id is required"}, status_code=400)
 
-    # Check both runtime claim AND config fleet_id
+    # Check the runtime claim, the durable binding AND config fleet_id
     current_runtime = _fleet_claim["fleet_id"]
+    binding = _fleet_binding(request)
     config_fleet = getattr(request.app.state.config.gateway, "fleet_id", "")
-    current = current_runtime or config_fleet
+    current = current_runtime or (binding.fleet_id if binding else "") or config_fleet
 
     if not current:
         return JSONResponse({"ok": True, "message": "Bot is not claimed by any fleet"})
@@ -259,6 +402,14 @@ async def fleet_release(request: Request):
             "ok": False,
             "error": f"Bot is claimed by fleet '{current}', not '{fleet_id}'. Only '{current}' can release.",
         }, status_code=403)
+
+    revoked = False
+    turns = _fleet_turns(request)
+    if body.get("revoke") and turns is not None and binding is not None:
+        if turns.journal.unbind() is not None:
+            revoked = True
+            turns.outbox.bound()  # nothing left to pause for
+            logger.info("[Fleet] Channel binding to fleet '{}' revoked; its pending events dropped", fleet_id)
 
     # Clear runtime claim
     old_claim = _fleet_claim.copy()
@@ -273,7 +424,7 @@ async def fleet_release(request: Request):
             logger.warning("[Fleet] Could not clear gateway.fleet_id: {}", e)
 
     logger.info("[Fleet] Bot released from fleet '{}' (was claimed by {})", fleet_id, old_claim.get("claimed_by", "?"))
-    return JSONResponse({"ok": True})
+    return JSONResponse({"ok": True, "revoked": revoked})
 
 
 @router.get("/api/fleet/status")
@@ -326,6 +477,55 @@ async def token_usage(request: Request):
     return JSONResponse({"ok": True, "stats": stats})
 
 
+_FLEET_TURN_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+
+
+async def _fleet_turn_over_bus(turns, body: dict, from_bot: str, content: str, session_key: str,
+                               fleet_id: str = "") -> JSONResponse:
+    """Run a fleet message as a bus turn and answer from its terminal (custom, nanobot/fleet/turns.py).
+    fleet_id: the fleet asking; its events go only to that fleet's inbox (plan 3.3.1)."""
+    import uuid
+
+    from nanobot.fleet.turns import TurnConflict
+
+    mode = body.get("mode") or "sync"
+    if mode != "sync":
+        # ack comes with the inbox (plan P2); /api/health does not offer it yet
+        return JSONResponse({"ok": False, "error": f"mode '{mode}' is not supported"}, status_code=400)
+    turn_id = body.get("turn_id")
+    if turn_id is None:
+        turn_id = f"local-{uuid.uuid4().hex}"  # Fleet Manager before protocol v1 sends none
+    elif not isinstance(turn_id, str) or not _FLEET_TURN_ID_RE.match(turn_id):
+        return JSONResponse({"ok": False, "error": "Invalid turn_id"}, status_code=400)
+    timeout = body.get("timeout_seconds")
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout <= 0:
+        timeout = None
+    principal = body.get("principal") if isinstance(body.get("principal"), dict) else None
+
+    try:
+        result = await turns.submit(content=content, from_bot=from_bot, session_key=session_key,
+                                    turn_id=turn_id, principal=principal, timeout=timeout, fleet_id=fleet_id)
+    except TurnConflict:
+        return JSONResponse({"ok": False, "error": "turn_id_conflict", "turn_id": turn_id}, status_code=409)
+    except asyncio.TimeoutError:
+        return JSONResponse(
+            {"ok": False, "error": "Turn still running after timeout_seconds", "turn_id": turn_id},
+            status_code=504,
+        )
+    except asyncio.CancelledError:
+        logger.warning("[Fleet] Message request cancelled while turn {} was running; returning controlled 499",
+                       turn_id)
+        return JSONResponse({"ok": False, "error": "Fleet message request cancelled", "turn_id": turn_id},
+                            status_code=499)
+
+    if result.state == "completed":
+        logger.info("[Fleet] Reply to '{}': {}", from_bot, result.response[:100] if result.response else "(empty)")
+        return JSONResponse({"ok": True, "turn_id": turn_id, "response": result.response})
+    if result.state == "cancelled":
+        return JSONResponse({"ok": False, "error": "Turn cancelled", "turn_id": turn_id}, status_code=499)
+    return JSONResponse({"ok": False, "error": result.error or "Turn failed", "turn_id": turn_id}, status_code=500)
+
+
 @router.post("/api/fleet/message")
 async def fleet_message(request: Request):
     """Receive a message from another bot in the fleet.
@@ -374,6 +574,9 @@ async def fleet_message(request: Request):
             )
 
         record_auth_success(client_ip)
+        # Bound to a fleet: the request must be signed with its token too (custom, plan 3.3.13)
+        if (signature_err := await _verify_fleet_signature(request)) is not None:
+            return signature_err
 
         # Parse body
         body = await request.json()
@@ -390,6 +593,13 @@ async def fleet_message(request: Request):
             return JSONResponse({"ok": False, "error": "Agent not available"}, status_code=503)
 
         logger.info("[Fleet] Message from '{}': {}", from_bot, content[:100])
+
+        # A fleet message runs as a bus turn and answers from its terminal (custom, nanobot/fleet);
+        # gateway.fleetViaBus = false keeps the direct call below until the move is proven (plan P5)
+        turns = getattr(agent, "fleet_turns", None)
+        if turns is not None and getattr(config.gateway, "fleet_via_bus", True):
+            return await _fleet_turn_over_bus(turns, body, from_bot, content, session_key,
+                                              fleet_id=_bound_fleet_id(request, config.gateway))
 
         # One turn at a time per session, the same lock Web Chat and the bus path take
         # (AgentLoop._dispatch): without it, Fleet Manager timing out and sending the next
@@ -538,7 +748,7 @@ async def fleet_config_mcp(request: Request):
     from nanobot.config.loader import get_config_path, load_config, save_config
     from nanobot.config.schema import MCPServerConfig
 
-    auth_err = _verify_fleet_auth(request)
+    auth_err = await _verify_fleet_request(request)
     if auth_err:
         return auth_err
 
@@ -625,7 +835,7 @@ async def fleet_remove_mcp(request: Request):
     """
     from nanobot.config.loader import get_config_path, load_config, save_config
 
-    auth_err = _verify_fleet_auth(request)
+    auth_err = await _verify_fleet_request(request)
     if auth_err:
         return auth_err
 
@@ -688,7 +898,7 @@ async def fleet_restart(request: Request):
     import os
     import sys
 
-    auth_err = _verify_fleet_auth(request)
+    auth_err = await _verify_fleet_request(request)
     if auth_err:
         return auth_err
 

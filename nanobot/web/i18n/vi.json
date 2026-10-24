@@ -539,5 +539,10 @@
   "graph.migrate_partial_line": "{total}, vượt giới hạn {budget}: chỉ học {kept} mới nhất, từ {since}, khoảng {parts} lần gọi model.",
   "graph.migrate_partial_short": "{n} phiên chỉ học một phần",
   "graph.migrate_failed": "Migrate không thành công",
-  "graph.dismiss": "Đóng"
+  "graph.dismiss": "Đóng",
+  "cskh.image_alt": "Ảnh khách gửi",
+  "cskh.image_open": "Mở ảnh cỡ thật",
+  "cskh.image_gone": "Ảnh không còn trên máy chủ",
+  "cskh.image_close": "Đóng",
+  "cskh.image_new_tab": "Mở ở tab mới"
 }

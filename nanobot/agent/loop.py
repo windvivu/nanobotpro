@@ -51,6 +51,8 @@ from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
 from nanobot.agent.workspace_scope import resolve_workspace_scope
 from nanobot.bus.events import InboundMessage, OutboundMessage
 from nanobot.bus.queue import MessageBus
+from nanobot.fleet.context import ORIGIN_KEY, current_fleet_turn
+from nanobot.fleet.turns import FleetTurns
 from nanobot.command.builtin import register_builtin_commands
 from nanobot.command.router import CommandContext, CommandRouter
 from nanobot.providers.base import LLMProvider
@@ -296,6 +298,8 @@ class AgentLoop:
         self._enforce_public_channel_settings()
         self.provider = provider
         self.workspace = workspace
+        # Fleet messages run as bus turns; the route, this loop and the fleet sink meet here (custom)
+        self.fleet_turns = FleetTurns(bus, Path(workspace) / "fleet" / "fleet.sqlite3")
         self.model = model or provider.get_default_model()
         self._active_preset: str | None = None
         self._provider_snapshot = None
@@ -1428,7 +1432,8 @@ class AgentLoop:
         return result.final_content, result.tools_used, result.messages, result.stop_reason
 
     # ── Message debouncing for channel messages ──
-    _DEBOUNCE_SKIP_CHANNELS = frozenset({"webchat", "cli"})
+    # Fleet: every message is its own turn with its own turn_id, as in Web Chat (custom, nanobot/fleet)
+    _DEBOUNCE_SKIP_CHANNELS = frozenset({"webchat", "cli", "fleet"})
 
     async def run(self) -> None:
         """Run the agent loop, dispatching messages as tasks to stay responsive to /stop."""
@@ -1469,10 +1474,7 @@ class AgentLoop:
             raw = msg.content.strip()
             msg = self._with_effective_session_key(msg)
             if self.commands.is_priority(raw):
-                ctx = CommandContext(msg=msg, session=None, key=msg.session_key, raw=raw, loop=self)
-                result = await self.commands.dispatch_priority(ctx)
-                if result:
-                    await self.bus.publish_outbound(result)
+                await self._run_priority(msg, raw)
                 continue
 
             # Channels that handle their own input blocking: dispatch immediately
@@ -1511,16 +1513,11 @@ class AgentLoop:
                 next_msg = self._with_effective_session_key(next_msg)
                 # Priority commands (e.g. /stop, /restart): execute immediately, don't batch
                 if self.commands.is_priority(next_raw):
-                    next_ctx = CommandContext(
-                        msg=next_msg, session=None,
-                        key=next_msg.session_key, raw=next_raw, loop=self,
-                    )
-                    next_result = await self.commands.dispatch_priority(next_ctx)
-                    if next_result:
-                        await self.bus.publish_outbound(next_result)
+                    await self._run_priority(next_msg, next_raw)
                     continue
-                # Other slash commands: dispatch as normal task, don't batch
-                if next_raw.startswith("/"):
+                # Other slash commands, and channels that block their own input: dispatch as normal
+                # task, don't batch (a fleet message keeps its own turn_id, custom)
+                if next_raw.startswith("/") or next_msg.channel in self._DEBOUNCE_SKIP_CHANNELS:
                     self._dispatch_task(next_msg)
                     continue
 
@@ -1544,6 +1541,29 @@ class AgentLoop:
                 self._dispatch_task(merged)
             else:
                 self._dispatch_task(msg)
+
+    async def _run_priority(self, msg: InboundMessage, raw: str) -> None:
+        """Run a priority command (/stop, /restart) at once; a fleet one ends its turn (custom)."""
+        envelope = self.fleet_turns.envelope(msg)
+        if envelope is not None:
+            if not self.fleet_turns.enter(envelope):
+                return
+            self.fleet_turns.running(envelope)
+        token = current_fleet_turn.set(envelope)
+        try:
+            ctx = CommandContext(msg=msg, session=None, key=msg.session_key, raw=raw, loop=self)
+            result = await self.commands.dispatch_priority(ctx)
+            if result:
+                await self.bus.publish_outbound(result)
+        except BaseException as exc:
+            if envelope is not None:
+                state = "cancelled" if isinstance(exc, asyncio.CancelledError) else "failed"
+                self.fleet_turns.end(envelope, state, exc)
+            raise
+        finally:
+            current_fleet_turn.reset(token)
+        if envelope is not None:
+            self.fleet_turns.end(envelope, "completed")
 
     def _cap_public_batch(self, merged: InboundMessage) -> InboundMessage:
         """A merged customer turn is bounded too (custom): several messages within the quota must
@@ -1673,9 +1693,36 @@ class AgentLoop:
 
     async def _dispatch(self, msg: InboundMessage) -> None:
         """Process a message: per-session serial, cross-session concurrent."""
+        envelope = self.fleet_turns.envelope(msg)
+        if envelope is None:
+            await self._dispatch_turn(msg)
+            return
+        # A fleet turn ends with exactly one terminal whatever path it takes: streamed, silent,
+        # answered with the message tool, failed or cancelled (custom, nanobot/fleet/turns.py)
+        if not self.fleet_turns.enter(envelope):
+            return
+        token = current_fleet_turn.set(envelope)
+        try:
+            failure = await self._dispatch_turn(msg, on_locked=lambda: self.fleet_turns.running(envelope))
+        except asyncio.CancelledError as exc:
+            self.fleet_turns.end(envelope, "cancelled", exc)
+            raise
+        except Exception as exc:
+            self.fleet_turns.end(envelope, "failed", exc)
+            raise
+        finally:
+            current_fleet_turn.reset(token)
+        self.fleet_turns.end(envelope, "failed" if failure else "completed", failure)
+
+    async def _dispatch_turn(
+        self, msg: InboundMessage, on_locked: Callable[[], None] | None = None,
+    ) -> Exception | None:
+        """Run one turn under its session lock; return the error it ended with, if any."""
         lock = self._session_locks.setdefault(msg.session_key, asyncio.Lock())
         gate = self._concurrency_gate or nullcontext()
         async with lock, gate:
+            if on_locked is not None:
+                on_locked()
             try:
                 on_stream = on_stream_end = None
                 if msg.metadata.get("_wants_stream"):
@@ -1720,6 +1767,8 @@ class AgentLoop:
                     channel=msg.channel, chat_id=msg.chat_id,
                     content=error_text,
                 ))
+                return exc
+        return None
 
     async def close_mcp(self) -> None:
         """Drain pending background archives, then close MCP connections."""
@@ -1910,10 +1959,14 @@ class AgentLoop:
             if isinstance(message_tool, MessageTool) and message_tool._sent_in_turn:
                 return None  # already sent to this chat with the message tool, as the normal branch does
             # _late_reply: sent after the turn that asked for it, e.g. a sub-agent's result. Web Chat,
-            # which is not a channel, pushes these to its open tabs (web/routes/chat.py) (custom)
+            # which is not a channel, pushes these to its open tabs (web/routes/chat.py) (custom).
+            # The fleet origin, when a fleet turn started the work, rides along (plan 3.3.11)
+            late_reply_metadata = {"_late_reply": True}
+            if ORIGIN_KEY in msg.metadata:
+                late_reply_metadata[ORIGIN_KEY] = msg.metadata[ORIGIN_KEY]
             return OutboundMessage(channel=channel, chat_id=chat_id,
                                   content=final_content or "Background task completed.",
-                                  metadata={"_late_reply": True})
+                                  metadata=late_reply_metadata)
 
         preview = msg.content[:80] + "..." if len(msg.content) > 80 else msg.content
         logger.info("Processing message from {}:{}: {}", msg.channel, msg.sender_id, preview)
