@@ -22,6 +22,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -188,15 +189,40 @@ class FleetJournal:
         if "bot_id" not in columns:
             conn.execute("ALTER TABLE binding ADD COLUMN bot_id TEXT NOT NULL DEFAULT ''")
 
-    @staticmethod
-    def _fail_interrupted(conn: sqlite3.Connection) -> None:
-        # A turn that never started (accepted, queued) is safe to send again; one that was running
-        # may have run tools, so sending it again could repeat their effects (plan 3.3.12)
-        conn.execute(
-            f"UPDATE turns SET retryable = CASE WHEN state = 'running' THEN 0 ELSE 1 END, "
-            f"state = 'failed', error = ?, updated_at = ? WHERE state IN {_IN_NON_TERMINAL}",
-            (INTERRUPTED, time.time()),
-        )
+    def _fail_interrupted(self, conn: sqlite3.Connection) -> None:
+        """Fail the turns a dead process left, and queue each one's terminal for Fleet Manager.
+
+        A turn that never started (accepted, queued) is safe to send again; one that was running may
+        have run tools, so sending it again could repeat their effects (plan 3.3.12). Fleet Manager
+        hears of the end only through the inbox when the turn ran over ack: no HTTP call is left to
+        fail, and without the event its chat would wait for the stalled sweep (plan 3.3.12, fault
+        table "bot restart giữa turn"). Only turns of the fleet the bot is bound to report; the outbox
+        never sends another fleet's events."""
+        now = time.time()
+        occurred = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = conn.execute("SELECT fleet_id FROM binding WHERE one = 1").fetchone()
+            bound_fleet = row[0] if row else ""
+            interrupted = conn.execute(
+                f"SELECT turn_id, fleet_id, session_key, state FROM turns WHERE state IN {_IN_NON_TERMINAL}"
+            ).fetchall()
+            conn.execute(
+                f"UPDATE turns SET retryable = CASE WHEN state = 'running' THEN 0 ELSE 1 END, "
+                f"state = 'failed', error = ?, updated_at = ? WHERE state IN {_IN_NON_TERMINAL}",
+                (INTERRUPTED, now),
+            )
+            for turn_id, fleet_id, session_key, state in interrupted:
+                if not bound_fleet or fleet_id != bound_fleet:
+                    continue
+                event = {"kind": "error", "state": "failed", "content": INTERRUPTED, "session_key": session_key,
+                         "occurred_at": occurred,
+                         "metadata": {"error": INTERRUPTED, "retryable": state != "running"}}
+                self._queue(conn, [event], now, fleet_id=fleet_id, turn_id=turn_id)
+            conn.execute("COMMIT")
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
 
     def _transaction(self, work) -> Any:
         """Run work(db) inside one BEGIN IMMEDIATE ... COMMIT (the connection is in autocommit mode)."""
@@ -385,9 +411,10 @@ class FleetJournal:
 
     def pending(self, *, now: float | None = None, limit: int = 50) -> list[OutboxEvent]:
         """Events due for a delivery attempt, oldest first."""
-        now = time.time() if now is None else now
         with self._lock:
-            rows = self._db().execute(
+            db = self._db()  # the first use opens the journal and recovers it: what that queued is due now
+            now = time.time() if now is None else now
+            rows = db.execute(
                 "SELECT event_id, fleet_id, turn_id, origin_turn_id, seq, kind, payload, occurred_at, attempts, "
                 "next_attempt_at, created_at FROM outbox WHERE status = 'pending' AND next_attempt_at <= ? "
                 "ORDER BY created_at, rowid LIMIT ?", (now, limit),

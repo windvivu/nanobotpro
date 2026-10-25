@@ -250,7 +250,7 @@
   "cskh.ask_silent": "(bot chọn không trả lời)",
   "cskh.typing": "Đang trả lời…",
   "cskh.groups": "Nhóm",
-  "cskh.groups_note": "Nhóm mà bot được thêm vào. Bot im lặng cho đến khi bạn cho phép; thu hồi thì im lại ngay nhưng vẫn ở trong nhóm, rời nhóm thì làm trên điện thoại. Bấm Xem hội thoại để đọc và trả lời trong nhóm; khi nhân viên trả lời hoặc bot chuyển nhân viên, bot im trong nhóm đó và mọi tin trong nhóm được giữ lại cho nhân viên, cho tới khi bạn bấm Resume hoặc hết giờ chờ.",
+  "cskh.groups_note": "Nhóm mà bot được thêm vào: hiện ngay khi bot vào nhóm, kèm tiếng ting và dòng báo, cho tới khi bạn cho phép hoặc bỏ qua. Bot im lặng cho đến khi bạn cho phép; thu hồi thì im lại ngay nhưng vẫn ở trong nhóm, rời nhóm thì làm trên điện thoại. Bấm Xem hội thoại để đọc và trả lời trong nhóm; khi nhân viên trả lời hoặc bot chuyển nhân viên, bot im trong nhóm đó và mọi tin trong nhóm được giữ lại cho nhân viên, cho tới khi bạn bấm Resume hoặc hết giờ chờ.",
   "cskh.group": "Nhóm",
   "cskh.group_mode": "Trả lời",
   "cskh.mode_mention": "Chỉ khi được @nhắc",
@@ -564,6 +564,14 @@
   "cskh.group_held": "Nhân viên đang xử lý · bot đang im trong nhóm",
   "cskh.group_waiting": "Nhóm này đang chờ nhân viên",
   "cskh.attention_bar_groups": "{g} nhóm đang chờ nhân viên",
-  "cskh.attention_bar_both": "{n} khách và {g} nhóm đang chờ nhân viên",
-  "cskh.group_send": "Gửi vào nhóm"
+  "cskh.group_send": "Gửi vào nhóm",
+  "cskh.group_pending": "Mới: bot vừa được thêm vào, chờ bạn cho phép hoặc bỏ qua",
+  "cskh.group_added_by": "Được thêm bởi {name}",
+  "cskh.group_left": "Bot đã bị đưa ra khỏi nhóm",
+  "cskh.group_dismissed": "Đã bỏ qua: bot im lặng trong nhóm này",
+  "cskh.group_dismiss": "Bỏ qua",
+  "cskh.group_active": "Có tin trong nhóm vừa xong",
+  "cskh.live_groups": "{n} nhóm có tin trong {m} phút qua",
+  "cskh.new_group_one": "Bot vừa được thêm vào nhóm {name}, chờ bạn cho phép",
+  "cskh.new_groups": "{n} nhóm mới chờ bạn cho phép"
 }

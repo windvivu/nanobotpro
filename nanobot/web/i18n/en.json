@@ -250,7 +250,7 @@
   "cskh.ask_silent": "(the bot chose not to answer)",
   "cskh.typing": "Replying…",
   "cskh.groups": "Groups",
-  "cskh.groups_note": "Groups the bot was added to. It stays silent until you allow a group; revoking silences it at once, though it stays in the group — leaving is done on the phone. Press View conversation to read and answer in a group; once staff answers there or the bot hands the group to staff, the bot stays quiet in it and every message there is kept for staff, until you press Resume or the wait ends.",
+  "cskh.groups_note": "Groups the bot was added to: they show as soon as the bot joins, with a ting and an alert line, until you allow them or set them aside. The bot stays silent until you allow a group; revoking silences it at once, though it stays in the group — leaving is done on the phone. Press View conversation to read and answer in a group; once staff answers there or the bot hands the group to staff, the bot stays quiet in it and every message there is kept for staff, until you press Resume or the wait ends.",
   "cskh.group": "Group",
   "cskh.group_mode": "Replies",
   "cskh.mode_mention": "Only when @mentioned",
@@ -564,6 +564,14 @@
   "cskh.group_held": "Staff is handling it · the bot is quiet here",
   "cskh.group_waiting": "This group is waiting for staff",
   "cskh.attention_bar_groups": "{g} group(s) waiting for staff",
-  "cskh.attention_bar_both": "{n} customer(s) and {g} group(s) waiting for staff",
-  "cskh.group_send": "Send to the group"
+  "cskh.group_send": "Send to the group",
+  "cskh.group_pending": "New: the bot was added here; allow it or set it aside",
+  "cskh.group_added_by": "Added by {name}",
+  "cskh.group_left": "The bot was taken out of this group",
+  "cskh.group_dismissed": "Set aside: the bot stays silent here",
+  "cskh.group_dismiss": "Set aside",
+  "cskh.group_active": "Someone wrote here just now",
+  "cskh.live_groups": "{n} group(s) with messages in the last {m} min",
+  "cskh.new_group_one": "The bot was just added to the group {name}; allow it?",
+  "cskh.new_groups": "{n} new group(s) waiting for you to allow them"
 }

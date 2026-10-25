@@ -1476,6 +1476,19 @@ class ZaloPersonalChannel(BaseChannel):
             if self._customer_service_enabled and event.get("userId"):
                 self._get_customer_state().record_friend(str(event["userId"]), str(event.get("change", "")))
 
+        elif event_type in ("group_joined", "group_left"):
+            # The bot was added to a group, or taken out of one (custom): the CSKH page knows at once
+            group_id = str(event.get("groupId") or "")
+            if self._customer_service_enabled and valid_group_id(group_id):
+                state = self._get_customer_state()
+                if event_type == "group_joined":
+                    state.record_group_joined(group_id, str(event.get("groupName") or ""),
+                                              str(event.get("addedByName") or ""))
+                else:
+                    state.record_group_left(group_id)
+                logger.info("[Zalo] customerService: bot {} group {}",
+                            "added to" if event_type == "group_joined" else "taken out of", group_id)
+
         elif event_type == "message":
             thread_id = event.get("threadId", "")
             sender_id = event.get("senderId", thread_id)
@@ -1516,6 +1529,7 @@ class ZaloPersonalChannel(BaseChannel):
                     sender_id, sender_name,
                     per_minute=self.customer_service.inbound_per_minute,
                     per_day=self.customer_service.inbound_per_day,
+                    group=True,
                 )
                 if not accepted and notice != "paused":  # blocked, or over the member's own quota
                     logger.info("[Zalo] customerService: group message from {} dropped ({})", sender_id,

@@ -280,14 +280,14 @@ def _needs_attention(state, key, customer) -> bool:
         entry["at"] > (customer.get("escalation_cleared_at") or 0) for entry in customer["escalations"])
 
 
-NEW_GROUP_DAYS = 7  # a group not yet allowed counts on the Groups tab this long after it was first seen
 LIVE_CHAT_SECONDS = 300  # a customer who wrote this recently is "chatting with the bot now" (custom)
 
 
 def _chatting(key: str, customer: dict, now: float) -> bool:
-    """A real customer (not a page test) who wrote within LIVE_CHAT_SECONDS and is not blocked."""
+    """A real customer (not a page test) who wrote to the bot privately within LIVE_CHAT_SECONDS and
+    is not blocked. A member writing in a group is not: the Groups tab shows a group's activity."""
     return (not is_test_customer(key) and customer.get("status") != "blocked"
-            and customer["last_seen"] >= now - LIVE_CHAT_SECONDS)
+            and (customer.get("last_private_at") or 0) >= now - LIVE_CHAT_SECONDS)
 
 
 @router.get("/api/overview")
@@ -302,9 +302,12 @@ async def overview(request: Request):
     unanswered = len(await run_in_threadpool(UnansweredLog(request.app.state.config.workspace_path).entries))
     learning_errors = sum(bool(doc["learning"].get("error")) or bool(doc["learning"].get("failed")) for doc in docs)
     now = time.time()
-    recent = now - NEW_GROUP_DAYS * 86400
-    groups_waiting = sum(_group_needs_attention(state, key, group) for key, group in snapshot.get("groups", {}).items())
-    chatting = sorted(((c["last_seen"], c["name"] or key) for key, c in snapshot["customers"].items()
+    groups = snapshot.get("groups", {})
+    groups_waiting = sum(_group_needs_attention(state, key, group) for key, group in groups.items())
+    # Groups the bot is in that the admin has not decided on yet, newest first (custom)
+    new_groups = sorted(((group.get("joined_at") or group["first_seen"], group.get("name") or key)
+                         for key, group in groups.items() if _group_pending(group)), reverse=True)
+    chatting = sorted(((c.get("last_private_at") or 0, c["name"] or key) for key, c in snapshot["customers"].items()
                        if _chatting(key, c, now)), reverse=True)
     return {
         "bridge": channel.get_status(),
@@ -321,13 +324,16 @@ async def overview(request: Request):
         "badges": {
             "customers": sum(_needs_attention(state, key, c) for key, c in snapshot["customers"].items()),
             "knowledge": unanswered + learning_errors,
-            "groups": groups_waiting + sum(not g["allowed"] and g["first_seen"] >= recent
-                                           for g in snapshot.get("groups", {}).values()),
+            "groups": groups_waiting + len(new_groups),
             "groups_waiting": groups_waiting,  # groups handed to staff (custom): the alert counts them too
+            "groups_new": len(new_groups),  # groups waiting for a decision: until allowed or set aside
         },
-        # Who is talking to the bot right now: the page shows it on the Customers tab from any tab
+        # Who is talking to the bot right now: the page shows it on the Customers tab from any tab,
+        # and on the Groups tab the allowed groups where someone wrote just now (custom)
         "live": {"chatting": len(chatting), "names": [name for _, name in chatting[:5]],
-                 "window_s": LIVE_CHAT_SECONDS},
+                 "window_s": LIVE_CHAT_SECONDS,
+                 "groups": sum(bool(group.get("allowed")) and _group_active(group, now) for group in groups.values()),
+                 "new_groups": [name for _, name in new_groups[:5]]},
         "kb": {
             status: sum(doc["status"] == status for doc in docs)
             for status in ("published", "pending")
@@ -733,6 +739,7 @@ class GroupSettings(BaseModel):
     allowed: StrictBool | None = None
     mode: Literal["mention", "ambient"] | None = None
     name: str | None = Field(default=None, max_length=100)
+    dismissed: StrictBool | None = None  # set aside: the bot stays silent there, no longer waiting (custom)
 
 
 def _group_needs_attention(state, key, group) -> bool:
@@ -741,11 +748,23 @@ def _group_needs_attention(state, key, group) -> bool:
         entry["at"] > (group.get("escalation_cleared_at") or 0) for entry in group.get("escalations", []))
 
 
+def _group_pending(group) -> bool:
+    """The bot is in a group the admin has neither allowed nor set aside: it waits for a decision
+    (custom), however long ago the bot was added; taken out of the group, it no longer does."""
+    return not group.get("allowed") and not group.get("dismissed") and not group.get("left_at")
+
+
+def _group_active(group, now: float) -> bool:
+    """A member wrote in the group within LIVE_CHAT_SECONDS (custom)."""
+    return (group.get("last_message_at") or 0) >= now - LIVE_CHAT_SECONDS
+
+
 def _group_row(state, key, group) -> dict:
     status = state.group_status(key)
     return dict(group, id=key, status=status, escalations=len(group.get("escalations", [])),
                 paused_until=group.get("held_until") if status == "paused" else None,
-                attention=_group_needs_attention(state, key, group))
+                attention=_group_needs_attention(state, key, group),
+                pending=_group_pending(group), active=_group_active(group, time.time()))
 
 
 @router.get("/api/groups")
@@ -764,7 +783,7 @@ async def group_settings(request: Request, group_id: str, body: GroupSettings):
         raise HTTPException(400, "Invalid group id")
     if group_id not in state.snapshot().get("groups", {}):
         raise HTTPException(404, "Group not found")
-    state.set_group(group_id, allowed=body.allowed, mode=body.mode, name=body.name)
+    state.set_group(group_id, allowed=body.allowed, mode=body.mode, name=body.name, dismissed=body.dismissed)
     return {"group": _group_row(state, group_id, state.group(group_id))}
 
 

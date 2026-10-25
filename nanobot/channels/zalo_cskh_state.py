@@ -50,6 +50,9 @@ class _Customer(BaseModel):
     escalations: list[dict] = Field(default_factory=list)
     # Set by the admin's Resume: escalations before it no longer hold back a new one.
     escalation_cleared_at: float | None = None
+    # When the customer last wrote to the bot privately: a group member chatting in a group is not
+    # "chatting with the bot" on the Customers tab (custom)
+    last_private_at: float | None = None
     inbound_day: str = ""
     inbound_today: int = Field(default=0, ge=0)
     day_notice_sent: bool = False
@@ -75,6 +78,14 @@ class _Group(BaseModel):
     escalations: list[dict] = Field(default_factory=list)
     # Set by the admin's Resume, as for a customer
     escalation_cleared_at: float | None = None
+    # Zalo told the bot it was added (joined_at), by whom, or taken out (left_at)
+    joined_at: float | None = None
+    left_at: float | None = None
+    added_by: str = ""
+    # The admin set the group aside: the bot stays silent there, and it no longer waits for a decision
+    dismissed: bool = False
+    # When a member last wrote in the group: "active now" on the page
+    last_message_at: float | None = None
 
 
 class _Daily(BaseModel):
@@ -196,7 +207,8 @@ class CustomerServiceState:
                 self._minute_notice_until = before_notices
                 raise
 
-    def admit_inbound(self, sender_id: str, name: str, *, per_minute: int, per_day: int) -> tuple[bool, str | None]:
+    def admit_inbound(self, sender_id: str, name: str, *, per_minute: int, per_day: int,
+                      group: bool = False) -> tuple[bool, str | None]:
         """Persist one receive decision before publishing to the bus.
 
         Returns (allowed, notice_kind). notice_kind "paused": the customer waits for staff and
@@ -214,6 +226,8 @@ class CustomerServiceState:
                 return False, None
             customer = self._customer(sender_id, name, now)
             customer["messages_in"] += 1
+            if not group:
+                customer["last_private_at"] = now
             self._count(now, "in", sender_id)
             if status != "paused" and customer["status"] == "paused":
                 customer["status"] = "active"
@@ -261,8 +275,28 @@ class CustomerServiceState:
         """A message arrived in a group: the admin can see the group and decide to allow it."""
         def change(now):
             group = self._group(group_id, now)
+            group["last_message_at"] = now
+            group["left_at"] = None  # a message reached the bot: it is in the group
             if sender_name:
                 group["last_sender"] = sender_name
+        self._update(change)
+
+    def record_group_joined(self, group_id: str, name: str = "", added_by: str = "") -> None:
+        """Zalo says the bot was added to a group (custom): the page lists it at once, waiting for the
+        admin to allow it or set it aside. Zalo's name for it fills in a name the admin has not set."""
+        def change(now):
+            group = self._group(group_id, now)
+            group.update(joined_at=now, left_at=None)
+            if name.strip() and not group.get("name"):
+                group["name"] = name.strip()[:100]
+            if added_by.strip():
+                group["added_by"] = added_by.strip()[:100]
+        self._update(change)
+
+    def record_group_left(self, group_id: str) -> None:
+        """The bot was taken out of the group, or left it (custom): it no longer waits for a decision."""
+        def change(now):
+            self._group(group_id, now)["left_at"] = now
         self._update(change)
 
     def group_access(self, group_id: str) -> tuple[bool, str]:
@@ -273,13 +307,17 @@ class CustomerServiceState:
         return bool(group["allowed"]), group["mode"]
 
     def set_group(self, group_id: str, *, allowed: bool | None = None, mode: str | None = None,
-                  name: str | None = None) -> None:
+                  name: str | None = None, dismissed: bool | None = None) -> None:
         if mode is not None and mode not in {"mention", "ambient"}:
             raise ValueError("Invalid group mode")
         def change(now):
             group = self._group(group_id, now)
             if allowed is not None:
                 group["allowed"] = bool(allowed)
+                if allowed:
+                    group["dismissed"] = False  # allowed after all
+            if dismissed is not None:
+                group["dismissed"] = bool(dismissed)
             if mode is not None:
                 group["mode"] = mode
             if name is not None:
@@ -387,9 +425,11 @@ class CustomerServiceState:
         self._update(change)
 
     def record_inbound(self, sender_id: str, name: str = "") -> None:
+        """One message from a customer, privately."""
         def change(now):
             customer = self._customer(sender_id, name, now)
             customer["messages_in"] += 1
+            customer["last_private_at"] = now
             self._count(now, "in", sender_id)
         self._update(change)
 

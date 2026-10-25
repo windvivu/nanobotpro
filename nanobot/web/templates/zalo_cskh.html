@@ -169,7 +169,7 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
 <section id="cskh-status" class="ui-card status-bar"><div class="status-line"><div class="status-text"><p id="bridge-status"></p><p id="telegram-target"></p><p id="paused-count"></p><p id="learning-pending" hidden></p></div><div class="status-actions"><button type="button" id="sound-toggle" aria-pressed="true" title="{{ tr('cskh.sound_hint') }}">{{ tr('cskh.sound_on') }}</button><button id="pause-all">{{ tr('cskh.pause_all') }}</button></div></div>
 <div id="cskh-today" class="today"><span class="muted">{{ tr('cskh.today') }}</span><div id="daily-metrics" class="metrics"></div></div></section>
 <div id="attention-bar" class="attention-bar" role="alert" hidden><span id="attention-text"></span><button type="button" id="attention-view">{{ tr('cskh.attention_view') }}</button></div>
-<div class="page-tabs" role="tablist" aria-label="{{ tr('cskh.page_tabs') }}">{% for name, key in [('customers','tab_customers'),('knowledge','knowledge'),('groups','groups'),('settings','settings')] %}<button type="button" class="page-tab" role="tab" id="tab-{{ name }}" data-tab="{{ name }}" aria-controls="pane-{{ name }}">{{ tr('cskh.' ~ key) }}{% if name == 'customers' %}<span class="live" id="live-chatting" hidden><span class="live-dot" aria-hidden="true"></span><span id="live-count"></span></span>{% endif %}<span class="badge" data-badge="{{ name }}" hidden></span></button>{% endfor %}</div>
+<div class="page-tabs" role="tablist" aria-label="{{ tr('cskh.page_tabs') }}">{% for name, key in [('customers','tab_customers'),('knowledge','knowledge'),('groups','groups'),('settings','settings')] %}<button type="button" class="page-tab" role="tab" id="tab-{{ name }}" data-tab="{{ name }}" aria-controls="pane-{{ name }}">{{ tr('cskh.' ~ key) }}{% if name == 'customers' %}<span class="live" id="live-chatting" hidden><span class="live-dot" aria-hidden="true"></span><span id="live-count"></span></span>{% elif name == 'groups' %}<span class="live" id="live-groups" hidden><span class="live-dot" aria-hidden="true"></span><span id="live-groups-count"></span></span>{% endif %}<span class="badge" data-badge="{{ name }}" hidden></span></button>{% endfor %}</div>
 <div id="pane-customers" class="page-pane" data-pane="customers" role="tabpanel" aria-labelledby="tab-customers">
 <div class="inbox conv-closed">
 <section id="cskh-customers" class="ui-card"><h2>{{ tr('cskh.customers') }}</h2>
@@ -743,9 +743,15 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
     function renderGroups(groups) {
         const body = $('group-rows'); body.replaceChildren();
         groups.forEach(g => {
-            const label = node('div'); label.append(node('strong', g.name || g.id));
+            const label = node('div'), title = node('strong');
+            if (g.active) { const dot = node('span'); dot.className = 'live-dot'; dot.title = t('group_active'); title.append(dot, ' '); }
+            title.append(g.name || g.id); label.append(title);
             const sub = text => { const el = node('div', text); el.className = 'muted'; label.append(el); };
             if (g.name) sub(g.id);
+            if (g.pending) sub('\u{1F195} ' + t('group_pending'));  // the bot was added, nobody decided yet
+            if (g.added_by) sub(t('group_added_by').replace('{name}', g.added_by));
+            if (g.left_at) sub(t('group_left'));
+            else if (g.dismissed && !g.allowed) sub(t('group_dismissed'));
             if (g.last_sender) sub(t('last_sender').replace('{name}', g.last_sender));
             if (g.status === 'paused') {  // staff is handling the group: the bot gives way there (custom)
                 sub((g.attention ? '\u{1F514} ' : '') + (g.paused_until ? t('group_held_until').replace('{time}', fmtUntil(g.paused_until))
@@ -764,13 +770,18 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
             }));
             controls.append(button(g.allowed ? 'group_revoke' : 'group_allow', async () => {
                 await api('/groups/' + encodeURIComponent(g.id), {allowed: !g.allowed}); await refresh();
-            }), button('group_rename', async () => {
+            }));
+            if (g.pending) controls.append(button('group_dismiss', async () => {  // not served, no longer counted
+                await api('/groups/' + encodeURIComponent(g.id), {dismissed: true}); await refresh();
+            }));
+            controls.append(button('group_rename', async () => {
                 const name = await hubModal(t('group_rename'), t('group_rename_hint'), true); if (!name) return;
                 await api('/groups/' + encodeURIComponent(g.id), {name}); await refresh();
             }));
             const tr = row(body, [label, stamp(g.last_seen), g.messages_in + ' / ' + g.messages_out, mode, controls]);
             if (g.allowed) tr.classList.add('allowed');
             if (g.attention) { tr.classList.add('attention'); tr.title = t('group_waiting'); }
+            else if (g.pending) { tr.classList.add('attention'); tr.title = t('group_pending'); }
         });
         empty(body, 5);
     }
@@ -872,7 +883,7 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
     function renderBadges(badges) {
         Object.entries(badges || {}).forEach(([name, count]) => {
             const el = document.querySelector('[data-badge="' + name + '"]');
-            const bell = name === 'customers' || (name === 'groups' && badges.groups_waiting);
+            const bell = name === 'customers' || (name === 'groups' && (badges.groups_waiting || badges.groups_new));
             if (el) { el.textContent = count ? (bell ? '\u{1F514} ' : '') + count : ''; el.hidden = !count; }
         });
         // Customers, and groups, waiting for staff: red pulsing badge, red tab label (custom)
@@ -885,7 +896,10 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
     const BASE_TITLE = document.title;
     function renderLive(ov) {
         const people = (ov.badges && ov.badges.customers) || 0, groups = (ov.badges && ov.badges.groups_waiting) || 0;
-        const waiting = people + groups;  // a group handed to staff waits as a customer does (custom)
+        // A group handed to staff waits as a customer does; a group the bot was just added to waits for
+        // the admin to allow it or set it aside (custom)
+        const newGroups = (ov.badges && ov.badges.groups_new) || 0;
+        const waiting = people + groups + newGroups;
         const chatting = (ov.live && ov.live.chatting) || 0;
         if (knownWaiting !== null && waiting > knownWaiting) ting();  // not for the ones already waiting at load
         knownWaiting = waiting;
@@ -894,11 +908,20 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
         $('live-count').textContent = chatting ? String(chatting) : '';
         live.title = chatting ? t('live_chatting').replace('{n}', chatting).replace('{m}', Math.round((ov.live.window_s || 300) / 60))
             + (ov.live.names.length ? ': ' + ov.live.names.join(', ') : '') : '';
+        const activeGroups = (ov.live && ov.live.groups) || 0, liveGroups = $('live-groups');
+        liveGroups.hidden = !activeGroups;
+        $('live-groups-count').textContent = activeGroups ? String(activeGroups) : '';
+        liveGroups.title = activeGroups ? t('live_groups').replace('{n}', activeGroups)
+            .replace('{m}', Math.round((ov.live.window_s || 300) / 60)) : '';
         // Hidden on the tab that already shows all of it
-        $('attention-bar').hidden = !waiting || (pageTab === 'customers' && !groups) || (pageTab === 'groups' && !people);
-        $('attention-text').textContent = '\u{1F514} ' + (!groups ? t('attention_bar').replace('{n}', people)
-            : !people ? t('attention_bar_groups').replace('{g}', groups)
-            : t('attention_bar_both').replace('{n}', people).replace('{g}', groups));
+        $('attention-bar').hidden = !waiting || (pageTab === 'customers' && !groups && !newGroups)
+            || (pageTab === 'groups' && !people);
+        const names = (ov.live && ov.live.new_groups) || [], parts = [];
+        if (people) parts.push(t('attention_bar').replace('{n}', people));
+        if (groups) parts.push(t('attention_bar_groups').replace('{g}', groups));
+        if (newGroups) parts.push(newGroups === 1 && names.length ? t('new_group_one').replace('{name}', names[0])
+            : t('new_groups').replace('{n}', newGroups));
+        $('attention-text').textContent = '\u{1F514} ' + parts.join(' \u00b7 ');
         $('attention-bar').dataset.target = people ? 'customers' : 'groups';
         document.title = waiting ? '(' + waiting + ') \u{1F514} ' + BASE_TITLE : chatting ? '\u{1F7E2} ' + BASE_TITLE : BASE_TITLE;
     }

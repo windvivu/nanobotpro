@@ -14,6 +14,8 @@
  *     {"event":"disconnected","reason":"auth_expired"}          — server rejected the saved session, QR needed (bridge exits)
  *     {"event":"disconnected","reason":"duplicate_connection"}  — account opened in Zalo Web/PC elsewhere (bridge exits)
  *     {"event":"error",       "message":"..."}
+ *     {"event":"group_joined","groupId":"...", "groupName":"...", "addedBy":"...", "addedByName":"..."} — the bot was added to a group
+ *     {"event":"group_left",  "groupId":"..."}                                — the bot was taken out of a group, or left it
  *
  *   stdin ← Python:
  *     {"action":"send",       "threadId":"...", "threadType":"User"|"Group", "content":"..."}
@@ -416,6 +418,18 @@ async function main() {
         }
     });
 
+    // Groups (custom): the bot added to a group, or taken out of one, reaches the CSKH page at once,
+    // not when someone first writes there; whoever added it is named when Zalo says who
+    api.listener.on("group_event", async (event) => {
+        const change = normalizeGroupEvent(event, selfId);
+        if (!change) return;
+        markActivity();
+        if (change.event === "group_joined") {
+            change.addedByName = change.addedBy && change.addedBy !== selfId ? await displayNameOf(change.addedBy) : "";
+        }
+        emit(change);
+    });
+
     // ── Listen for incoming messages ──
     api.listener.on("message", (message) => {
         lastActivityAt = Date.now(); // reset idle timer on any incoming message
@@ -619,6 +633,41 @@ function normalizeFriendEvent(event, selfId) {
         : String(event.isSelf ? data?.toUid || "" : data?.fromUid || "");
     if (!userId || userId === selfId) return null;
     return { event: "friend_change", change, userId };
+}
+
+/** The bot added to a group, or taken out of one, from a zca-js 2.2.0 group event; else null (custom).
+ * Our own id among the members the event updates decides, not isSelf: zca-js also sets isSelf for a
+ * member the bot's account added. GroupEventType values are compared as strings. */
+function normalizeGroupEvent(event, selfId) {
+    const data = event && event.data;
+    const groupId = String((event && event.threadId) || (data && data.groupId) || "");
+    if (!groupId || !data || !Array.isArray(data.updateMembers)) return null;
+    if (!data.updateMembers.some(member => member && String(member.id) === selfId)) return null;
+    if (event.type === "join") {
+        return { event: "group_joined", groupId, groupName: String(data.groupName || ""), addedBy: String(data.sourceId || "") };
+    }
+    if (event.type === "leave" || event.type === "remove_member" || event.type === "block_member") {
+        return { event: "group_left", groupId };
+    }
+    return null;
+}
+
+/** A Zalo user's display name, or "" when the lookup fails or takes over 5 s (custom). */
+async function displayNameOf(userId) {
+    if (!api || typeof api.getUserInfo !== "function") return "";
+    let timer = null;
+    try {
+        const late = new Promise(resolve => { timer = setTimeout(() => resolve(null), 5000); });
+        const info = await Promise.race([api.getUserInfo(userId), late]);
+        const profiles = (info && info.changed_profiles) || {};
+        const profile = profiles[userId] || profiles[`${userId}_0`] || Object.values(profiles)[0];
+        return String((profile && (profile.displayName || profile.zaloName)) || "");
+    } catch (err) {
+        logErr(`Could not look up who added the bot to a group: ${err.message}`);
+        return "";
+    } finally {
+        clearTimeout(timer);
+    }
 }
 
 /** Tell Python how a send command ended (only commands that asked for an ack). */
