@@ -52,6 +52,12 @@ def _is_mentioned(content: str, bot_user_id: str, bot_name: str,
     return False
 
 
+def _group_words(text: str, quoted: str | None) -> dict[str, str]:
+    """A customer service group member's own words and the message they answer, kept apart for the
+    CSKH page: it never reads them back out of the text the model gets (custom, review 15 #6)."""
+    return {"_text": text, **({"_quote": quoted[:300]} if quoted else {})}
+
+
 def _strip_mention(content: str, bot_name: str) -> str:
     """Remove leading @mention of the bot from message content."""
     if not bot_name:
@@ -85,9 +91,8 @@ CSKH_TEXT_MAX_CHARS = 2000
 CSKH_TEXT_CUT_NOTE = " [message cut at 2000 characters]"
 CSKH_IMAGE_MAX_BYTES = 5 * 1024 * 1024
 CSKH_IMAGES_PER_DAY = 20
-CSKH_GROUP_NOTE = ("[GROUP — this is a Zalo group, not a private chat. Handoff to staff is not "
-                   "available here: if someone needs a person, ask them to message you privately. "
-                   "Keep answers short; do not address other members' private matters.]")
+CSKH_GROUP_NOTE = ("[GROUP — this is a Zalo group, not a private chat. Keep answers short; do not address "
+                   "other members' private matters.]")
 
 # Lists are in "plain" form: lowercase, accents and đ removed (see _plain), so "cảm ơn" and "cam on" match
 _ASK_WORDS = (
@@ -555,6 +560,63 @@ class ZaloPersonalChannel(BaseChannel):
                     chunks.append(chunk)
         return b"".join(chunks)
 
+    async def _download_inbound_media(self, thread_id: str, sender_id: str, media_url: str | None,
+                                      media_type: str | None) -> list[str]:
+        """Save what a customer sent to <media dir>/zalo/<thread>_<ms>.<ext>; [] when there is nothing,
+        the daily picture allowance is spent, or the download failed (the text still goes on).
+        A picture Zalo calls a "file" is named by its bytes (.jpg, .png...): the CSKH page shows it (custom)."""
+        if not media_url:
+            return []
+        # A picture counts against the daily allowance only once it is going to be fetched: one
+        # the group filter dropped costs nothing (review 13 B5)
+        if self._customer_service_enabled and not self._get_customer_state().admit_image(
+                sender_id, per_day=CSKH_IMAGES_PER_DAY):
+            logger.info("[Zalo] customerService: picture from {} dropped, daily allowance spent", sender_id)
+            return []
+        try:
+            from nanobot.config.paths import get_media_dir
+            from nanobot.utils.helpers import detect_image_mime
+            ext_map = {
+                "photo": ".jpg", "gif": ".gif", "video": ".mp4",
+                "voice": ".ogg", "sticker": ".png", "file": ".bin",
+            }
+            data = await self._fetch_media(
+                media_url, max_bytes=CSKH_IMAGE_MAX_BYTES if self._customer_service_enabled else None)
+            ext = ext_map.get(media_type or "", ".bin")
+            if ext == ".bin" and (mime := detect_image_mime(data[:16])):
+                ext = {"image/jpeg": ".jpg"}.get(mime, "." + mime.partition("/")[2])
+            media_dir = get_media_dir("zalo")
+            media_dir.mkdir(parents=True, exist_ok=True)
+            file_path = media_dir / f"{thread_id}_{int(time.time() * 1000)}{ext}"
+            await asyncio.to_thread(file_path.write_bytes, data)
+            logger.info("[Zalo] Downloaded {} → {}", media_type, file_path.name)
+            return [str(file_path)]
+        except Exception as e:
+            logger.warning("[Zalo] Failed to download media: {}", e)
+            return []
+
+    async def _hold_group_message(self, thread_id: str, sender_id: str, sender_name: str, content: str,
+                                  quoted_content: str | None, media_url: str | None, media_type: str | None,
+                                  *, mentioned: bool) -> None:
+        """A group message kept for staff, without a bot turn (custom): the group's conversation on the
+        CSKH page shows it with who wrote it, what it answers, and its picture. One not addressed to
+        the bot is for staff only: the model does not read it after Resume either, as it would not
+        have outside the hold (review 15 #1)."""
+        text = _strip_mention(content, self._user_name) if content else ""
+        if len(text) > CSKH_TEXT_MAX_CHARS:
+            text = text[:CSKH_TEXT_MAX_CHARS] + CSKH_TEXT_CUT_NOTE
+        content = f"[Quoted: \"{quoted_content}\"]\n\n{text}" if quoted_content else text
+        media = await self._download_inbound_media(thread_id, sender_id, media_url, media_type)
+        if not content and not media:
+            return
+        self._known_thread_types[thread_id] = "Group"
+        await self._handle_message(
+            sender_id=sender_id, chat_id=thread_id, content=content, media=media or None,
+            metadata={"thread_type": "Group", "sender_name": sender_name, "_held": True, "_cskh_group": True,
+                      **_group_words(text, quoted_content), **({} if mentioned else {"_staff_only": True})},
+            session_key=f"zalo:{thread_id}",
+        )
+
     async def send(self, msg: OutboundMessage) -> None:
         """Send a message through Zalo.
 
@@ -619,7 +681,7 @@ class ZaloPersonalChannel(BaseChannel):
 
         # ── Rate limiting: prevent runaway send loops ──────────────────
         chat_id = msg.chat_id
-        await self._take_send_slot(chat_id)
+        await self._take_send_slot(chat_id, staff=bool(msg.metadata.get("_staff_reply")))
         now = time.monotonic()
         if test_customer:
             self._deliver_to_test_customer(msg)  # the dashboard stands in for the bridge
@@ -644,6 +706,8 @@ class ZaloPersonalChannel(BaseChannel):
             return not allowed
 
         if group_blocked():
+            if confirm:  # staff on the CSKH page must not be told it went out (custom)
+                raise RuntimeError("Zalo group is not allowed")
             return
         if thread_type == "Group":
             # The bot is talking in this group: the small-talk rules stand down for a while (custom)
@@ -673,6 +737,8 @@ class ZaloPersonalChannel(BaseChannel):
         if msg.media:
             for media_path in msg.media:
                 if group_blocked():
+                    if confirm:
+                        raise RuntimeError("Zalo group is not allowed")
                     break
                 media_type = self._detect_media_type(media_path)
                 try:
@@ -689,6 +755,8 @@ class ZaloPersonalChannel(BaseChannel):
                 except TimeoutError:
                     logger.error("[Zalo] No delivery ack within {}s for {} — not retrying (upload may still finish)",
                                  self.MEDIA_ACK_TIMEOUT_S, Path(media_path).name)
+                    if confirm:  # staff sending a picture must not be told it went out (custom)
+                        raise
                 except Exception as e:
                     logger.warning("[Zalo] Failed to queue media {}: {}", media_path, e)
                     raise
@@ -707,11 +775,12 @@ class ZaloPersonalChannel(BaseChannel):
         # Real message sent — reset hint tracker so next turn can send a new hint
         self._hint_sent.discard(chat_id)
 
-    async def _take_send_slot(self, chat_id: str) -> None:
+    async def _take_send_slot(self, chat_id: str, *, staff: bool = False) -> None:
         """Count one send to chat_id under the rate limit, waiting for a slot when the window is full
         (custom). Failing instead let the manager's retries (1, 2, 4 s) run out before a 10 s window
         freed up, so a burst at the wrong moment was lost for good. A send loop is still refused: a
-        chat that already got _send_loop_per_minute messages in the last minute raises as before."""
+        chat that already got _send_loop_per_minute messages in the last minute raises as before.
+        A staff reply (a person, a text and up to 5 pictures) only waits: it is never a loop."""
         async with self._send_locks.setdefault(chat_id, asyncio.Lock()):
             while True:
                 now = time.monotonic()
@@ -721,7 +790,7 @@ class ZaloPersonalChannel(BaseChannel):
                 if len(in_window) < self._max_sends_per_window:
                     recent.append(now)
                     return
-                if len(recent) >= self._send_loop_per_minute:
+                if len(recent) >= self._send_loop_per_minute and not staff:
                     logger.warning("Zalo rate limit: {} msgs to {} in 60s, a send loop? Dropping message",
                                    len(recent), chat_id)
                     raise RuntimeError(f"Zalo rate limit: {len(recent)} messages in 60s for {chat_id}")
@@ -1430,7 +1499,7 @@ class ZaloPersonalChannel(BaseChannel):
             if self._customer_service_enabled and thread_type == "Group":
                 # A group is served only once the admin allows it on the dashboard; until then
                 # it is only recorded so it can be allowed. Members still count as customers
-                # (own quotas, block), the group has a daily cap, nothing is held for staff.
+                # (own quotas, block), and the group has a daily cap.
                 state = self._get_customer_state()
                 if not valid_group_id(thread_id):
                     logger.warning("[Zalo] customerService: group id rejected ({} chars)", len(str(thread_id)))
@@ -1443,18 +1512,27 @@ class ZaloPersonalChannel(BaseChannel):
                 if not self.is_allowed(sender_id) or sender_id == thread_id:
                     logger.info("[Zalo] customerService: group message from {} not admitted (allowFrom)", sender_id)
                     return
-                accepted, _notice = state.admit_inbound(
+                accepted, notice = state.admit_inbound(
                     sender_id, sender_name,
                     per_minute=self.customer_service.inbound_per_minute,
                     per_day=self.customer_service.inbound_per_day,
                 )
-                if not accepted:
+                if not accepted and notice != "paused":  # blocked, or over the member's own quota
                     logger.info("[Zalo] customerService: group message from {} dropped ({})", sender_id,
                                 state.customer_status(sender_id))
                     return
                 if not state.admit_group_inbound(thread_id, sender_name,
                                                  per_day=self.customer_service.inbound_per_day * GROUP_DAY_FACTOR):
                     logger.info("[Zalo] customerService: group {} over its daily cap", thread_id)
+                    return
+                if not accepted or state.group_status(thread_id) == "paused":
+                    # Staff handles this group, everything is paused, or this member waits for staff:
+                    # the bot stays quiet, and every message is kept where staff reads the group,
+                    # @mentioned or not: an answer to staff seldom mentions the bot (custom)
+                    await self._hold_group_message(
+                        thread_id, sender_id, sender_name, content, quoted_content, media_url, media_type,
+                        mentioned=_is_mentioned(content, self._user_id, self._user_name, mentioned_ids,
+                                                quoted_sender_id))
                     return
             elif self._customer_service_enabled:
                 if not self.is_allowed(sender_id):
@@ -1468,11 +1546,13 @@ class ZaloPersonalChannel(BaseChannel):
                 )
                 if not allowed:
                     if notice == "paused":
-                        if content:
-                            # Waiting for staff: the bot stays quiet, but what the customer writes
-                            # must reach the conversation the staff member reads on the dashboard.
+                        # Waiting for staff: the bot stays quiet, but what the customer writes, and
+                        # the pictures they send (often what staff just asked for), must reach the
+                        # conversation the staff member reads on the dashboard (custom)
+                        held_media = await self._download_inbound_media(thread_id, sender_id, media_url, media_type)
+                        if content or held_media:
                             await self._handle_message(
-                                sender_id=sender_id, chat_id=thread_id, content=content,
+                                sender_id=sender_id, chat_id=thread_id, content=content, media=held_media or None,
                                 metadata={"thread_type": "User", "sender_name": sender_name, "_held": True},
                                 session_key=f"zalo:{thread_id}",
                             )
@@ -1536,35 +1616,7 @@ class ZaloPersonalChannel(BaseChannel):
                         filter_note = reason
 
             # ── Download media if present (after the group filter: a skipped message downloads nothing) ──
-            media_paths: list[str] = []
-            # A picture counts against the daily allowance only once it is going to be fetched: one
-            # the group filter dropped costs nothing (review 13 B5)
-            if (media_url and self._customer_service_enabled
-                    and not self._get_customer_state().admit_image(sender_id, per_day=CSKH_IMAGES_PER_DAY)):
-                logger.info("[Zalo] customerService: picture from {} dropped, daily allowance spent", sender_id)
-                media_url = None
-            if media_url:
-                try:
-                    import time as _time
-
-                    from nanobot.config.paths import get_media_dir
-                    ext_map = {
-                        "photo": ".jpg", "gif": ".gif", "video": ".mp4",
-                        "voice": ".ogg", "sticker": ".png", "file": ".bin",
-                    }
-                    ext = ext_map.get(media_type or "", ".bin")
-                    media_dir = get_media_dir("zalo")
-                    media_dir.mkdir(parents=True, exist_ok=True)
-                    unique_id = f"{thread_id}_{int(_time.time() * 1000)}"
-                    file_path = media_dir / f"{unique_id}{ext}"
-                    data = await self._fetch_media(
-                        media_url, max_bytes=CSKH_IMAGE_MAX_BYTES if self._customer_service_enabled else None)
-                    await asyncio.to_thread(file_path.write_bytes, data)
-                    media_paths.append(str(file_path))
-                    logger.info("[Zalo] Downloaded {} → {}", media_type, file_path.name)
-                except Exception as e:
-                    logger.warning("[Zalo] Failed to download media: {}", e)
-                    # Continue — still forward any text content if present
+            media_paths = await self._download_inbound_media(thread_id, sender_id, media_url, media_type)
 
             session_key = f"zalo:{thread_id}"
 
@@ -1615,7 +1667,7 @@ class ZaloPersonalChannel(BaseChannel):
                     "group_ambient": group_ambient,
                     # Customer service admitted this group (allowed on the dashboard): the bus-level
                     # public gate lets it through on this marker, which only the channel sets
-                    **({"_cskh_group": True} if cskh_group_mode else {}),
+                    **({"_cskh_group": True, **_group_words(content, quoted_content)} if cskh_group_mode else {}),
                     # Group filter in "log": what it would have done, scored in send() against the answer
                     **({"group_filter": filter_note, "group_filter_preview": content[:60]} if filter_note else {}),
                 },

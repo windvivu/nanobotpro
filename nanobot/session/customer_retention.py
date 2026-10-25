@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import stat
 from collections.abc import Callable, Collection
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -36,6 +37,7 @@ class CustomerSessionRetention:
         # The Zalo channel's media folder, set by the gateway only: without it no picture is ever removed,
         # so a test or a tool building this class cannot reach a real folder (custom)
         self.get_media_dir = get_media_dir
+        self._media_due: tuple[datetime, dict[str, float]] | None = None  # for run(), off the event loop
 
     @staticmethod
     def _utc(value: datetime) -> datetime:
@@ -78,11 +80,12 @@ class CustomerSessionRetention:
         return None
 
     def sweep(self, *, now: datetime | None = None,
-              active_keys: Collection[str] = ()) -> int:
+              active_keys: Collection[str] = (), pictures: bool = True) -> int:
         """Run on the agent event loop, with no await between scan and deletion.
 
         Unknown/corrupt files and active sessions are preserved. Active sessions
-        may temporarily put storage over the cap until a later sweep.
+        may temporarily put storage over the cap until a later sweep. pictures=False
+        leaves the picture pass to the caller (run() does it in a thread, custom).
         """
         if not self.enabled:
             return 0
@@ -126,7 +129,7 @@ class CustomerSessionRetention:
         excess = max(0, len(remaining) - self.max_sessions)
         capped = [key for _, key in remaining if key not in active_keys][:excess]
         deleted = 0
-        removed_customers: set[str] = set()
+        removed_customers: dict[str, float] = {}  # principal -> when its removed session last changed
         for key in sorted(expired | set(capped)):
             paths = candidates[key][1]
             try:
@@ -148,25 +151,29 @@ class CustomerSessionRetention:
                 self.sessions.invalidate(key)
                 deleted += 1
                 if key.startswith("zalo:"):
-                    removed_customers.add(key.partition(":")[2])
+                    removed_customers[key.partition(":")[2]] = candidates[key][0].timestamp()
             except (OSError, ValueError):
                 logger.exception("Customer retention could not remove a session")
-        pictures = self._sweep_media(cutoff, removed_customers)
-        logger.info("Customer retention: removed {} sessions and {} pictures; preserved {} unrecognized files",
-                    deleted, pictures, len(invalid))
+        logger.info("Customer retention: removed {} sessions; preserved {} unrecognized files",
+                    deleted, len(invalid))
+        if pictures:
+            self._sweep_media(cutoff, removed_customers)
+        else:
+            self._media_due = cutoff, removed_customers
         return deleted
 
-    def _sweep_media(self, cutoff: datetime, removed_customers: set[str]) -> int:
-        """Pictures customers sent (custom): those of a customer removed above, and any older than the
-        retention days. Only files named as the channel names them, directly in its media folder."""
+    def _sweep_media(self, cutoff: datetime, removed_customers: dict[str, float]) -> int:
+        """Pictures customers sent, or staff sent them (custom): any older than the retention days,
+        and those of a customer whose session was removed above, up to when that session last changed
+        (a picture they send on coming back is newer, and stays). Only files named as the channel names
+        them, directly in its media folder; one lstat per file, as the folder holds months of pictures."""
         if self.get_media_dir is None:
             return 0
         try:
             media = self.get_media_dir()
             if media is None or not media.is_dir():
                 return 0
-            root = media.resolve()
-            entries = list(root.iterdir())
+            entries = list(media.resolve().iterdir())  # direct children of the real folder
         except OSError:
             logger.exception("Customer retention could not read the media folder")
             return 0
@@ -174,14 +181,20 @@ class CustomerSessionRetention:
         removed = 0
         for path in entries:
             match = self.MEDIA_NAME.fullmatch(path.name)
+            if not match:
+                continue
             try:
-                if not match or path.is_symlink() or not path.is_file() or path.resolve().parent != root:
+                info = path.lstat()
+                if not stat.S_ISREG(info.st_mode):  # a link or a folder is never followed or removed
                     continue
-                if match["principal"] in removed_customers or path.stat().st_mtime < oldest:
+                last_change = removed_customers.get(match["principal"])
+                if info.st_mtime < oldest or (last_change is not None and info.st_mtime <= last_change):
                     path.unlink()
                     removed += 1
             except OSError:
                 logger.exception("Customer retention could not remove a picture")
+        if removed:
+            logger.info("Customer retention: removed {} pictures", removed)
         return removed
 
     async def run(self, active_keys: Callable[[], Collection[str]]) -> None:
@@ -189,7 +202,11 @@ class CustomerSessionRetention:
             return
         while True:
             try:
-                self.sweep(active_keys=active_keys())
+                self.sweep(active_keys=active_keys(), pictures=False)
+                if self._media_due is not None:
+                    # Months of pictures: listed and removed in a thread, not on the agent loop (custom)
+                    due, self._media_due = self._media_due, None
+                    await asyncio.to_thread(self._sweep_media, *due)
             except Exception:
                 logger.exception("Customer retention sweep failed; will retry next day")
             await asyncio.sleep(self.INTERVAL_SECONDS)

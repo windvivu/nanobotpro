@@ -142,7 +142,7 @@ async def health(request: Request):
         turns = _fleet_turns(request)
         if turns is not None and getattr(gateway, "fleet_via_bus", True):
             payload["fleet_protocol_version"] = PROTOCOL_VERSION
-            payload["fleet_capabilities"] = ["inbox"]
+            payload["fleet_capabilities"] = ["inbox", "ack"]
             payload["fleet_channel"] = turns.channel_status()
         return JSONResponse(payload)
     except Exception as e:
@@ -486,11 +486,10 @@ async def _fleet_turn_over_bus(turns, body: dict, from_bot: str, content: str, s
     fleet_id: the fleet asking; its events go only to that fleet's inbox (plan 3.3.1)."""
     import uuid
 
-    from nanobot.fleet.turns import TurnConflict
+    from nanobot.fleet.turns import FleetTurnResult, TurnConflict
 
     mode = body.get("mode") or "sync"
-    if mode != "sync":
-        # ack comes with the inbox (plan P2); /api/health does not offer it yet
+    if mode not in ("sync", "ack"):
         return JSONResponse({"ok": False, "error": f"mode '{mode}' is not supported"}, status_code=400)
     turn_id = body.get("turn_id")
     if turn_id is None:
@@ -503,7 +502,7 @@ async def _fleet_turn_over_bus(turns, body: dict, from_bot: str, content: str, s
     principal = body.get("principal") if isinstance(body.get("principal"), dict) else None
 
     try:
-        result = await turns.submit(content=content, from_bot=from_bot, session_key=session_key,
+        result = await turns.submit(content=content, from_bot=from_bot, session_key=session_key, mode=mode,
                                     turn_id=turn_id, principal=principal, timeout=timeout, fleet_id=fleet_id)
     except TurnConflict:
         return JSONResponse({"ok": False, "error": "turn_id_conflict", "turn_id": turn_id}, status_code=409)
@@ -518,9 +517,13 @@ async def _fleet_turn_over_bus(turns, body: dict, from_bot: str, content: str, s
         return JSONResponse({"ok": False, "error": "Fleet message request cancelled", "turn_id": turn_id},
                             status_code=499)
 
+    if mode == "ack" and not FleetTurnResult.is_terminal(result.state):
+        # The turn runs on; everything it sends reaches Fleet Manager's inbox (plan 3.3.5, P2)
+        logger.info("[Fleet] Accepted turn {} from '{}' ({})", turn_id, from_bot, result.state)
+        return JSONResponse({"ok": True, "turn_id": turn_id, "state": result.state}, status_code=202)
     if result.state == "completed":
         logger.info("[Fleet] Reply to '{}': {}", from_bot, result.response[:100] if result.response else "(empty)")
-        return JSONResponse({"ok": True, "turn_id": turn_id, "response": result.response})
+        return JSONResponse({"ok": True, "turn_id": turn_id, "state": "completed", "response": result.response})
     if result.state == "cancelled":
         return JSONResponse({"ok": False, "error": "Turn cancelled", "turn_id": turn_id}, status_code=499)
     return JSONResponse({"ok": False, "error": result.error or "Turn failed", "turn_id": turn_id}, status_code=500)

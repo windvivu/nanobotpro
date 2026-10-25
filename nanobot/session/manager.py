@@ -44,7 +44,9 @@ class Session:
 
     def get_history(self, max_messages: int = 500) -> list[dict[str, Any]]:
         """Return unconsolidated messages for LLM input, aligned to a legal tool-call boundary."""
-        unconsolidated = self.messages[self.last_consolidated:]
+        # Custom (customer service): a group message kept for staff while they handle the group, and not
+        # addressed to the bot, is for the CSKH page only; the model never reads it (review 15 #1)
+        unconsolidated = [m for m in self.messages[self.last_consolidated:] if not m.get("staff_only")]
         sliced = unconsolidated[-max_messages:]
 
         # Avoid starting mid-turn when possible.

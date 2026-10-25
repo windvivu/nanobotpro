@@ -87,7 +87,11 @@ DISTILL_TIMEOUT_S = 8
 PUBLIC_BATCH_MAX_CHARS = 4000  # a merged customer turn (debounce) is cut here (custom)
 DISTILL_WORDS = 100  # a message longer than this is read for its question; shorter ones use head and tail
 # Customer service in a Zalo group: staff cannot take over there (custom)
-GROUP_HANDOFF_TEXT = "Trong nhóm em chưa thể chuyển nhân viên. Anh/chị nhắn riêng cho em để được hỗ trợ tiếp ạ."
+
+
+# A promise of a handoff in a group message that did not mention the bot: no handoff comes of it
+# (custom, review 15 #5), so the member is told how to get one
+GROUP_MENTION_TEXT = "Anh/chị gắn thẻ em (@) trong tin nhắn để em chuyển nhân viên hỗ trợ ạ."
 
 
 class _LoopHook(AgentHook):
@@ -105,6 +109,8 @@ class _LoopHook(AgentHook):
         message_id: str | None = None,
         message_metadata: dict | None = None,
         session_key: str | None = None,
+        sender_id: str | None = None,
+        sender_name: str | None = None,
     ) -> None:
         super().__init__(reraise=True)
         self._loop = agent_loop
@@ -116,6 +122,9 @@ class _LoopHook(AgentHook):
         self._message_id = message_id
         self._message_metadata = message_metadata
         self._session_key = session_key
+        # Who wrote: in a group not the chat, and the escalate tool hands the group over for them (custom)
+        self._sender_id = sender_id
+        self._sender_name = sender_name
         self._stream_buf = ""
         self._held = ""  # streamed text not yet forwarded: it may still turn out to be the silent marker
 
@@ -170,6 +179,8 @@ class _LoopHook(AgentHook):
             self._message_id,
             self._message_metadata,
             session_key=self._session_key,
+            sender_id=self._sender_id,
+            sender_name=self._sender_name,
         )
 
     async def after_iteration(self, context: AgentHookContext) -> None:
@@ -883,8 +894,10 @@ class AgentLoop:
                     if name == "message":
                         tool.set_context(channel, chat_id, message_id, metadata)
                     elif name == "escalate":
+                        # ambient: a group message that did not mention the bot (custom, review 15 #5)
                         tool.set_context(channel, chat_id, session_key=session_key,
-                                         sender_id=sender_id, sender_name=sender_name)
+                                         sender_id=sender_id, sender_name=sender_name,
+                                         ambient=bool((metadata or {}).get("group_ambient")))
                     elif name in ("spawn", "long_task", "complete_goal", "my"):  # spawn, my: custom
                         tool.set_context(channel, chat_id, session_key=session_key)
                     else:
@@ -970,20 +983,23 @@ class AgentLoop:
         """
         if not getattr(self, "public_customer_mode", False) or msg.channel != "zalo":
             return None
-        if (msg.metadata or {}).get("thread_type") == "Group":
-            # No handoff in a group (review 12 #4): a promise of one, or a request for a person,
-            # is answered with the way to get one
-            from nanobot.agent.handoff_claims import asks_for_human, claims_handoff
-            if asks_for_human(msg.content) or claims_handoff(final_content):
-                return GROUP_HANDOFF_TEXT
-            return None
-        tool = self.tools.get("escalate")
+        from nanobot.agent.context import strip_channel_notes
+        from nanobot.agent.handoff_claims import asks_for_human, claims_handoff
         message_tool = self.tools.get("message")
+        if (msg.metadata or {}).get("group_ambient"):
+            # A group is handed over as a whole (custom), and only for a message to the bot: members
+            # also talk to each other there, and the tool refuses this turn (review 15 #5). A promise
+            # of a handoff here is answered with the way to get one.
+            if getattr(message_tool, "_sent_in_turn", False) or not claims_handoff(final_content):
+                return None
+            return GROUP_MENTION_TEXT
+        tool = self.tools.get("escalate")
         if tool is None or "escalate" in (tools_used or []) or getattr(message_tool, "_sent_in_turn", False):
             return None
-        from nanobot.agent.handoff_claims import asks_for_human, claims_handoff
-        asked = " ".join(str(msg.content or "").split())[:300]
-        if asks_for_human(msg.content):
+        # What the customer wrote, without the notes the channel puts first ([GROUP ...], a quote)
+        words = strip_channel_notes(msg.content if isinstance(msg.content, str) else str(msg.content or ""))
+        asked = words[:300]
+        if asks_for_human(words):
             # The customer plainly asked for a person and the model did not pass it on.
             reason, why = "human_requested", "Khách yêu cầu gặp người nhưng bot không gọi công cụ chuyển tiếp; hệ thống tự chuyển. "
         elif claims_handoff(final_content):
@@ -1348,6 +1364,8 @@ class AgentLoop:
         chat_id: str = "direct",
         message_id: str | None = None,
         message_metadata: dict | None = None,
+        sender_id: str | None = None,
+        sender_name: str | None = None,
     ) -> tuple[str | None, list[str], list[dict], str | None]:
         """Run the agent iteration loop via AgentRunner + _LoopHook.
 
@@ -1369,6 +1387,8 @@ class AgentLoop:
             message_id=message_id,
             message_metadata=message_metadata,
             session_key=session.key if session else None,
+            sender_id=sender_id,
+            sender_name=sender_name,
         )
         hook: AgentHook = (
             _LoopHookChain(loop_hook, self._extra_hooks)
@@ -1525,22 +1545,34 @@ class AgentLoop:
                 # session key of the chat it came from, but never merges into a person's message (custom)
                 same_kind = (next_msg.channel == "system") == (msg.channel == "system")
                 # A message kept for staff (_held, customer service) never merges with one the
-                # bot answers: the batch takes the first message's metadata (custom)
-                same_hold = bool((next_msg.metadata or {}).get("_held")) == bool((msg.metadata or {}).get("_held"))
+                # bot answers, nor one for staff only with one the bot reads later (review 15 #1):
+                # the batch takes the first message's metadata (custom)
+                same_hold = all(bool((next_msg.metadata or {}).get(key)) == bool((msg.metadata or {}).get(key))
+                                for key in ("_held", "_staff_only"))
                 if next_msg.session_key == msg.session_key and same_kind and same_hold:
                     batched.append(next_msg)
+                    deadline = time.monotonic() + debounce_s
+                elif next_msg.session_key == msg.session_key:
+                    # Same chat, but it may not merge: the batch so far goes first, so the chat's
+                    # messages keep their order (custom, review 15: a message for staff only was
+                    # saved before the one it followed)
+                    self._dispatch_batch(batched)
+                    msg, batched = next_msg, [next_msg]
                     deadline = time.monotonic() + debounce_s
                 else:
                     # Different session: dispatch separately
                     self._dispatch_task(next_msg)
 
-            # Merge batched messages and dispatch
-            if len(batched) > 1:
-                merged = self._cap_public_batch(self._merge_batched(batched))
-                logger.info("[Debounce] Batched {} messages for {}", len(batched), msg.session_key)
-                self._dispatch_task(merged)
-            else:
-                self._dispatch_task(msg)
+            self._dispatch_batch(batched)
+
+    def _dispatch_batch(self, batched: list[InboundMessage]) -> None:
+        """Merge what debounce batched for one chat, and dispatch it."""
+        if len(batched) > 1:
+            merged = self._cap_public_batch(self._merge_batched(batched))
+            logger.info("[Debounce] Batched {} messages for {}", len(batched), batched[0].session_key)
+            self._dispatch_task(merged)
+        else:
+            self._dispatch_task(batched[0])
 
     async def _run_priority(self, msg: InboundMessage, raw: str) -> None:
         """Run a priority command (/stop, /restart) at once; a fleet one ends its turn (custom)."""
@@ -1596,6 +1628,14 @@ class AgentLoop:
             for m in batched
         ]
         metadata = dict(first.metadata or {})
+        # The first part's own words are not all of the turn's: the CSKH page gets each part's, with
+        # its sender and quote, never parsed back out of the merged text (custom, review 15)
+        metadata.pop("_text", None)
+        metadata.pop("_quote", None)
+        if all(isinstance((m.metadata or {}).get("_text"), str) for m in batched):
+            metadata["_parts"] = [{"sender": name(m) or m.sender_id, "text": m.metadata["_text"],
+                                   **({"quote": str(m.metadata["_quote"])} if m.metadata.get("_quote") else {})}
+                                  for m in batched]
         if several:
             senders: list[str] = []
             for m in batched:
@@ -1837,6 +1877,50 @@ class AgentLoop:
         )
 
     @staticmethod
+    def _group_line_fields(msg: InboundMessage) -> dict[str, Any]:
+        """What the CSKH page shows of a customer service group message, kept on its session line
+        (custom): who wrote it, their own words, the message it answers; and staff_only for one kept
+        while staff handled the group and not addressed to the bot, which get_history skips (review
+        15 #1). The saved line drops the runtime context that names the sender, and get_history copies
+        a fixed set of keys, so the model never reads these back. Several senders merged: each part
+        already starts with its sender's name, and the page reads the parts from the content."""
+        meta = msg.metadata or {}
+        if not meta.get("_cskh_group"):
+            return {}
+        fields: dict[str, Any] = {"staff_only": True} if meta.get("_staff_only") else {}
+        if isinstance(meta.get("_parts"), list):  # a merged turn: each part as its member wrote it
+            fields["parts"] = [{"sender": str(part.get("sender") or "")[:100], "text": str(part.get("text") or ""),
+                                **({"quote": str(part["quote"])[:300]} if part.get("quote") else {})}
+                               for part in meta["_parts"][:20] if isinstance(part, dict)]
+            return fields
+        if meta.get("senders"):
+            return fields
+        if meta.get("sender_name"):
+            fields["sender_name"] = str(meta["sender_name"])[:100]
+        if isinstance(meta.get("_text"), str):
+            fields["text"] = meta["_text"]
+        if meta.get("_quote"):
+            fields["quote"] = str(meta["_quote"])[:300]
+        return fields
+
+    @staticmethod
+    def _held_content(msg: InboundMessage) -> str | list[dict[str, str]]:
+        """A message kept for staff, stored as a turn stores one (custom): each picture as
+        "[image: <saved file>]" before the text, so the CSKH page draws it; other media as "[file: ...]"."""
+        from nanobot.utils.helpers import detect_image_mime
+        blocks = []
+        for path in msg.media or []:
+            try:
+                with open(path, "rb") as stream:
+                    picture = detect_image_mime(stream.read(16)) is not None
+            except OSError:
+                continue
+            blocks.append({"type": "text", "text": image_placeholder_text(path) if picture else f"[file: {path}]"})
+        if not blocks:
+            return msg.content
+        return blocks + ([{"type": "text", "text": msg.content}] if msg.content else [])
+
+    @staticmethod
     def _image_placeholder(block: dict[str, Any]) -> dict[str, str]:
         """Convert an inline image block into a compact text placeholder."""
         path = (block.get("_meta") or {}).get("path", "")
@@ -1978,8 +2062,8 @@ class AgentLoop:
             self.sessions.save(session)
         if self.public_customer_mode and msg.metadata.get("_held"):
             # Custom (customer service): the customer is waiting for staff. Keep what they
-            # wrote where staff reads it; the bot does not answer.
-            session.add_message("user", msg.content)
+            # wrote, and the pictures they sent, where staff reads it; the bot does not answer.
+            session.add_message("user", self._held_content(msg), **self._group_line_fields(msg))
             self.sessions.save(session)
             return None
         session, _compact_summary = self.auto_compact.prepare_session(session, key)
@@ -2054,6 +2138,8 @@ class AgentLoop:
                 chat_id=msg.chat_id,
                 message_id=msg.metadata.get("message_id"),
                 message_metadata=msg.metadata,
+                sender_id=msg.sender_id,
+                sender_name=msg.metadata.get("sender_name"),
             )
         finally:
             held = holder.end(hold) if hold is not None else None
@@ -2093,6 +2179,10 @@ class AgentLoop:
                           and not entry.get("tool_calls") and str(entry.get("content") or "").strip()), None)
             if reply is not None:
                 reply["hold"] = held
+        if fields := self._group_line_fields(msg):
+            entry = next((entry for entry in all_msgs[1 + len(history):] if entry.get("role") == "user"), None)
+            if entry is not None:
+                entry.update(fields)
 
         self._save_turn(session, all_msgs, 1 + len(history))
         self._clear_runtime_checkpoint(session)

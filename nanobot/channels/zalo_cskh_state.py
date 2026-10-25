@@ -23,7 +23,9 @@ from pydantic import BaseModel, ConfigDict, Field
 TEST_CUSTOMER_PREFIX = "test-"
 
 
-_GROUP_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+# No "_": a group's pictures are named <id>_<ms>.<ext>, and the page and the retention sweep split
+# the id off at the first "_" (review 15 #4)
+_GROUP_ID = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 
 
 def valid_group_id(group_id) -> bool:
@@ -68,6 +70,11 @@ class _Group(BaseModel):
     mode: Literal["mention", "ambient"] = "mention"
     inbound_day: str = ""
     inbound_today: int = Field(default=0, ge=0)
+    # Staff is handling the group (a reply from the CSKH page, a handoff): the bot is quiet until then
+    held_until: float | None = None
+    escalations: list[dict] = Field(default_factory=list)
+    # Set by the admin's Resume, as for a customer
+    escalation_cleared_at: float | None = None
 
 
 class _Daily(BaseModel):
@@ -298,6 +305,66 @@ class CustomerServiceState:
             self._group(group_id, now)["messages_out"] += 1
         self._update(change)
 
+    def has_customer(self, sender_id: str) -> bool:
+        """Whether this customer is known, without copying the whole state (custom): the CSKH page
+        asks for every transcript poll and every picture."""
+        with self._lock:
+            return sender_id in self._data["customers"]
+
+    # ── Groups staff handle from the CSKH page (custom) ──
+    def group(self, group_id: str) -> dict | None:
+        """A copy of one group, or None: without copying the whole state."""
+        with self._lock:
+            group = self._data.get("groups", {}).get(group_id)
+            return copy.deepcopy(group) if group is not None else None
+
+    def group_status(self, group_id: str) -> str:
+        """"paused" while staff handles the group or everything is paused: the bot stays quiet there
+        and every message is kept for staff; else "active"."""
+        with self._lock:
+            if self._data["paused_all"]:
+                return "paused"
+            until = (self._data.get("groups", {}).get(group_id) or {}).get("held_until")
+            return "paused" if until and until > self._clock() else "active"
+
+    def _known_group(self, group_id: str) -> dict:
+        group = self._data.get("groups", {}).get(group_id)
+        if group is None:  # a group exists once a message from it arrived
+            raise ValueError("Unknown group")
+        return group
+
+    def hold_group_for_staff(self, group_id: str, until: float) -> None:
+        """Staff answered in the group: the bot stays quiet there until then, or until Resume."""
+        def change(now):
+            group = self._known_group(group_id)
+            group["held_until"] = max(until, group.get("held_until") or 0)
+        self._update(change)
+
+    def set_group_hold(self, group_id: str, held_until: float | None) -> None:
+        """Put back what a staff send found, when Zalo took none of it."""
+        self._update(lambda now: self._known_group(group_id).update(held_until=held_until))
+
+    def record_group_escalation(self, group_id: str, member_id: str, member_name: str, reason: str,
+                                delivered: bool, held_until: float) -> None:
+        """A member asked for a person in the group: the whole group waits for staff, in one write."""
+        def change(now):
+            group = self._known_group(group_id)
+            group["held_until"] = max(held_until, group.get("held_until") or 0)  # never shorter (review 15 #2)
+            entries = group.setdefault("escalations", [])
+            entries.append({"at": now, "reason": reason, "delivered": delivered,
+                            "member": member_id, "member_name": member_name[:100]})
+            del entries[:-50]  # an allowed group is never pruned: keep its recent handoffs only
+            self._count(now, "escalations", group_id)
+        self._update(change)
+
+    def resume_group(self, group_id: str) -> None:
+        """Admin Resume: the bot answers in the group again, and may hand it over again at once."""
+        def change(now):
+            group = self._known_group(group_id)
+            group["held_until"] = None
+            group["escalation_cleared_at"] = now
+        self._update(change)
+
     def customer_status(self, sender_id: str) -> str:
         with self._lock:
             customer = self._data["customers"].get(sender_id, {})
@@ -367,8 +434,12 @@ class CustomerServiceState:
             customer = self._customer(sender_id, "", now)
             # Do not undo an admin block while an in-flight send completes.
             if customer["status"] != "blocked":
+                # Nor cut short a longer wait already set: staff answered while this turn ran, or the
+                # pause was shortened since (review 15 #2). A pause without an end stays one.
+                endless = customer["status"] == "paused" and customer.get("paused_until") is None
                 customer["status"] = "paused"
-                customer["paused_until"] = paused_until
+                if not endless:
+                    customer["paused_until"] = max(paused_until, customer.get("paused_until") or 0)
             customer["escalations"].append({"at": now, "reason": reason, "delivered": delivered})
             self._count(now, "escalations", sender_id)
         self._update(change)

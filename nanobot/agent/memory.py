@@ -432,7 +432,10 @@ class Consolidator:
                 last_boundary = (idx, removed_tokens)
                 if removed_tokens >= tokens_to_remove:
                     return last_boundary
-            removed_tokens += estimate_message_tokens(message)
+            # A line kept for staff only is not in the prompt (get_history skips it): cutting it frees
+            # nothing (custom, review 15)
+            if not message.get("staff_only"):
+                removed_tokens += estimate_message_tokens(message)
 
         return last_boundary
 
@@ -441,12 +444,19 @@ class Consolidator:
         session: Session,
         end_idx: int,
     ) -> int | None:
-        """Clamp the chunk size without breaking the user-turn boundary."""
+        """Clamp the chunk size without breaking the user-turn boundary. Only lines the prompt holds
+        count toward the cap: lines kept for staff only cost the cut nothing (custom, review 15)."""
         start = session.last_consolidated
-        if end_idx - start <= self._MAX_CHUNK_MESSAGES:
+        capped_end, counted = None, 0
+        for idx in range(start, end_idx):
+            if not session.messages[idx].get("staff_only"):
+                counted += 1
+                if counted > self._MAX_CHUNK_MESSAGES:
+                    capped_end = idx
+                    break
+        if capped_end is None:
             return end_idx
 
-        capped_end = start + self._MAX_CHUNK_MESSAGES
         for idx in range(capped_end, start, -1):
             if session.messages[idx].get("role") == "user":
                 return idx

@@ -21,7 +21,7 @@ from nanobot.channels.zalo_cskh_state import TEST_CUSTOMER_PREFIX, is_test_custo
 from nanobot.channels.zalo_personal import ZaloCustomerServiceConfig, customer_service_target_error
 from nanobot.security.public_output import public_error
 from nanobot.session.manager import SessionManager
-from nanobot.utils.helpers import install_customer_service_soul
+from nanobot.utils.helpers import detect_image_mime, install_customer_service_soul
 from nanobot.web import kb_catalog
 from nanobot.web.auth import get_csrf_cookie_name
 from nanobot.web.routes.memory_graph import _brain_config, _public_mode, _require_csrf
@@ -70,9 +70,26 @@ def _customer(request, customer_id):
     return state, customer
 
 
+def _require_customer(request, customer_id):
+    """Only customers who have written to the bot; asked on every poll and picture, so the state is
+    not copied (custom)."""
+    _, state = _state(request)
+    if not state.has_customer(customer_id):
+        raise HTTPException(404, "Customer not found")
+
+
+def _require_group(request, group_id):
+    """Only a group the bot was added to, as the Groups tab lists it (custom)."""
+    _, state = _state(request)
+    if not valid_group_id(group_id) or state.group(group_id) is None:
+        raise HTTPException(404, "Group not found")
+
+
 _MEDIA_MARKER = re.compile(r"\[(image|file|audio|video|voice|sticker|document)(?::[^\]]*)?\]")
 # A picture the customer sent, as the session keeps it for the model: "[image: <saved file>]" (custom)
 _IMAGE_MARKER = re.compile(r"\[image:\s*([^\]]+?)\s*\]")
+# The same marker with its own line, for taking a drawn picture out of the text
+_IMAGE_LINE = re.compile(r"[ \t]*\[image:\s*([^\]]+?)\s*\][ \t]*(?:\r?\n)?")
 MEDIA_IMAGE_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif",
                      ".webp": "image/webp"}
 
@@ -85,40 +102,82 @@ def _zalo_media_dir():
 
 def _customer_image_name(customer_id: str, name: str) -> bool:
     """One of this customer's pictures as the channel names them (<customer>_<ms>.<ext>): the page can
-    ask for nothing else, and never another customer's (custom)."""
-    return bool(re.fullmatch(re.escape(customer_id) + r"_\d{1,20}\.(jpg|jpeg|png|gif|webp)", name or ""))
+    ask for nothing else, and never another customer's. ".bin" is a picture Zalo sent as a file before
+    the channel named those by their bytes; it is served only when its bytes are a picture (custom)."""
+    return bool(re.fullmatch(re.escape(customer_id) + r"_\d{1,20}\.(jpg|jpeg|png|gif|webp|bin)", name or ""))
 
 
-def _images(content, customer_id: str) -> list[dict]:
-    """The pictures of one message: their file names (not the server path) and whether still on disk."""
+def _marker_name(path: str) -> str:
+    return re.split(r"[\\/]", path)[-1]
+
+
+def _images(content, customer_id: str, media) -> list[dict]:
+    """The pictures of one message, the customer's or staff's: their file names (not the server
+    path) and whether still in the media folder."""
     if isinstance(content, list):
         content = "\n".join(block.get("text", "") for block in content if isinstance(block, dict))
-    if not isinstance(content, str):
+    if not isinstance(content, str) or "[image:" not in content:
         return []
-    media = _zalo_media_dir()
     found = []
     for match in _IMAGE_MARKER.finditer(content):
-        name = re.split(r"[\\/]", match.group(1))[-1]
+        name = _marker_name(match.group(1))
         if _customer_image_name(customer_id, name) and name not in {image["name"] for image in found}:
             found.append({"name": name, "available": (media / name).is_file()})
     return found
 
 
-def _shown(content, workspace):
+def _shown(content, workspace, pictures=()):
     """What the staff member reads: a message stored as blocks becomes its text; a media
-    marker loses the path it carries for the model (a server path is not for the page)."""
+    marker loses the path it carries for the model (a server path is not for the page).
+    A picture the page draws (pictures: its file names) leaves the text; one it cannot draw
+    stays as "[image]", so staff still sees that something was sent (custom)."""
     if isinstance(content, list):
         parts = [block.get("text", "") if isinstance(block, dict) else str(block) for block in content]
         content = "\n".join(part for part in parts if part)
     if not isinstance(content, str):
         content = json.dumps(content, ensure_ascii=False)
+    if pictures:
+        content = _IMAGE_LINE.sub(lambda m: "" if _marker_name(m.group(1)) in pictures else m.group(0),
+                                  content).strip()
     from nanobot.security.public_output import redact_workspace
     return redact_workspace(_MEDIA_MARKER.sub(lambda m: f"[{m.group(1)}]", content), workspace)
 
 
-def _transcript(request, customer_id, limit):
-    _customer(request, customer_id)
-    key = f"zalo:{customer_id}"
+# What the channel puts before a group message for the model, and the message a reply quotes (custom)
+_GROUP_NOTE = re.compile(r"\[GROUP\b[^\]]*\]\s*")
+_QUOTE = re.compile(r'\[Quoted: "(.*?)"\]\s*', re.S)
+
+
+def _group_line(text: str, sender: str | None) -> dict:
+    """A member's message in a group as staff reads it (custom): without the notes for the model;
+    who wrote it, and what it answers, apart (the note of an unmentioned message already names the
+    sender before the text)."""
+    text = _GROUP_NOTE.sub("", text).strip()
+    line = {}
+    if quoted := _QUOTE.match(text):
+        line["quote"] = " ".join(quoted.group(1).split())[:160]
+        text = text[quoted.end():]
+    if sender:
+        line["sender"] = sender
+        if text.startswith(sender + ": "):
+            text = text[len(sender) + 2:]
+    line["content"] = text.strip()
+    return line
+
+
+def _part_line(part: dict) -> str:
+    """One message of a merged group turn as staff reads it: "↪ quote" above "Sender: words"."""
+    quote = " ".join(str(part.get("quote") or "").split())[:160]
+    words = str(part.get("text") or "")
+    line = f"{part['sender']}: {words}" if part.get("sender") else words
+    return f"\u21aa {quote}\n{line}" if quote else line
+
+
+def _transcript(request, conversation_id, limit, *, group=False):
+    """A customer's conversation with the bot, or a group's (custom), as the CSKH page shows it."""
+    (_require_group if group else _require_customer)(request, conversation_id)
+    media = _zalo_media_dir()  # once per read, not per message (custom)
+    key = f"zalo:{conversation_id}"
     path = resolve_ref(
         request.app.state.config.workspace_path, f"sessions/{SessionManager.safe_key(key)}.jsonl"
     )
@@ -138,14 +197,29 @@ def _transcript(request, customer_id, limit):
                     continue  # the bot chose not to answer a closing message
                 if item.get("role") == "assistant" and not str(item.get("content") or "").strip():
                     continue  # the bot only called a tool (knowledge search, escalation): nothing was sent
+                if item.get("opening_note"):
+                    continue  # for the model only: staff opened the group's conversation (custom)
                 if item.get("role") in {"user", "assistant"}:
+                    # Pictures, the customer's or what staff sent, are drawn: their markers leave the
+                    # text, and "[Nhân viên] [image: …]" keeps its prefix (custom)
+                    images = _images(item.get("content"), conversation_id, media)
                     row = {"role": item["role"], "timestamp": item.get("timestamp", ""),
-                           "content": _shown(item.get("content", ""), request.app.state.config.workspace_path)}
-                    if item["role"] == "user" and (images := _images(item.get("content"), customer_id)):
-                        # Shown as pictures: their "[image]" markers leave the text (custom)
+                           "content": _shown(item.get("content", ""), request.app.state.config.workspace_path,
+                                             {image["name"] for image in images})}
+                    if images:
                         row["images"] = images
-                        row["content"] = "\n".join(line for line in row["content"].split("\n")
-                                                   if line.strip() != "[image]").strip()
+                    if group and item["role"] == "user":
+                        if isinstance(item.get("parts"), list):  # a merged turn: each part as written
+                            row["content"] = _shown("\n".join(_part_line(part) for part in item["parts"]
+                                                              if isinstance(part, dict)),
+                                                    request.app.state.config.workspace_path)
+                        elif isinstance(item.get("text"), str):  # kept apart since review 15 #6
+                            row["content"] = _shown(item["text"], request.app.state.config.workspace_path)
+                            for field, value in (("sender", item.get("sender_name")), ("quote", item.get("quote"))):
+                                if isinstance(value, str) and value:
+                                    row[field] = " ".join(value.split())[:160] if field == "quote" else value
+                        else:  # older lines, and turns merged from several messages
+                            row.update(_group_line(row["content"], item.get("sender_name")))
                     for key in ("reply_ms", "searches"):  # how long the customer waited (custom)
                         if isinstance(item.get(key), int) and not isinstance(item.get(key), bool) and item[key] >= 0:
                             row[key] = item[key]
@@ -229,6 +303,7 @@ async def overview(request: Request):
     learning_errors = sum(bool(doc["learning"].get("error")) or bool(doc["learning"].get("failed")) for doc in docs)
     now = time.time()
     recent = now - NEW_GROUP_DAYS * 86400
+    groups_waiting = sum(_group_needs_attention(state, key, group) for key, group in snapshot.get("groups", {}).items())
     chatting = sorted(((c["last_seen"], c["name"] or key) for key, c in snapshot["customers"].items()
                        if _chatting(key, c, now)), reverse=True)
     return {
@@ -246,7 +321,9 @@ async def overview(request: Request):
         "badges": {
             "customers": sum(_needs_attention(state, key, c) for key, c in snapshot["customers"].items()),
             "knowledge": unanswered + learning_errors,
-            "groups": sum(not g["allowed"] and g["first_seen"] >= recent for g in snapshot.get("groups", {}).values()),
+            "groups": groups_waiting + sum(not g["allowed"] and g["first_seen"] >= recent
+                                           for g in snapshot.get("groups", {}).values()),
+            "groups_waiting": groups_waiting,  # groups handed to staff (custom): the alert counts them too
         },
         # Who is talking to the bot right now: the page shows it on the Customers tab from any tab
         "live": {"chatting": len(chatting), "names": [name for _, name in chatting[:5]],
@@ -298,24 +375,48 @@ async def customers(
     return {"customers": sorted(rows, key=lambda row: row["last_seen"], reverse=True)[:limit]}
 
 
-@router.get("/api/customers/{customer_id}/media/{name}")
-async def customer_media(request: Request, customer_id: str, name: str):
-    """A picture this customer sent, for the conversation on this page (custom). Only a file the Zalo
-    channel saved for this customer, inside its media folder, served as an image."""
-    _customer(request, customer_id)
+def _picture_file(customer_id: str, name: str):
+    """The file and image type of one of this customer's pictures, or 404: a regular file directly in
+    the media folder; a ".bin" only when its bytes are a picture (custom)."""
     if not _customer_image_name(customer_id, name):
         raise HTTPException(404, "Image not found")
     media = _zalo_media_dir().resolve()
     path = media / name
     if path.is_symlink() or not path.is_file() or path.resolve().parent != media:
         raise HTTPException(404, "Image not found")
-    return FileResponse(path, media_type=MEDIA_IMAGE_TYPES[path.suffix.lower()],
+    mime = MEDIA_IMAGE_TYPES.get(path.suffix.lower())
+    if mime is None:
+        with path.open("rb") as stream:
+            mime = detect_image_mime(stream.read(16))
+    if mime is None:
+        raise HTTPException(404, "Image not found")
+    return path, mime
+
+
+def _picture_response(path, mime) -> FileResponse:
+    return FileResponse(path, media_type=mime,
                         headers={"Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff"})
+
+
+@router.get("/api/customers/{customer_id}/media/{name}")
+async def customer_media(request: Request, customer_id: str, name: str):
+    """A picture this customer sent, or staff sent them, for the conversation on this page (custom).
+    Only a file named for this customer in the Zalo media folder, served as an image."""
+    _require_customer(request, customer_id)
+    return _picture_response(*await run_in_threadpool(_picture_file, customer_id, name))
+
+
+@router.get("/api/groups/{group_id}/media/{name}")
+async def group_media(request: Request, group_id: str, name: str):
+    """A picture sent in this group, by a member or by staff (custom): named for the group."""
+    _require_group(request, group_id)
+    return _picture_response(*await run_in_threadpool(_picture_file, group_id, name))
 
 
 @router.get("/api/customers/{customer_id}/transcript")
 async def transcript(request: Request, customer_id: str, limit: int = Query(50, ge=1, le=200)):
-    return {"messages": _transcript(request, customer_id, limit)}
+    # Off the event loop: the page polls this every 2 s for each open conversation (custom)
+    return {"messages": await run_in_threadpool(_transcript, request, customer_id, limit)}
 
 
 class Summary(BaseModel):
@@ -333,7 +434,9 @@ async def escalate(request: Request, customer_id: str, body: Summary):
         customer["name"],
         "other",
         body.summary,
-        _transcript(request, customer_id, 10),
+        # A picture drawn on the page is "[image]" again in the notice: a line is never left empty (custom)
+        [{**row, "content": " ".join([row["content"]] + ["[image]"] * len(row.get("images", []))).strip()}
+         for row in _transcript(request, customer_id, 10)],
     )
     delivered = await _telegram(request, content)
     state.record_escalation(
@@ -343,6 +446,14 @@ async def escalate(request: Request, customer_id: str, body: Summary):
 
 
 STAFF_PREFIX = "[Nhân viên] "
+# Before staff's first words in a group whose session has no customer line the model reads yet: the
+# history starts at a user line, so those words were dropped after Resume (review 15, last case). A
+# channel note in the customer's place keeps them; it is a [GROUP ...] note, so the knowledge search
+# and the Telegram alert leave it out, and the page does not show it (custom)
+GROUP_STAFF_OPENING = "[GROUP — staff wrote first in this group; their messages follow.]"
+STAFF_PICTURES_MAX = 5  # per send; Zalo gets each picture as its own message (custom)
+STAFF_PICTURE_MAX_BYTES = 10 * 1024 * 1024
+_PICTURE_OWNER = re.compile(r"[A-Za-z0-9-]{1,64}")  # a customer id that can start a media file name
 
 
 class StaffReply(BaseModel):
@@ -350,40 +461,205 @@ class StaffReply(BaseModel):
     content: str = Field(min_length=1, max_length=2000)
 
 
+_PICTURE_SUFFIX = {"image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif", "image/webp": ".webp"}
+_KEEP = object()
+
+
+class _StaffHolds:
+    """The hold staff sends placed on a conversation, while any of them is on its way (custom). A send
+    Zalo took none of puts the hold back only when it is the last one out and none went through: two
+    failed sends from two tabs left the first one's hold behind (review 15 #3). A handoff, Resume or
+    block made meanwhile changes the mark, and the hold is then left as it is."""
+
+    def __init__(self) -> None:
+        self._open: dict[tuple, dict] = {}
+
+    def begin(self, key: tuple, mark) -> None:
+        batch = self._open.setdefault(key, {"before": mark, "held": mark, "sending": 0, "delivered": False})
+        batch["sending"] += 1
+
+    def placed(self, key: tuple, mark) -> None:
+        self._open[key]["held"] = mark
+
+    def end(self, key: tuple, delivered: bool, mark):
+        """The mark to put back, or _KEEP."""
+        batch = self._open[key]
+        batch["sending"] -= 1
+        batch["delivered"] = batch["delivered"] or delivered
+        if batch["sending"]:
+            return _KEEP
+        del self._open[key]
+        return _KEEP if batch["delivered"] or mark != batch["held"] else batch["before"]
+
+
+_HOLDS = _StaffHolds()
+
+
+def _save_pictures(customer_id: str, pictures) -> list:
+    """Staff's pictures go where the channel keeps the customer's own, named the same way
+    (<customer>_<ms>.<ext>): the conversation shows them and retention removes them. Each name is
+    taken by an exclusive create, so a send from a second tab never overwrites one (custom)."""
+    media, stamp, saved = _zalo_media_dir(), int(time.time() * 1000), []
+    try:
+        for suffix, data in pictures:
+            while True:
+                path = media / f"{customer_id}_{stamp}{suffix}"
+                stamp += 1
+                try:
+                    stream = path.open("xb")
+                except FileExistsError:
+                    continue
+                saved.append(path)
+                with stream:
+                    stream.write(data)
+                break
+    except OSError:
+        for path in saved:
+            path.unlink(missing_ok=True)
+        raise
+    return saved
+
+
+async def _send_as_staff(request, conversation_id: str, text: str, pictures: list | None = None, *,
+                         group: bool = False) -> dict:
+    """Answer a customer, or a group (custom), as staff: the bot's Zalo account sends the text, then
+    each picture, and the bot stays quiet there until Resume or the pause ends. Each part goes into
+    the bot's conversation as soon as Zalo confirms it, so what the customer writes meanwhile stays
+    after what it answers. Nothing delivered raises; a picture Zalo did not confirm ends the send
+    there, and the reply says how many pictures went out (custom)."""
+    channel, state = _state(request)
+    if group and not state.group_access(conversation_id)[0]:
+        raise HTTPException(409, "The bot does not serve this group; allow it on the Groups tab first")
+    if not is_test_customer(conversation_id) and channel.get_status().get("status") != "connected":
+        raise HTTPException(409, "Zalo is not connected; the reply was not sent")
+    try:
+        paths = await run_in_threadpool(_save_pictures, conversation_id, pictures) if pictures else []
+    except OSError as exc:
+        public_error(exc)
+        raise HTTPException(500, "The pictures could not be saved; nothing was sent") from exc
+    finally:
+        if pictures:
+            pictures.clear()  # on disk now: up to 50 MB is not held through a send of minutes
+    # Hold first, so a message the customer sends while the reply is on its way is kept for
+    # staff rather than answered by the bot; undo the hold if Zalo did not take the reply.
+    pause = service_config(request.app.state.config).pause_after_escalation_minutes * 60
+    # The mark: the hold, and what tells a handoff, a Resume or a block made meanwhile
+    if group:
+        def mark():
+            found = state.group(conversation_id) or {}
+            return (found.get("held_until"), (found.get("escalations") or [{}])[-1].get("at"),
+                    found.get("escalation_cleared_at"))
+
+        def hold():
+            state.hold_group_for_staff(conversation_id, time.time() + pause)
+
+        def undo(before):
+            state.set_group_hold(conversation_id, before[0])
+    else:
+        def mark():
+            found = state.snapshot()["customers"].get(conversation_id, {})
+            return (found.get("status", "active"), found.get("paused_until"),
+                    (found.get("escalations") or [{}])[-1].get("at"), found.get("escalation_cleared_at"))
+
+        def hold():
+            state.hold_for_staff(conversation_id, time.time() + pause)
+
+        def undo(before):
+            if before[0] != "blocked":
+                state.set_status(conversation_id, before[0], paused_until=before[1])
+    sessions = getattr(request.app.state, "session_manager", None)
+
+    def record(line: str) -> None:
+        if sessions is None:
+            return
+        try:
+            session = sessions.get_or_create(f"zalo:{conversation_id}")
+            if group and not any(message["role"] == "user" for message in session.get_history()):
+                session.add_message("user", GROUP_STAFF_OPENING, opening_note=True)
+            session.add_message("assistant", STAFF_PREFIX + line)
+            sessions.save(session)
+        except Exception as exc:  # it went out: a failed save must not report it as unsent
+            public_error(exc)
+
+    metadata = {"thread_type": "Group" if group else "User", "_staff_reply": True, "_confirm": True}
+    text_sent, sent, failure = False, 0, None
+    key = (id(state), "group" if group else "customer", conversation_id)
+    _HOLDS.begin(key, mark())
+    try:
+        hold()
+        _HOLDS.placed(key, mark())
+        try:
+            # _confirm: no ack from Zalo in time, or not connected, raises; what went before stays sent.
+            if text:
+                await channel.send(OutboundMessage(channel="zalo", chat_id=conversation_id, content=text,
+                                                   metadata=dict(metadata)))
+                text_sent = True
+                record(text)
+            for path in paths:
+                await channel.send(OutboundMessage(channel="zalo", chat_id=conversation_id, content="",
+                                                   media=[str(path)], metadata=dict(metadata)))
+                sent += 1
+                record(f"[image: {path.name}]")  # the name only: no server path for the model
+        except Exception as exc:
+            public_error(exc)
+            failure = exc
+    finally:
+        if (before := _HOLDS.end(key, text_sent or sent > 0, mark())) is not _KEEP:
+            undo(before)
+    for path in paths[sent:]:
+        path.unlink(missing_ok=True)  # not sent: nothing in the conversation points at it
+    if not text_sent and not sent:
+        raise HTTPException(502, "Zalo did not confirm delivery; the reply was not recorded") from failure
+    if group:
+        status, until = state.group_status(conversation_id), mark()[0]
+    else:
+        status, until = state.customer_status(conversation_id), mark()[1]
+    # unconfirmed: no ack in time, so the next picture may still reach the customer
+    return {"sent": True, "status": status, "paused_until": until,
+            "images_sent": sent, "unconfirmed": isinstance(failure, TimeoutError)}
+
+
+async def _read_pictures(owner_id: str, files: list[UploadFile], content: str) -> tuple[str, list]:
+    """The text and pictures of a staff send, all checked before anything goes out (custom)."""
+    if not _PICTURE_OWNER.fullmatch(owner_id):
+        raise HTTPException(400, "Pictures cannot be sent here")
+    text = content.replace("\r\n", "\n").strip()  # a form sends line breaks as CRLF; /reply has LF
+    if len(text) > 2000:
+        raise HTTPException(400, "Reply is longer than 2000 characters")
+    if not 1 <= len(files) <= STAFF_PICTURES_MAX:
+        raise HTTPException(400, f"Send 1 to {STAFF_PICTURES_MAX} pictures at a time")
+    pictures = []
+    try:
+        for file in files:
+            label = (file.filename or "picture")[:80]
+            data = await file.read(STAFF_PICTURE_MAX_BYTES + 1)
+            if len(data) > STAFF_PICTURE_MAX_BYTES:
+                raise HTTPException(413, f"{label} is larger than 10 MB")
+            if (mime := detect_image_mime(data[:16])) is None:
+                raise HTTPException(400, f"{label} is not a JPG, PNG, WebP or GIF picture")
+            pictures.append((_PICTURE_SUFFIX[mime], data))  # the type from its bytes, not the name it came with
+    finally:
+        for file in files:
+            await file.close()
+    return text, pictures
+
+
 @router.post("/api/customers/{customer_id}/reply")
 async def staff_reply(request: Request, customer_id: str, body: StaffReply):
-    """Answer a customer as staff: the bot's Zalo account sends it, the bot's conversation
-    records it, and the bot stays quiet for this customer until Resume or the pause ends."""
-    channel, state = _state(request)
-    _customer(request, customer_id)  # only customers who have written to the bot
+    _require_customer(request, customer_id)  # only customers who have written to the bot
     text = body.content.strip()
     if not text:
         raise HTTPException(400, "Reply is empty")
-    if not is_test_customer(customer_id) and channel.get_status().get("status") != "connected":
-        raise HTTPException(409, "Zalo is not connected; the reply was not sent")
-    # Hold first, so a message the customer sends while the reply is on its way is kept for
-    # staff rather than answered by the bot; undo the hold if Zalo did not take the reply.
-    before = state.snapshot()["customers"].get(customer_id, {})
-    pause = service_config(request.app.state.config).pause_after_escalation_minutes * 60
-    state.hold_for_staff(customer_id, time.time() + pause)
-    try:
-        # _confirm: no ack from Zalo in time, or not connected, raises; nothing is recorded then.
-        await channel.send(OutboundMessage(channel="zalo", chat_id=customer_id, content=text,
-                                           metadata={"thread_type": "User", "_staff_reply": True,
-                                                     "_confirm": True}))
-    except Exception as exc:
-        if before.get("status", "active") != "blocked":
-            state.set_status(customer_id, before.get("status", "active"), paused_until=before.get("paused_until"))
-        public_error(exc)
-        raise HTTPException(502, "Zalo did not confirm delivery; the reply was not recorded") from exc
-    sessions = getattr(request.app.state, "session_manager", None)
-    if sessions is not None:
-        session = sessions.get_or_create(f"zalo:{customer_id}")
-        session.add_message("assistant", STAFF_PREFIX + text)
-        sessions.save(session)
-    customer = state.snapshot()["customers"].get(customer_id, {})
-    return {"sent": True, "status": state.customer_status(customer_id),
-            "paused_until": customer.get("paused_until")}
+    return await _send_as_staff(request, customer_id, text)
+
+
+@router.post("/api/customers/{customer_id}/reply-images")
+async def staff_reply_images(request: Request, customer_id: str, files: list[UploadFile] = File(...),
+                             content: str = Form("")):
+    """Pictures from staff (picked or pasted on the page), with an optional text sent first (custom)."""
+    _require_customer(request, customer_id)
+    text, pictures = await _read_pictures(customer_id, files, content)
+    return await _send_as_staff(request, customer_id, text, pictures)
 
 
 @router.post("/api/customers/{customer_id}/{action}")
@@ -459,11 +735,24 @@ class GroupSettings(BaseModel):
     name: str | None = Field(default=None, max_length=100)
 
 
+def _group_needs_attention(state, key, group) -> bool:
+    """Handed to staff and not yet resumed: a staff member should look at this group (custom)."""
+    return state.group_status(key) == "paused" and any(
+        entry["at"] > (group.get("escalation_cleared_at") or 0) for entry in group.get("escalations", []))
+
+
+def _group_row(state, key, group) -> dict:
+    status = state.group_status(key)
+    return dict(group, id=key, status=status, escalations=len(group.get("escalations", [])),
+                paused_until=group.get("held_until") if status == "paused" else None,
+                attention=_group_needs_attention(state, key, group))
+
+
 @router.get("/api/groups")
 async def groups(request: Request):
     """Groups the bot was added to; the admin allows them one by one."""
     _, state = _state(request)
-    rows = [dict(group, id=key) for key, group in state.snapshot().get("groups", {}).items()]
+    rows = [_group_row(state, key, group) for key, group in state.snapshot().get("groups", {}).items()]
     rows.sort(key=lambda row: row["last_seen"], reverse=True)
     return {"groups": rows}
 
@@ -476,7 +765,40 @@ async def group_settings(request: Request, group_id: str, body: GroupSettings):
     if group_id not in state.snapshot().get("groups", {}):
         raise HTTPException(404, "Group not found")
     state.set_group(group_id, allowed=body.allowed, mode=body.mode, name=body.name)
-    return {"group": dict(state.snapshot()["groups"][group_id], id=group_id)}
+    return {"group": _group_row(state, group_id, state.group(group_id))}
+
+
+@router.get("/api/groups/{group_id}/transcript")
+async def group_transcript(request: Request, group_id: str, limit: int = Query(50, ge=1, le=200)):
+    """The group's conversation with the bot, each member's line with its sender (custom)."""
+    return {"messages": await run_in_threadpool(lambda: _transcript(request, group_id, limit, group=True))}
+
+
+@router.post("/api/groups/{group_id}/reply")
+async def group_reply(request: Request, group_id: str, body: StaffReply):
+    """Staff answer in the group through the bot's Zalo account; the bot gives way there (custom)."""
+    _require_group(request, group_id)
+    text = body.content.strip()
+    if not text:
+        raise HTTPException(400, "Reply is empty")
+    return await _send_as_staff(request, group_id, text, group=True)
+
+
+@router.post("/api/groups/{group_id}/reply-images")
+async def group_reply_images(request: Request, group_id: str, files: list[UploadFile] = File(...),
+                             content: str = Form("")):
+    _require_group(request, group_id)
+    text, pictures = await _read_pictures(group_id, files, content)
+    return await _send_as_staff(request, group_id, text, pictures, group=True)
+
+
+@router.post("/api/groups/{group_id}/resume")
+async def group_resume(request: Request, group_id: str):
+    """The bot answers in the group again, and may hand it over again at once (custom)."""
+    _require_group(request, group_id)
+    _, state = _state(request)
+    state.resume_group(group_id)
+    return {"group": _group_row(state, group_id, state.group(group_id))}
 
 
 @router.get("/api/unanswered")

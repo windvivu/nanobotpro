@@ -1,6 +1,7 @@
 """Cron service for scheduling agent tasks."""
 
 import asyncio
+import contextvars
 import json
 import time
 import uuid
@@ -13,6 +14,21 @@ from filelock import FileLock
 from loguru import logger
 
 from nanobot.cron.types import CronJob, CronJobState, CronPayload, CronRunRecord, CronSchedule, CronStore
+from nanobot.fleet.context import current_fleet_turn
+
+
+def _timer_context() -> contextvars.Context:
+    """The context the timer runs its jobs in: the caller's, minus the fleet turn it may be armed from.
+
+    add_job and the other edits arm the timer from inside the turn that called the cron tool, and
+    create_task copies that turn's context. Every job the timer ran, and every timer it armed after,
+    then carried the turn's envelope: a job's sends to the fleet chat were stamped as sends of a turn
+    long ended and dropped, instead of reaching Fleet Manager as late replies with the job's origin
+    (custom; plan: fleet-manager native-parity.md 3.3.11).
+    """
+    context = contextvars.copy_context()
+    context.run(current_fleet_turn.set, None)
+    return context
 
 
 def _now_ms() -> int:
@@ -293,7 +309,7 @@ class CronService:
             if self._running:
                 await self._on_timer()
 
-        self._timer_task = asyncio.create_task(tick())
+        self._timer_task = asyncio.create_task(tick(), context=_timer_context())
 
     async def _on_timer(self) -> None:
         """Handle timer tick - run due jobs."""

@@ -230,15 +230,42 @@ class FleetJournal:
             return "conflict", record
         return "existing", record
 
-    def advance(self, turn_id: str, state: str, *, from_states: tuple[str, ...]) -> bool:
-        """Move a turn on (queued, running) if it is still in one of from_states."""
+    def advance(self, turn_id: str, state: str, *, from_states: tuple[str, ...],
+                events: list[dict[str, Any]] | None = None) -> bool:
+        """Move a turn on (queued, running) if it is still in one of from_states.
+
+        events (a status event, plan 3.3.3) are queued in the same transaction, only when the move
+        happened: a turn that ended meanwhile reports nothing more."""
         marks = ", ".join("?" for _ in from_states)
-        with self._lock:
-            cur = self._db().execute(
+        now = time.time()
+
+        def work(db: sqlite3.Connection) -> bool:
+            cur = db.execute(
                 f"UPDATE turns SET state = ?, updated_at = ? WHERE turn_id = ? AND state IN ({marks})",
-                (state, time.time(), turn_id, *from_states),
+                (state, now, turn_id, *from_states),
             )
-            return cur.rowcount == 1
+            moved = cur.rowcount == 1
+            if moved and events:
+                fleet_id = db.execute("SELECT fleet_id FROM turns WHERE turn_id = ?", (turn_id,)).fetchone()[0]
+                self._queue(db, events, now, fleet_id=fleet_id, turn_id=turn_id)
+            return moved
+
+        with self._lock:
+            return self._transaction(work)
+
+    def add_turn_events(self, turn_id: str, events: list[dict[str, Any]]) -> list[str]:
+        """Queue events of a turn still under way (progress, a part), numbered after the turn's
+        last. Nothing is queued once the turn has ended: its terminal was its last event."""
+        now = time.time()
+
+        def work(db: sqlite3.Connection) -> list[str]:
+            row = db.execute("SELECT fleet_id, state FROM turns WHERE turn_id = ?", (turn_id,)).fetchone()
+            if row is None or row[1] in TERMINAL:
+                return []
+            return self._queue(db, events, now, fleet_id=row[0], turn_id=turn_id)
+
+        with self._lock:
+            return self._transaction(work)
 
     def finish(self, turn_id: str, state: str, *, response: str | None = None, error: str | None = None,
                events: list[dict[str, Any]] | None = None) -> bool:
