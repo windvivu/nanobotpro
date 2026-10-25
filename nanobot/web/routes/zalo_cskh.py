@@ -787,6 +787,18 @@ async def group_settings(request: Request, group_id: str, body: GroupSettings):
     return {"group": _group_row(state, group_id, state.group(group_id))}
 
 
+@router.post("/api/groups/{group_id}/forget")
+async def group_forget(request: Request, group_id: str):
+    """Remove a group the bot does not serve from the Groups tab (custom): one disbanded, or one the
+    bot was taken out of. Its conversation stays until retention removes it."""
+    _require_group(request, group_id)
+    _, state = _state(request)
+    if (state.group(group_id) or {}).get("allowed"):
+        raise HTTPException(409, "The bot serves this group; revoke it first")
+    state.forget_group(group_id)
+    return {"forgotten": True}
+
+
 @router.get("/api/groups/{group_id}/transcript")
 async def group_transcript(request: Request, group_id: str, limit: int = Query(50, ge=1, le=200)):
     """The group's conversation with the bot, each member's line with its sender (custom)."""

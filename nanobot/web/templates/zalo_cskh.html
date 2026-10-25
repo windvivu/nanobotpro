@@ -748,7 +748,7 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
             title.append(g.name || g.id); label.append(title);
             const sub = text => { const el = node('div', text); el.className = 'muted'; label.append(el); };
             if (g.name) sub(g.id);
-            if (g.pending) sub('\u{1F195} ' + t('group_pending'));  // the bot was added, nobody decided yet
+            if (g.pending) sub('\u{1F195} ' + t('group_pending'));  // nobody decided yet: Allow or Ignore
             if (g.added_by) sub(t('group_added_by').replace('{name}', g.added_by));
             if (g.left_at) sub(t('group_left'));
             else if (g.dismissed && !g.allowed) sub(t('group_dismissed'));
@@ -768,16 +768,21 @@ tr.attention td {font-weight:700;background:rgb(var(--c-accent) / .08)}
             if (g.status === 'paused') controls.append(button('resume', async () => {
                 await api('/groups/' + encodeURIComponent(g.id) + '/resume', {}); await refresh();
             }));
-            controls.append(button(g.allowed ? 'group_revoke' : 'group_allow', async () => {
-                await api('/groups/' + encodeURIComponent(g.id), {allowed: !g.allowed}); await refresh();
-            }));
-            if (g.pending) controls.append(button('group_dismiss', async () => {  // not served, no longer counted
-                await api('/groups/' + encodeURIComponent(g.id), {dismissed: true}); await refresh();
-            }));
-            controls.append(button('group_rename', async () => {
+            // Only what fits the group's state, each saying what it does (custom): allowed, waiting for a
+            // decision, ignored (or revoked: the same), or no longer with the bot in it
+            const path = '/groups/' + encodeURIComponent(g.id);
+            const action = (label, hint, fn) => { const el = button(label, fn); el.title = t(hint); controls.append(el); };
+            if (g.allowed) action('group_revoke', 'group_revoke_hint', async () => { await api(path, {allowed: false}); await refresh(); });
+            else if (!g.left_at) action('group_allow', 'group_allow_hint', async () => { await api(path, {allowed: true}); await refresh(); });
+            if (g.pending) action('group_dismiss', 'group_dismiss_hint', async () => { await api(path, {dismissed: true}); await refresh(); });
+            if (!g.allowed) action('group_forget', 'group_forget_hint', async () => {  // e.g. disbanded
+                if (!(await hubModal(t('group_forget'), t('group_forget_confirm').replace('{name}', g.name || g.id)))) return;
+                await api(path + '/forget', {}); await refresh();
+            });
+            if (!g.left_at) action('group_rename', 'group_rename_hint', async () => {
                 const name = await hubModal(t('group_rename'), t('group_rename_hint'), true); if (!name) return;
-                await api('/groups/' + encodeURIComponent(g.id), {name}); await refresh();
-            }));
+                await api(path, {name}); await refresh();
+            });
             const tr = row(body, [label, stamp(g.last_seen), g.messages_in + ' / ' + g.messages_out, mode, controls]);
             if (g.allowed) tr.classList.add('allowed');
             if (g.attention) { tr.classList.add('attention'); tr.title = t('group_waiting'); }

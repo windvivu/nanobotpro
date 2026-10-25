@@ -293,6 +293,11 @@ class CustomerServiceState:
                 group["added_by"] = added_by.strip()[:100]
         self._update(change)
 
+    def forget_group(self, group_id: str) -> None:
+        """The admin removes a group from the page (custom), e.g. one that was disbanded. It comes back
+        if a message from it reaches the bot again."""
+        self._update(lambda now: self._data.get("groups", {}).pop(group_id, None))
+
     def record_group_left(self, group_id: str) -> None:
         """The bot was taken out of the group, or left it (custom): it no longer waits for a decision."""
         def change(now):
@@ -314,8 +319,9 @@ class CustomerServiceState:
             group = self._group(group_id, now)
             if allowed is not None:
                 group["allowed"] = bool(allowed)
-                if allowed:
-                    group["dismissed"] = False  # allowed after all
+                # Revoking is a decision too: the group no longer waits for one (seen live: a revoked
+                # group came back as "new"); allowing after all clears it
+                group["dismissed"] = not allowed
             if dismissed is not None:
                 group["dismissed"] = bool(dismissed)
             if mode is not None:
